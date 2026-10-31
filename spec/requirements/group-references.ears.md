@@ -49,6 +49,16 @@ When a rule names a group in its inputs section rather than after the order-only
 putup shall resolve the bracketed name to that group and expand `%<name>` to the group's
 members rather than read the name as a file to be found on disk.
 
+### REQ-GROUPREF-NAME-NOT-A-FILE
+
+- conformance: deliberate-deviation
+- reference: upstream keeps a group and a file in one `(directory, name)` key, and on a type mismatch `tup_db_create_node_part_display` force-deletes the existing node (`tup_del_id_force`) and recreates it with the new type, read from the source and not run; putup kept them in one key too, so whichever rule came first decided the node: with the group first, a rule reading the file bound to the group and never reran when the file changed, and with the reader first, the group adopted the file node and took its members as inputs (#491). putup refuses instead of replacing one with the other, so neither rule order yields a graph in which a rule reads something other than what it names
+- discharge: test "Scenario: A group cannot share its name with a file in its directory"
+
+If a rule declares a group in a directory whose source or config tree holds an entry with the group's
+bracketed name, or where the graph already holds a node of another type under that name, then putup
+shall reject the Tupfile and name the group and what the name already holds.
+
 ## Group: bins
 
 Which `{bin}` a rule may name in its inputs or order-only inputs.

@@ -1065,6 +1065,63 @@ SCENARIO("Multi-directory group producers all contribute to percent-group expans
     }
 }
 
+SCENARIO("A group cannot share its name with a file in its directory", "[e2e][groups][parse]")
+{
+    GIVEN("a project whose source tree holds a file literally named <g>")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "c\n");
+        f.write_file("<g>", "A\n");
+        REQUIRE(f.init().success());
+
+        WHEN("a rule declares the group before a rule reads the file")
+        {
+            f.write_file("Tupfile", ": a.c |> cp %f %o |> a.o <g>\n: ?g? |> cat '%f' > %o |> out.txt\n");
+            auto result = f.build();
+
+            THEN("the Tupfile is refused and names the group")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("Attempting to insert '<g>' as a group when it already exists as a different type (file)") != std::string::npos);
+                REQUIRE_FALSE(f.exists("out.txt"));
+            }
+        }
+
+        WHEN("a rule reads the file before a rule declares the group")
+        {
+            f.write_file("Tupfile", ": ?g? |> cat '%f' > %o |> out.txt\n: a.c |> cp %f %o |> a.o <g>\n");
+            auto result = f.build();
+
+            THEN("the Tupfile is refused and names the group")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("Attempting to insert '<g>' as a group when it already exists as a different type (file)") != std::string::npos);
+                REQUIRE_FALSE(f.exists("out.txt"));
+            }
+        }
+
+        WHEN("a variant build declares the group and no rule reads the file")
+        {
+            f.mkdir("build");
+            f.write_file("build/tup.config", "");
+            f.write_file("Tupfile", ": a.c |> cp %f %o |> a.o <g>\n");
+            auto result = f.build({ "-B", "build" });
+
+            THEN("the Tupfile is refused and names the group")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("Attempting to insert '<g>' as a group when it already exists as a different type (file)") != std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("Build fails when command fails", "[e2e][build]")
 {
     GIVEN("an initialized failure project with invalid source")

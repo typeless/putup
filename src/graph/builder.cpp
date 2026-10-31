@@ -469,9 +469,27 @@ auto get_or_create_group_node(
     gb += name;
     gb += '>';
     auto group_basename = gb.view();
+    auto& pool = global_pool();
+    auto group_rel = pool.get(pup::path::normalize(pool.get(pup::path::join(directory, group_basename))));
+    auto refuse_occupied = [&](std::string_view occupant) -> Result<NodeId> {
+        auto err = Buf {};
+        err.fmt("Attempting to insert '{}' as a group when it already exists as a different type ({})", group_rel, occupant);
+        return make_error<NodeId>(ErrorCode::DuplicateNode, err.view());
+    };
     if (auto existing = find_by_dir_name(ctx.state->graph, parent_id, group_basename)) {
+        if (auto const type = get_file_node(ctx.state->graph, *existing)->type; type != NodeType::Group) {
+            return refuse_occupied(node_type_name(type));
+        }
         state.group_nodes.insert(key_id, *existing);
         return *existing;
+    }
+    for (auto root : { ctx.options.source_root, ctx.options.config_root }) {
+        if (is_empty(root)) {
+            continue;
+        }
+        if (auto on_disk = pool.get(pup::path::join(str(root), group_rel)); pup::platform::exists(on_disk)) {
+            return refuse_occupied(pup::platform::is_directory(on_disk) ? node_type_name(NodeType::Directory) : node_type_name(NodeType::File));
+        }
     }
 
     auto node = FileNode {
