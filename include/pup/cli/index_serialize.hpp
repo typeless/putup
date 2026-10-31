@@ -40,9 +40,9 @@ struct PathIdMap {
 /// the last build that looked at it recorded: stamping a fresh stat instead asserts a currency
 /// nothing verified, and the next build then compares the new state against itself (#288).
 struct CarriedState {
-    index::FilesByPath by_path; ///< the old index, keyed by path
-    Vec<StringId> examined;     ///< sorted: what change detection stat'ed
-    Vec<StringId> refreshed;    ///< sorted: outputs of the commands that ran
+    index::FilesByPath by_path;                                             ///< the old index, keyed by path
+    Vec<StringId> examined;                                                 ///< sorted: what change detection stat'ed
+    Vec<StringId> refreshed;                                                ///< sorted: outputs of the commands that ran
     std::int64_t build_start_ns = std::numeric_limits<std::int64_t>::max(); ///< a source modified since carries no hash
 
     /// The entry to keep for `path`, or nullptr when this build may observe the file itself.
