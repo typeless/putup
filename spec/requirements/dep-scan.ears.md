@@ -127,14 +127,15 @@ a word of the invocation, as the shell does.
 ### REQ-SCAN-NEWLINE-SEPARATOR
 
 - conformance: putup-only
-- reference: no Tupfile text can carry a newline into a command (REQ-CONT-NO-NEWLINE); an imported environment value can (#347)
+- reference: no Tupfile text can carry a newline into a command (REQ-CONT-NO-NEWLINE); an imported environment value can (#347); putup scans the next line as sh runs it on every host, so on Windows, where cmd.exe drops it, the invocations putup scans past a newline never run
 - discharge: test "tokenize_shell_command ends a command at an unquoted newline"
 - discharge: test "A newline in the command text ends an invocation as the shell's does"
 - discharge: test "Scenario: A compile behind an imported leading newline still tracks its headers"
-- discharge: test "Scenario: The host shell ends a command at a newline in the command text"
+- discharge: test "Scenario: The host shell runs no word after a newline as an argument of the command before it"
 
 When a command's text holds an unquoted newline, putup shall end the invocation at that newline,
-as the shell does.
+because no host shell passes a word after it to the program before it: sh runs the next line as a
+command of its own, and cmd.exe drops the rest of the line.
 
 ### REQ-SCAN-EMPTY-WORD
 
