@@ -108,10 +108,11 @@ auto path_extension(std::string_view path) -> std::string_view;
 [[nodiscard]]
 auto path_directory(std::string_view path) -> std::string_view;
 
-/// Extract the portion of filename that matched the * in a glob pattern.
-/// Returns empty string if pattern doesn't match or has no wildcard.
+/// Extract the portion of a matched filename that the pattern's first wildcard matched, as tup's
+/// glob_parse does: one character for ? or [...], and for * the text up to the last occurrence of
+/// the literal that follows it. Empty when the pattern has no wildcard, or a ? or [ follows a *.
 /// Example: pattern="*_test.c", filename="foo_test.c" -> "foo"
-/// Example: pattern="*.c", filename="hello.c" -> "hello"
+/// Example: pattern="?.c", filename="a.c" -> "a"
 /// For path patterns, matches against basename only.
 [[nodiscard]]
 auto glob_match_extract(std::string_view pattern, std::string_view filename) -> StringId;

@@ -252,10 +252,32 @@ TEST_CASE("glob_match_extract", "[glob]")
         REQUIRE(sv(glob_match_extract("src/bar.c", "src/bar.c")) == "");
     }
 
-    SECTION("non-matching returns empty")
+    SECTION("a question mark or a bracket matches one character")
     {
-        REQUIRE(sv(glob_match_extract("*.c", "foo.cpp")) == "");
-        REQUIRE(sv(glob_match_extract("test_*.c", "foo.c")) == "");
+        REQUIRE(sv(glob_match_extract("?.c", "a.c")) == "a");
+        REQUIRE(sv(glob_match_extract("x?y.c", "xay.c")) == "a");
+        REQUIRE(sv(glob_match_extract("[ab].c", "b.c")) == "b");
+        REQUIRE(sv(glob_match_extract("x[a-c]?.c", "xbz.c")) == "b");
+    }
+
+    SECTION("a star before another star runs to the last occurrence of the text between them")
+    {
+        REQUIRE(sv(glob_match_extract("*_*.c", "x_y.c")) == "x");
+        REQUIRE(sv(glob_match_extract("*_*.c", "a_b_c.c")) == "a_b");
+        REQUIRE(sv(glob_match_extract("*.txt", "a.txt.txt")) == "a.txt");
+        REQUIRE(sv(glob_match_extract("**.c", "ab.c")) == "ab");
+    }
+
+    SECTION("a star at the end of the pattern matches the rest of the name")
+    {
+        REQUIRE(sv(glob_match_extract("lib*", "libfoo.a")) == "foo.a");
+    }
+
+    SECTION("a star with a question mark or a bracket later in the pattern spells as upstream spells it")
+    {
+        REQUIRE(sv(glob_match_extract("*x?.c", "abxy.c")) == "");
+        REQUIRE(sv(glob_match_extract("*-[ab].c", "q-a.c")) == "");
+        REQUIRE(sv(glob_match_extract("*?.c", "ab.c")) == "ab.c");
     }
 
     SECTION("double star treated as single")

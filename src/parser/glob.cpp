@@ -371,7 +371,6 @@ auto path_directory(std::string_view path) -> std::string_view
 
 auto glob_match_extract(std::string_view pattern, std::string_view filename) -> StringId
 {
-    // For path patterns (containing /), extract basename of both
     auto pattern_base = path_basename(pattern);
     if (pattern_base.empty()) {
         pattern_base = pattern;
@@ -382,38 +381,43 @@ auto glob_match_extract(std::string_view pattern, std::string_view filename) -> 
         filename_base = filename;
     }
 
-    // Find the * in the pattern
-    auto star_pos = pattern_base.find('*');
-    if (star_pos == std::string_view::npos) {
+    auto p = std::size_t { 0 };
+    auto m = std::size_t { 0 };
+    while (p < pattern_base.size() && m < filename_base.size() && pattern_base[p] == filename_base[m]) {
+        ++p;
+        ++m;
+    }
+    if (p == pattern_base.size()) {
         return {};
     }
 
-    // Get prefix (before *) and suffix (after *)
-    auto prefix = pattern_base.substr(0, star_pos);
-    auto suffix = pattern_base.substr(star_pos + 1);
-
-    // Handle ** by treating as single *
-    if (!suffix.empty() && suffix[0] == '*') {
-        suffix = suffix.substr(1);
+    auto& pool = global_pool();
+    if (pattern_base[p] == '?' || pattern_base[p] == '[') {
+        return pool.intern(filename_base.substr(m, 1));
     }
 
-    // Verify filename starts with prefix and ends with suffix
-    if (!filename_base.starts_with(prefix)) {
-        return {};
+    p = pattern_base.find_first_not_of('*', p);
+    if (p == std::string_view::npos) {
+        return pool.intern(filename_base.substr(m));
     }
-    if (!filename_base.ends_with(suffix)) {
+    if (pattern_base.find_first_of("?[", p + 1) != std::string_view::npos) {
         return {};
     }
 
-    // Extract the middle portion
-    auto match_start = prefix.size();
-    auto match_end = filename_base.size() - suffix.size();
-
-    if (match_start > match_end) {
-        return {};
+    auto next_wildcard = pattern_base.find_first_of("*?[", p);
+    if (next_wildcard == std::string_view::npos) {
+        next_wildcard = pattern_base.size();
+    }
+    if (next_wildcard == p) {
+        return pool.intern(filename_base.substr(m));
     }
 
-    return global_pool().intern(filename_base.substr(match_start, match_end - match_start));
+    auto const literal = pattern_base.substr(p, next_wildcard - p);
+    auto const literal_at = filename_base.rfind(literal);
+    if (literal_at == std::string_view::npos || literal_at < m) {
+        return {};
+    }
+    return pool.intern(filename_base.substr(m, literal_at - m));
 }
 
 } // namespace pup::parser

@@ -44,12 +44,14 @@ the current file's name.
 ### REQ-OPERAND-GLOB-MATCH-SPELLING
 
 - conformance: tup-conformant
-- reference: upstream records, for every input a glob pattern produced, the span of the file's name each of the pattern's wildcards matched, and spells `%g` as the first wildcard's span (`build_name_list_cb`, `glob_parse`; `tup_printf`, the `%g` branch). The span can be empty. Measured against tup: `: *.c |>` over the one file `a.c` writes `g=[a]`, and `: foreach *a.c |>` over `a.c` writes `g=[]`. putup's extraction reads only the first `*` and takes what follows it as a literal suffix, so this requirement covers that shape only: `foreach ?.c`, `foreach [ab].c` and `foreach *_*.c` write `g=[]` where tup writes the first wildcard's span, a separate defect found in the #465 review (#465)
+- reference: upstream records, for every input a glob pattern produced, the span of the file's name each of the pattern's wildcards matched, and spells `%g` as the first wildcard's span (`build_name_list_cb`, `glob_parse`; `tup_printf`, the `%g` branch). The span can be empty. Measured against tup: `: *.c |>` over the one file `a.c` writes `g=[a]`, and `: foreach *a.c |>` over `a.c` writes `g=[]`. A `?` or a bracket spans one character, so `foreach ?.c` and `foreach [ab].c` write `g=[a]` and `g=[b]`; a `*` spans up to the last occurrence of the literal text after it, up to the next wildcard, so `foreach *_*.c` over `x_y.c` writes `g=[x]`; a `*` with nothing after it before another wildcard spans the rest of the name. A `*` followed anywhere later, past the character right after it, by a `?` or a `[` spans nothing, which upstream's source marks as not supported yet. putup's extraction read only the first `*` and took what followed it as a literal suffix, so those three forms wrote `g=[]` (#465, #467)
 - discharge: test "Scenario: A percent-g names the text a single glob input's star matched"
+- discharge: test "Scenario: A percent-g names the first wildcard's match whatever its kind"
+- discharge: test "glob_match_extract"
 - discharge: test "Evaluator pattern expansion - glob match"
 
 While expanding `%g` in a rule whose one input a glob produced, putup shall expand it to the
-text that glob's `*` matched in the input's name, even when that text is empty.
+text that glob's first wildcard matched in the input's name, even when that text is empty.
 
 ### REQ-OPERAND-GLOB-MATCH-OWN-GLOB
 

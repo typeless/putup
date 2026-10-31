@@ -15941,6 +15941,36 @@ SCENARIO("A percent-g names the text a single glob input's star matched", "[e2e]
     }
 }
 
+SCENARIO("A percent-g names the first wildcard's match whatever its kind", "[e2e][build]")
+{
+    GIVEN("files matched by a question mark, a bracket and two stars")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("b.c", "");
+        f.write_file("x_y.c", "");
+        f.write_file("Tupfile", ": foreach ?.c |> echo 'g=[%g]' > %o |> %B.q\n: foreach [ab].c |> echo 'g=[%g]' > %o |> %B.br\n: foreach *_*.c |> echo 'g=[%g]' > %o |> %B.st\n");
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("%g is the text the first wildcard matched")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("a.q") == "g=[a]\n");
+                REQUIRE(f.read_file("b.q") == "g=[b]\n");
+                REQUIRE(f.read_file("a.br") == "g=[a]\n");
+                REQUIRE(f.read_file("b.br") == "g=[b]\n");
+                REQUIRE(f.read_file("x_y.st") == "g=[x]\n");
+            }
+        }
+    }
+}
+
 SCENARIO("A percent-g names the match of the glob that produced its input", "[e2e][build]")
 {
     GIVEN("a foreach rule over two globs, and one over a variable carrying the same two")
