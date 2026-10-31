@@ -66,6 +66,16 @@ or a group under a path that the graph holds as a file or a group, or, in an in-
 under a path that is a file in the source tree the previous build did not generate, then putup shall
 reject the Tupfile and name that path and what it is.
 
+### REQ-OUTPUT-VARIANT-INPUT-READS-SOURCE
+
+- conformance: tup-conformant
+- reference: upstream puts an output and the directories above it in the variant tree, so in a variant build an input naming a source file reads that file even when a rule outputs under its path; putup looked the input up in the build tree first and bound it to the directory the output created, or to the source file when the reading rule came first, and mapped a change to the source file onto that directory, so the reading rule did not rerun (#500)
+- discharge: test "Scenario: A rule cannot put an output or a group under a path that is not a directory"
+
+While building a variant, when a rule outputs under a path that is a file in the source tree, putup
+shall bind an input naming that path to the source file whatever the order of the rules, and shall
+rerun the rules that read it when the file changes.
+
 ### REQ-OUTPUT-UNDER-STALE-OUTPUT
 
 - conformance: deliberate-deviation

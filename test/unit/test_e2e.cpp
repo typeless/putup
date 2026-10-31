@@ -16595,6 +16595,41 @@ SCENARIO("A rule cannot put an output or a group under a path that is not a dire
             }
         }
 
+        WHEN("a variant build reads the source file after a rule outputs under its path")
+        {
+            f.mkdir("build");
+            f.write_file("build/tup.config", "");
+            f.write_file("Tupfile", ": |> echo hi > %o |> sub/x.o\n: sub |> cat %f > %o |> a.txt\n");
+            auto result = f.build({ "-B", "build" });
+
+            THEN("the input reads the source file, not the variant directory the output created")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("build/a.txt") == f.read_file("sub"));
+            }
+        }
+
+        WHEN("the source file changes after a variant build that output under its path")
+        {
+            f.mkdir("build");
+            f.write_file("build/tup.config", "");
+            f.write_file("Tupfile", ": |> echo hi > %o |> sub/x.o\n: sub |> cat %f > %o |> a.txt\n");
+            auto first = f.build({ "-B", "build" });
+            f.write_file("sub", "changed source\n");
+            auto result = f.build({ "-B", "build" });
+
+            THEN("the rule reading the source file runs again")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(first.success());
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("build/a.txt") == "changed source\n");
+            }
+        }
+
         WHEN("a rule puts a group under the source file and no other rule names the file")
         {
             f.write_file("Tupfile", ": |> echo a > %o |> a.txt sub/<g>\n");

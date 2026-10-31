@@ -359,7 +359,8 @@ auto resolve_input_node(
     auto& pool = global_pool();
 
     if (auto build_path = ctx.state->graph.paths.find_path(normalized_path, pool, PathId::BuildRoot)) {
-        if (auto const* hit = ctx.state->graph.path_to_node.find(to_underlying(*build_path))) {
+        if (auto const* hit = ctx.state->graph.path_to_node.find(to_underlying(*build_path));
+            hit && (had_build_prefix || get_file_node(ctx.state->graph, NodeId { *hit })->type != NodeType::Directory)) {
             return NodeId { *hit };
         }
     }

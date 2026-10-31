@@ -569,7 +569,8 @@ auto resolve_file_path(
     }
 
     if (auto pid = graph.paths.find_path(build_lookup, pool, PathId::BuildRoot)) {
-        if (auto const* hit = graph.path_to_node.find(to_underlying(*pid))) {
+        if (auto const* hit = graph.path_to_node.find(to_underlying(*pid));
+            hit && (build_lookup != path || get_file_node(graph, NodeId { *hit })->type != NodeType::Directory)) {
             return NodeId { *hit };
         }
     }
