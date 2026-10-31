@@ -32,6 +32,17 @@ If a rule spells `%b` or `%B`, then putup shall expand it to every input operand
 spelled as its basename or its basename without its extension respectively and joined by single
 spaces.
 
+### REQ-OPERAND-DIRECTORY-SPELLING
+
+- conformance: tup-conformant
+- reference: upstream spells `%d` as the last path element of the parsed directory, and at the top of the hierarchy as the last path element of the directory holding `.tup` (tup `parser.c`, `tup_printf`, the `%d` branch: `tf->tent->tnode.tupid == DOT_DT` takes the text after the last separator of `get_tup_top()`). putup's project root is its source root, which `Layout` holds canonical, so the root spells the source tree's own directory name. putup spelled nothing at the root (#445); before #430 it spelled `.` at parse time and nothing when the command ran. putup now writes `%d` into the command as text while reading the Tupfile, so the scheduler and the index never spell it; a command recorded before this change and carried forward for a directory not parsed again still shows `%d` empty at the root in `show` output and in a removed-command label until that directory is parsed
+- discharge: test "Scenario: Percent-d expands to Tupfile directory name"
+- discharge: test "Scenario: A percent-d at the project root names the project directory"
+- discharge: test "Scenario: A dep scan sees the same directory flag its compile sees"
+
+When a rule spells `%d`, putup shall expand it to the last path element of the rule's Tupfile
+directory, and at the project root to the last path element of the project's source directory.
+
 ### REQ-OPERAND-EXTENSION-SPELLING
 
 - conformance: tup-conformant
@@ -281,7 +292,7 @@ position it was written.
 ### REQ-OPERAND-RECORDED-COMMAND-FOLDS-THROUGH-THE-FUNNEL
 
 - conformance: putup-only
-- reference: upstream has no requirement of this shape because it has nothing to reconcile — `tup_printf` expands a command once and stores the finished string, so there is one expander and no second reader to disagree with it. putup defers expansion so a template can be shared, which buys that sharing at the price of one expander per place a command is reconstructed: the parser's, the scheduler's, and a third inside the index that re-read the recorded template with a scanner of its own. That third one had already drifted — it spelled `%O` as the output's basename with its extension kept, the reading `output-paths` rejects, because the change that gave `%O` upstream's meaning could not see a copy the compiler never pointed at. Folding every site through one total switch over the atom kinds makes the next such change a compile error rather than a silent third answer
+- reference: upstream has no requirement of this shape because it has nothing to reconcile — `tup_printf` expands a command once and stores the finished string, so there is one expander and no second reader to disagree with it. putup defers expansion so a template can be shared (all but `%g` and `%d`, which name one file's match and one directory and are spelled while the Tupfile is read), which buys that sharing at the price of one expander per place a command is reconstructed: the parser's, the scheduler's, and a third inside the index that re-read the recorded template with a scanner of its own. That third one had already drifted — it spelled `%O` as the output's basename with its extension kept, the reading `output-paths` rejects, because the change that gave `%O` upstream's meaning could not see a copy the compiler never pointed at. Folding every site through one total switch over the atom kinds makes the next such change a compile error rather than a silent third answer
 - discharge: test "Scenario: A recorded command and a graph command expand a template the same way"
 
 When putup reconstructs a command from its recorded template, putup shall produce the command

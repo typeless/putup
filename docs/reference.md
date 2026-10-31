@@ -1012,7 +1012,7 @@ Pattern flags are placeholders expanded at build time.
 | `%b` | Basename of every input, with extension; the rule must have at least one | `src/foo.c bar.c` → `foo.c bar.c` |
 | `%B` | Basename of every input, without extension; the rule must have at least one | `src/foo.c bar.c` → `foo bar` |
 | `%e` | Extension of the current file — foreach rules only, and only for files that have one | `foo.c` → `c` |
-| `%d` | Directory name | `src/foo.c` → `src` |
+| `%d` | Name of the Tupfile's directory; at the project root, the project directory's own name | `src/Tupfile` → `src` |
 | `%g` | Text the glob matched — rules with exactly one input, and only when a glob produced it | `*_test.c` + `foo_test.c` → `foo` |
 
 **Numbered Inputs/Outputs:**
@@ -2858,7 +2858,7 @@ CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections
 | `%b` | Basename with ext, every input (rule must have one) | `src/foo.c bar.c` | `foo.c bar.c` |
 | `%B` | Basename no ext, every input (rule must have one) | `src/foo.c bar.c` | `foo bar` |
 | `%e` | Extension (foreach, file must have one) | `foo.c` | `c` |
-| `%d` | Directory | `src/foo.c` | `src` |
+| `%d` | Tupfile's directory name (project's at root) | `src/Tupfile` | `src` |
 | `%g` | Glob match (one glob-produced input) | `*_test.c` + `foo_test.c` | `foo` |
 
 **Output Flags:**

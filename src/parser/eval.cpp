@@ -636,7 +636,7 @@ auto expand_pattern_atoms(
             builder.flag(AtomKind::OutputNoExt);
             break;
         case 'd':
-            builder.flag(AtomKind::InputDir);
+            builder.literal(flags.input_dir);
             break;
         case 'g':
             if (flags.all_inputs.empty()) {

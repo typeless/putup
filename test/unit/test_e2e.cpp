@@ -11526,11 +11526,36 @@ SCENARIO("A dep scan sees the same directory flag its compile sees", "[e2e][perc
         {
             auto const compdb = f.pup({ "show", "compdb", "-B", "build" });
 
-            THEN("both spell the flag the same way")
+            THEN("both spell the flag as the project directory's name")
             {
                 REQUIRE(compdb.success());
                 INFO("compdb: " << compdb.stdout_output);
-                REQUIRE(compdb.stdout_output.find("\"-DD=.\"") == std::string::npos);
+                auto const flag = "\"-DD=" + f.workdir().filename().string() + "\"";
+                REQUIRE(compdb.stdout_output.find(flag) != std::string::npos);
+                REQUIRE(compdb.stdout_output.find("\"-DD=\"") == std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("A percent-d at the project root names the project directory", "[e2e][percent]")
+{
+    GIVEN("a root rule writing %d")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": |> echo d=[%d] > %o |> d.txt\n");
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("%d is the project directory's own name")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("d.txt") == "d=[" + f.workdir().filename().string() + "]\n");
             }
         }
     }

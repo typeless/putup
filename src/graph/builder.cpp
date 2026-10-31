@@ -1957,8 +1957,7 @@ auto expand_rule(
     auto tc = make_transform_context(ctx);
     auto cmd_inputs = spell_operands(ctx, tc, operands);
     auto const primary_input_sv = cmd_inputs.empty() ? std::string_view {} : cmd_inputs[0];
-    auto current_dir_name
-        = is_empty(ctx.current_dir) ? std::string_view {} : pup::path::filename(str(ctx.current_dir));
+    auto current_dir_name = pup::path::filename(str(is_empty(ctx.current_dir) ? ctx.options.source_root : ctx.current_dir));
 
     auto flags = parser::PatternFlags {
         .input_ext = rule.foreach_ && !pup::path::extension(primary_input_sv).empty()
