@@ -14461,6 +14461,43 @@ SCENARIO("A percent-o in the outputs section is refused", "[e2e][build]")
     }
 }
 
+SCENARIO("A numbered output flag where no output list exists expands to nothing", "[e2e][build]")
+{
+    GIVEN("a project with one source file")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.txt", "");
+
+        WHEN("a primary output spells %1o")
+        {
+            f.write_file("Tupfile", ": |> echo hi > .txt |> %1o.txt\n");
+            auto result = f.build();
+
+            THEN("the flag names nothing, as tup spells it")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file(".txt") == "hi\n");
+            }
+        }
+
+        WHEN("an order-only path spells %1o")
+        {
+            f.write_file("Tupfile", ": |> echo dep > %o |> dep.txt\n: a.txt | dep%1o.txt |> cat dep.txt > %o |> out.txt\n");
+            auto result = f.build();
+
+            THEN("the flag names nothing, as tup spells it")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("out.txt") == "dep\n");
+            }
+        }
+    }
+}
+
 SCENARIO("A group directory prefix after an extra outputs section names the group", "[e2e][build][groups]")
 {
     GIVEN("a rule whose extra outputs section ends in a path prefix for an order-only group")
@@ -16764,7 +16801,6 @@ SCENARIO("An order-only input list expands the rule's input %-flags", "[e2e][par
         {
             auto const [flag, message] = GENERATE(table<char const*, char const*>({
                 { "%o", "%o can only be used in a command string or extra outputs section" },
-                { "%1o", "%o can only be used in a command string or extra outputs section" },
                 { "%O", "%O can only be used in the extra outputs section" },
                 { "%i", "%i is only valid in a command string" },
                 { "%e", "%e is only valid with a foreach rule" },

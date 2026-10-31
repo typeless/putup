@@ -520,10 +520,8 @@ auto expand_pattern_atoms(
 
             if (letter == 'f' || letter == 'b' || letter == 'B' || letter == 'o' || letter == 'i') {
                 if (letter == 'o' && !section_names_outputs(flags.section)) {
-                    return make_error<Instruction>(
-                        ErrorCode::ParseError,
-                        "%o can only be used in a command string or extra outputs section"
-                    );
+                    pos = end + 1;
+                    continue;
                 }
                 if (letter == 'i' && flags.section != PatternSection::Command) {
                     auto msg = Buf {};
