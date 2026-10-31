@@ -16635,6 +16635,94 @@ SCENARIO("A rule splicing a group it does not take as an input is refused", "[e2
     }
 }
 
+SCENARIO("A glob into a directory nothing provides is refused", "[e2e][parse][glob]")
+{
+    GIVEN("a project with one source file and no nodir directory")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+
+        WHEN("a rule globs inside a directory that does not exist")
+        {
+            f.write_file("Tupfile", ": nodir/*.c |> echo f=[%f] > %o |> out.txt\n");
+            auto result = f.build();
+
+            THEN("the Tupfile is refused and names the glob")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("Failed to find directory ID for dir 'nodir/*.c'") != std::string::npos);
+                REQUIRE_FALSE(f.exists("out.txt"));
+            }
+        }
+
+        WHEN("a rule globs inside a directory that exists but matches nothing")
+        {
+            f.mkdir("empty");
+            f.write_file("Tupfile", ": empty/*.c |> echo f=[%f] > %o |> out.txt\n");
+            auto result = f.build();
+
+            THEN("the build succeeds and the rule produces no command")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(f.exists("out.txt"));
+            }
+        }
+
+        WHEN("a rule globs inside a directory only an earlier rule's output provides")
+        {
+            f.write_file("Tupfile", ": |> mkdir -p gen && echo x > %o |> gen/b.c\n: gen/*.c |> cat %f > %o |> out.txt\n");
+            auto result = f.build();
+
+            THEN("the glob matches the generated file")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("out.txt") == "x\n");
+            }
+        }
+
+        WHEN("a rule globs inside a directory only a later-parsed directory's output provides")
+        {
+            f.write_file("Tupfile", "");
+            f.mkdir("m");
+            f.mkdir("n");
+            f.write_file("m/Tupfile", ": ../b/*.q |> cat %f > %o |> out.txt\n");
+            f.write_file("n/Tupfile", ": |> mkdir -p ../b && echo x > %o |> ../b/gen.q\n");
+            auto result = f.build();
+
+            THEN("the glob matches the generated file")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("m/out.txt") == "x\n");
+            }
+        }
+
+        WHEN("a build scoped to the globbing directory leaves the providing directory unparsed")
+        {
+            f.write_file("Tupfile", "");
+            f.mkdir("m");
+            f.mkdir("n");
+            f.write_file("m/Tupfile", ": ../b/*.q |> cat %f > %o |> out.txt\n");
+            f.write_file("n/Tupfile", ": |> mkdir -p ../b && echo x > %o |> ../b/gen.q\n");
+            auto result = f.build({ "m" });
+
+            THEN("the glob is not refused")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+            }
+        }
+    }
+}
+
 SCENARIO("A rule naming a bin no earlier rule declares is refused", "[e2e][parse][bin]")
 {
     GIVEN("a project with one source file")

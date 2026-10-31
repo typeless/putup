@@ -746,6 +746,11 @@ auto expand_glob_pattern(
     auto abs_pattern_dir_sv = pool.get(pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), pattern_dir))));
     request_demand_driven_parse(*ctx.eval, abs_pattern_dir_sv);
 
+    auto const pattern_dir_inside_tree = !pattern_dir.empty() && abs_pattern_dir_sv != "." && abs_pattern_dir_sv != ".." && !abs_pattern_dir_sv.starts_with("../");
+    if (ctx.builder && pattern_dir_inside_tree && !pup::platform::is_directory(pool.get(pup::path::join(base_sv, pattern_dir)))) {
+        ctx.builder->globs_into_absent_dirs.push_back(GlobIntoAbsentDir { ctx.current_dir, pool.intern(path), pool.intern(abs_pattern_dir_sv) });
+    }
+
     auto pattern_path_sv = is_empty(ctx.current_dir) ? path : pool.get(pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), path))));
     auto pattern_id = pool.intern(pattern_path_sv);
     auto glob = parser::Glob { pattern_path_sv };
@@ -2804,6 +2809,33 @@ auto check_glob_stability(
             );
             return make_error<void>(ErrorCode::ParseError, err.view());
         }
+    }
+    return {};
+}
+
+auto check_glob_dirs_provided(
+    BuildGraph& build_state,
+    Builder const& state
+) -> Result<void>
+{
+    auto& pool = global_pool();
+    auto generated = collect_generated_paths(build_state);
+
+    for (auto const& absent : state.globs_into_absent_dirs) {
+        auto prefix = Buf {};
+        prefix += pool.get(absent.pattern_dir);
+        prefix += '/';
+        auto provided = std::ranges::any_of(generated, [&](StringId path) { return pool.get(path).starts_with(prefix.view()); });
+        if (provided) {
+            continue;
+        }
+        auto err = Buf {};
+        err.fmt(
+            "Failed to find directory ID for dir '{}' relative to '{}'",
+            pool.get(absent.written),
+            is_empty(absent.dir) ? "." : pool.get(absent.dir)
+        );
+        return make_error<void>(ErrorCode::ParseError, err.view());
     }
     return {};
 }
