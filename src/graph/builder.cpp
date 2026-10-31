@@ -1113,7 +1113,7 @@ auto expand_inputs(
 
         auto words = Vec<StringId> {};
         for (auto path_id : *paths) {
-            if (!percent_flags) {
+            if (!percent_flags || pool.get(path_id).find('%') == std::string_view::npos) {
                 words.push_back(path_id);
                 continue;
             }
