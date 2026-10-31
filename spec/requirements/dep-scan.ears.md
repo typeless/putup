@@ -114,6 +114,16 @@ invocation at that operator, as the shell does.
 When an unquoted redirection is written against a word, putup shall read that word apart from
 the redirection, as the shell does.
 
+### REQ-SCAN-QUOTED-OPERATOR
+
+- conformance: putup-only
+- discharge: test "A quoted operator is a word and not a separator"
+- discharge: test "tokenize_shell_command tells an operator from a word spelled the same"
+- discharge: test "Scenario: A quoted word and a bare operator tokenize back to themselves"
+
+If a control operator or a redirection is quoted or escaped, then putup shall read it as part of
+a word of the invocation, as the shell does.
+
 ### REQ-SCAN-CARRIES-COMPILE-WORDS
 
 - conformance: putup-only
