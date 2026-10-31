@@ -141,8 +141,9 @@ putup shall generate no command for it.
 ### REQ-GLOB-EMPTY-BANG-VARIANT
 
 - conformance: tup-conformant
-- reference: upstream, when a rule's inputs evaluate to an empty list and its command is a bang macro, looks up the macro named by the command with `.EMPTY` appended and, when one is defined, runs the rule through that macro over the empty list (`execute_rule`, the t2066 branch, and `parse_empty_bang_rule`, parser.c:1870); the variant replaces the command, supplies outputs when the rule wrote none, and adds its extra outputs and order-only inputs, as any bang macro does (`parse_bang_rule_internal`). A foreach rule never reaches that branch, and `%f` inside the variant is refused as over any empty input list (REQ-OPERAND-INPUT-FLAGS-NO-INPUTS). Upstream's t2066 reaches the branch through a bin no rule filled; the test also covers a glob that matched nothing (#468)
+- reference: upstream, when a rule's inputs evaluate to an empty list and its command is a bang macro, looks up the macro named by the command with `.EMPTY` appended and, when one is defined, runs the rule through that macro over the empty list (`execute_rule`, the t2066 branch, and `parse_empty_bang_rule`, parser.c:1870); the variant replaces the command, supplies outputs when the rule wrote none, and adds its extra outputs and order-only inputs, as any bang macro does (`parse_bang_rule_internal`). A foreach rule, whether the rule or its macro says foreach (REQ-OPERAND-FOREACH-FROM-MACRO), never reaches that branch, and `%f` inside the variant is refused as over any empty input list (REQ-OPERAND-INPUT-FLAGS-NO-INPUTS). Upstream's t2066 reaches the branch through a bin no rule filled; the test also covers a glob that matched nothing (#468)
 - discharge: test "Scenario: A bang rule whose inputs come out empty runs the macro's .EMPTY variant"
+- discharge: test "Scenario: A bang macro declared foreach makes the rule that invokes it foreach"
 
 If a rule is not foreach, its input section is written non-empty, no input operand names a file
 or a group after expansion, and its command names a bang macro `!name` for which `!name.EMPTY` is

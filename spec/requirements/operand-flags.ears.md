@@ -217,6 +217,15 @@ If a rule spells `%i` in its command or display string and it wrote no order-onl
 If a rule spells `%e` in its command, display or outputs and it is not a foreach rule, or its
 current file's name has no extension, then putup shall reject the Tupfile.
 
+### REQ-OPERAND-FOREACH-FROM-MACRO
+
+- conformance: tup-conformant
+- reference: upstream makes a rule foreach when either the rule or the bang macro its command names says so, and neither can cancel the other (`execute_rule`, parser.c:2145-2151, `foreach = br->foreach` then `if(r->foreach)`); a macro says so with `foreach` first after its `=`, before any `|`, and a `foreach` after the `|` is an order-only input path like any other word there (`parse_bang_definition`, the `strncmp(input, "foreach", 7)` test). A foreach macro over inputs that came out empty takes the foreach branch, which generates nothing, so it never reaches an `.EMPTY` variant (REQ-GLOB-EMPTY-BANG-VARIANT). It sits in this area because `%e`'s binding is where foreach-ness is observable and no area covers rule semantics; the macro alias form `!a = !b`, which upstream lets carry the foreach, does not parse in putup (#464)
+- discharge: test "Scenario: A bang macro declared foreach makes the rule that invokes it foreach"
+
+Where a rule's command names a bang macro defined with `foreach` before its order-only inputs,
+putup shall treat the rule as a foreach rule.
+
 ### REQ-OPERAND-INPUT-FLAGS-NO-INPUTS
 
 - conformance: tup-conformant

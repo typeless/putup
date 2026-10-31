@@ -999,6 +999,12 @@ Bang macros define reusable rule templates.
 # Outputs automatically go to {objs} group
 ```
 
+**Foreach macro:** `foreach` right after the `=`, before any `|` order-only inputs, makes every rule that invokes the macro a foreach rule. Either the macro or the rule can say `foreach`; neither cancels the other.
+```tup
+!cc = foreach |> $(CC) -c %f -o %o |> %B.o
+: *.c |> !cc |>
+```
+
 **Empty-input variant:** a rule whose inputs come out empty — a glob that matched nothing, a bin no rule filled — generates no command. When it invokes `!name` and `!name.EMPTY` is defined, it runs `!name.EMPTY` over the empty list instead. Foreach rules never run the variant.
 ```tup
 !ld = |> $(CC) -Wl,-r %f -o %o |>

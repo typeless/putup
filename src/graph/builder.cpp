@@ -950,6 +950,16 @@ auto find_bang_macro(
     return it == ctx.macros.end() || it->first != key ? nullptr : &it->second;
 }
 
+/// Whether a rule runs once per input: the rule or the macro it invokes may say foreach, and
+/// neither can cancel the other's.
+auto is_foreach_rule(
+    parser::Rule const& rule,
+    BangMacroDef const* macro
+) -> bool
+{
+    return rule.foreach_ || (macro && macro->foreach_);
+}
+
 /// Lookup a bang macro from the expanded command text.
 /// Returns pointer to the macro definition, or nullptr if command doesn't reference a macro.
 auto lookup_bang_macro(
@@ -1996,7 +2006,7 @@ auto expand_rule(
     auto current_dir_name = pup::path::filename(str(is_empty(ctx.current_dir) ? ctx.options.source_root : ctx.current_dir));
 
     auto flags = parser::PatternFlags {
-        .input_ext = rule.foreach_ && !pup::path::extension(primary_input_sv).empty()
+        .input_ext = is_foreach_rule(rule, macro_ptr) && !pup::path::extension(primary_input_sv).empty()
             ? std::optional { parser::path_extension(primary_input_sv) }
             : std::nullopt,
         .input_dir = current_dir_name,
@@ -2443,7 +2453,8 @@ auto process_rule(
     if (!macro_result) {
         return pup::unexpected<Error>(macro_result.error());
     }
-    if (auto const* macro = *macro_result; rule.output_group || (macro && macro->output_group)) {
+    auto const* macro = *macro_result;
+    if (rule.output_group || (macro && macro->output_group)) {
         ctx.groups.get_or_create(to_underlying(rule.output_group ? *rule.output_group : *macro->output_group));
     }
 
@@ -2457,8 +2468,8 @@ auto process_rule(
     auto const only_patterns = std::ranges::all_of(inputs->operands, [](RuleInput const& inp) {
         return inp.kind == RuleInput::Kind::Pattern;
     });
-    if (!rule.foreach_ && !rule.inputs.empty() && only_patterns) {
-        auto const* macro = *macro_result;
+    auto const foreach = is_foreach_rule(rule, macro);
+    if (!foreach && !rule.inputs.empty() && only_patterns) {
         if (!macro) {
             return {};
         }
@@ -2472,7 +2483,7 @@ auto process_rule(
         return expand_rule(ctx, state, rule, inputs->operands, inputs->token_count, empty_variant);
     }
 
-    if (rule.foreach_) {
+    if (foreach) {
         auto patterns = Vec<RuleInput> {};
         auto files = Vec<RuleInput> {};
         for (auto const& inp : inputs->operands) {
@@ -2486,13 +2497,13 @@ auto process_rule(
         for (auto const& file : files) {
             auto iter_inputs = patterns;
             iter_inputs.push_back(file);
-            auto result = expand_rule(ctx, state, rule, iter_inputs, inputs->token_count, *macro_result);
+            auto result = expand_rule(ctx, state, rule, iter_inputs, inputs->token_count, macro);
             if (!result) {
                 return pup::unexpected<Error>(result.error());
             }
         }
     } else {
-        auto result = expand_rule(ctx, state, rule, inputs->operands, inputs->token_count, *macro_result);
+        auto result = expand_rule(ctx, state, rule, inputs->operands, inputs->token_count, macro);
         if (!result) {
             return pup::unexpected<Error>(result.error());
         }

@@ -15222,6 +15222,61 @@ SCENARIO("A bang rule whose inputs come out empty runs the macro's .EMPTY varian
     }
 }
 
+SCENARIO("A bang macro declared foreach makes the rule that invokes it foreach", "[e2e][build][bang][foreach]")
+{
+    GIVEN("a directory holding a.c and b.c")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("b.c", "");
+
+        WHEN("a rule over both files invokes a foreach macro")
+        {
+            f.write_file("Tupfile", "!m = foreach |> echo 'e=[%e]' > %o |>\n: a.c b.c |> !m |> %B.out\n");
+            auto result = f.build();
+
+            THEN("one command runs per file, each with its extension bound")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("a.out") == "e=[c]\n");
+                REQUIRE(f.read_file("b.out") == "e=[c]\n");
+            }
+        }
+
+        WHEN("a rule over a glob that matches nothing invokes a foreach macro with an .EMPTY variant")
+        {
+            f.write_file("Tupfile", "!m = foreach |> echo ran-m > %o |>\n!m.EMPTY = |> echo ran-empty > %o |>\n: *.none |> !m |> out.txt\n");
+            auto result = f.build();
+
+            THEN("no command runs")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(f.exists("out.txt"));
+            }
+        }
+
+        WHEN("a macro writes foreach after its order-only bar")
+        {
+            f.write_file("foreach", "");
+            f.write_file("Tupfile", "!m = | foreach |> echo 'e=[%e]' > %o |>\n: a.c |> !m |> out.txt\n");
+            auto result = f.build();
+
+            THEN("foreach names an order-only input, so the rule is not foreach and %e is refused")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("%e is only valid with a foreach rule") != std::string::npos);
+                REQUIRE_FALSE(f.exists("out.txt"));
+            }
+        }
+    }
+}
+
 SCENARIO("A percent-f, percent-b or percent-B in a rule with no inputs is refused", "[e2e][build]")
 {
     GIVEN("a rule with no inputs whose command spells %f")

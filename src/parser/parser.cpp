@@ -489,13 +489,15 @@ auto parse_bang_macro(ParserState& s) -> Result<BangMacro>
         return pup::unexpected<Error>(eq.error());
     }
 
+    if (match(s, TokenType::KwForeach)) {
+        macro.foreach_ = true;
+    }
+
+    s.lexer.set_context(Lexer::Context::Inputs);
+
     // Optional order-only inputs before |>
     if (match(s, TokenType::Pipe)) {
         while (!check(s, TokenType::PipeArrow) && !check(s, TokenType::Newline) && !check(s, TokenType::Eof)) {
-            if (match(s, TokenType::KwForeach)) {
-                macro.foreach_ = true;
-                continue;
-            }
             auto pattern = parse_path_pattern(s);
             if (!pattern) {
                 return pup::unexpected<Error>(pattern.error());
