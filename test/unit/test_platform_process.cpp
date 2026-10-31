@@ -174,7 +174,7 @@ SCENARIO("run_process captures stderr separately", "[platform][process]")
     }
 }
 
-SCENARIO("The host shell ends a command at a newline in the command text", "[platform][process]")
+SCENARIO("The host shell runs no word after a newline as an argument of the command before it", "[platform][process]")
 {
     auto stdout_lines = [](std::string_view command) {
         auto opts = make_opts(command);
@@ -189,9 +189,26 @@ SCENARIO("The host shell ends a command at a newline in the command text", "[pla
         return text;
     };
 
+#ifdef _WIN32
     GIVEN("two echo commands joined by a newline")
     {
-        THEN("each runs on its own and neither takes the other as arguments")
+        THEN("cmd.exe runs the first and drops the rest of the line")
+        {
+            CHECK(stdout_lines("echo first\necho second") == "first\n");
+        }
+    }
+
+    GIVEN("a command behind a leading newline")
+    {
+        THEN("cmd.exe runs nothing")
+        {
+            CHECK(stdout_lines("\necho first").empty());
+        }
+    }
+#else
+    GIVEN("two echo commands joined by a newline")
+    {
+        THEN("sh runs each on its own")
         {
             CHECK(stdout_lines("echo first\necho second") == "first\nsecond\n");
         }
@@ -199,11 +216,12 @@ SCENARIO("The host shell ends a command at a newline in the command text", "[pla
 
     GIVEN("a command behind a leading newline")
     {
-        THEN("the command still runs")
+        THEN("sh still runs the command")
         {
             CHECK(stdout_lines("\necho first") == "first\n");
         }
     }
+#endif
 }
 
 SCENARIO("run_process passes environment variables", "[platform][process]")
