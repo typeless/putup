@@ -999,6 +999,14 @@ Bang macros define reusable rule templates.
 # Outputs automatically go to {objs} group
 ```
 
+**Empty-input variant:** a rule whose inputs come out empty — a glob that matched nothing, a bin no rule filled — generates no command. When it invokes `!name` and `!name.EMPTY` is defined, it runs `!name.EMPTY` over the empty list instead. Foreach rules never run the variant.
+```tup
+!ld = |> $(CC) -Wl,-r %f -o %o |>
+!ld.EMPTY = |> ar crs %o |>
+: {objs} |> !ld |> built-in.o
+# With {objs} empty, runs: ar crs built-in.o
+```
+
 ### 5.4 Pattern Flags
 
 Pattern flags are placeholders expanded at build time.

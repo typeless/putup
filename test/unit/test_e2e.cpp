@@ -15156,6 +15156,72 @@ SCENARIO("A rule whose glob matches nothing produces no command", "[e2e][build][
     }
 }
 
+SCENARIO("A bang rule whose inputs come out empty runs the macro's .EMPTY variant", "[e2e][build][glob][bang]")
+{
+    GIVEN("a macro with an .EMPTY variant and a directory holding only a.c")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        auto const macros = std::string { "!m = |> echo ran-m > %o |>\n!m.EMPTY = |> echo ran-empty > %o |>\n" };
+
+        WHEN("a bang rule globs over a pattern that matches nothing")
+        {
+            f.write_file("Tupfile", macros + ": *.none |> !m |> out.txt\n");
+            auto result = f.build();
+
+            THEN("the .EMPTY variant runs")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("out.txt") == "ran-empty\n");
+            }
+        }
+
+        WHEN("a bang rule takes a bin no rule put anything in")
+        {
+            f.write_file("Tupfile", macros + ": foreach *.none |> cp %f %o |> %B.o {objs}\n: {objs} |> !m |> out.txt\n");
+            auto result = f.build();
+
+            THEN("the .EMPTY variant runs")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("out.txt") == "ran-empty\n");
+            }
+        }
+
+        WHEN("a bang rule globs over a pattern that matches a file")
+        {
+            f.write_file("Tupfile", macros + ": *.c |> !m |> out.txt\n");
+            auto result = f.build();
+
+            THEN("the macro itself runs")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("out.txt") == "ran-m\n");
+            }
+        }
+
+        WHEN("a foreach bang rule globs over a pattern that matches nothing")
+        {
+            f.write_file("Tupfile", macros + ": foreach *.none |> !m |> out.txt\n");
+            auto result = f.build();
+
+            THEN("no command runs")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(f.exists("out.txt"));
+            }
+        }
+    }
+}
+
 SCENARIO("A percent-f, percent-b or percent-B in a rule with no inputs is refused", "[e2e][build]")
 {
     GIVEN("a rule with no inputs whose command spells %f")

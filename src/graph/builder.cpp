@@ -939,6 +939,17 @@ auto expand_command(
     return text;
 }
 
+/// The macro defined under `name`, spelled without its '!', or nullptr when none is.
+auto find_bang_macro(
+    BuilderContext const& ctx,
+    std::string_view name
+) -> BangMacroDef const*
+{
+    auto key = to_underlying(intern(name));
+    auto it = std::lower_bound(ctx.macros.begin(), ctx.macros.end(), key, [](auto const& p, auto k) { return p.first < k; });
+    return it == ctx.macros.end() || it->first != key ? nullptr : &it->second;
+}
+
 /// Lookup a bang macro from the expanded command text.
 /// Returns pointer to the macro definition, or nullptr if command doesn't reference a macro.
 auto lookup_bang_macro(
@@ -969,15 +980,14 @@ auto lookup_bang_macro(
         ? cmd_sv.substr(1)
         : cmd_sv.substr(1, name_end - 1);
 
-    auto key = to_underlying(intern(macro_name));
-    auto it = std::lower_bound(ctx.macros.begin(), ctx.macros.end(), key, [](auto const& p, auto k) { return p.first < k; });
-    if (it == ctx.macros.end() || it->first != key) {
+    auto const* macro = find_bang_macro(ctx, macro_name);
+    if (!macro) {
         auto err = Buf {};
         err.fmt("Unknown bang macro: !{}", macro_name);
         return make_error<BangMacroDef const*>(ErrorCode::UnknownMacro, err.view());
     }
 
-    return &it->second;
+    return macro;
 }
 
 /// Expands one output section. `primary` is the text the rule's primary outputs were declared as
@@ -1954,7 +1964,8 @@ auto expand_rule(
     Builder& state,
     parser::Rule const& rule,
     Vec<RuleInput> const& inputs,
-    std::uint32_t token_count
+    std::uint32_t token_count,
+    BangMacroDef const* macro_ptr
 ) -> Result<void>
 {
     ctx.used_config_vars.clear();
@@ -2012,12 +2023,6 @@ auto expand_rule(
     flags.order_only_inputs = TokenList<std::string_view>::grouped(
         spell_operands(ctx, tc, order_only_operands), order_only_tokens, rule_order_only->token_count
     );
-
-    auto macro_result = lookup_bang_macro(ctx, rule.command);
-    if (!macro_result) {
-        return pup::unexpected<Error>(macro_result.error());
-    }
-    auto macro_ptr = *macro_result;
 
     auto const& eff_command = macro_ptr ? macro_ptr->command : rule.command;
     auto const* eff_display = macro_ptr && macro_ptr->display ? &*macro_ptr->display
@@ -2453,7 +2458,18 @@ auto process_rule(
         return inp.kind == RuleInput::Kind::Pattern;
     });
     if (!rule.foreach_ && !rule.inputs.empty() && only_patterns) {
-        return {};
+        auto const* macro = *macro_result;
+        if (!macro) {
+            return {};
+        }
+        auto empty_name = Buf {};
+        empty_name += str(macro->name);
+        empty_name += ".EMPTY";
+        auto const* empty_variant = find_bang_macro(ctx, empty_name.view());
+        if (!empty_variant) {
+            return {};
+        }
+        return expand_rule(ctx, state, rule, inputs->operands, inputs->token_count, empty_variant);
     }
 
     if (rule.foreach_) {
@@ -2470,13 +2486,13 @@ auto process_rule(
         for (auto const& file : files) {
             auto iter_inputs = patterns;
             iter_inputs.push_back(file);
-            auto result = expand_rule(ctx, state, rule, iter_inputs, inputs->token_count);
+            auto result = expand_rule(ctx, state, rule, iter_inputs, inputs->token_count, *macro_result);
             if (!result) {
                 return pup::unexpected<Error>(result.error());
             }
         }
     } else {
-        auto result = expand_rule(ctx, state, rule, inputs->operands, inputs->token_count);
+        auto result = expand_rule(ctx, state, rule, inputs->operands, inputs->token_count, *macro_result);
         if (!result) {
             return pup::unexpected<Error>(result.error());
         }
