@@ -100,10 +100,19 @@ scan derived from it.
 
 - conformance: putup-only
 - discharge: test "tokenize_shell_command splits a control operator from the word it touches"
-- discharge: test "GccScanner ends an invocation at an operator written against a word"
+- discharge: test "GccScanner ends a word at an operator written against it"
 
 When an unquoted `;`, `&`, `&&`, `|` or `||` is written against a word, putup shall end the
 invocation at that operator, as the shell does.
+
+### REQ-SCAN-UNSPACED-REDIRECTION
+
+- conformance: putup-only
+- discharge: test "tokenize_shell_command splits a redirection from the word it touches"
+- discharge: test "GccScanner ends a word at an operator written against it"
+
+When an unquoted redirection is written against a word, putup shall read that word apart from
+the redirection, as the shell does.
 
 ### REQ-SCAN-CARRIES-COMPILE-WORDS
 

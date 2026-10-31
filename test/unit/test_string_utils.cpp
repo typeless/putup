@@ -276,3 +276,42 @@ TEST_CASE("tokenize_shell_command splits a control operator from the word it tou
         REQUIRE(sv(result[2]) == ">|log");
     }
 }
+
+TEST_CASE("tokenize_shell_command splits a redirection from the word it touches", "[string_utils]")
+{
+    SECTION("an output redirection after a word")
+    {
+        auto const result = tokenize_shell_command("gcc -o a.o>log");
+        REQUIRE(result.size() == 4);
+        REQUIRE(sv(result[2]) == "a.o");
+        REQUIRE(sv(result[3]) == ">log");
+    }
+
+    SECTION("an input redirection and an appending one")
+    {
+        auto const result = tokenize_shell_command("cmd a<in b>>out");
+        REQUIRE(result.size() == 5);
+        REQUIRE(sv(result[1]) == "a");
+        REQUIRE(sv(result[2]) == "<in");
+        REQUIRE(sv(result[3]) == "b");
+        REQUIRE(sv(result[4]) == ">>out");
+    }
+
+    SECTION("a file descriptor number stays with its redirection")
+    {
+        auto const result = tokenize_shell_command("cmd 2>err >log2>&1");
+        REQUIRE(result.size() == 4);
+        REQUIRE(sv(result[1]) == "2>err");
+        REQUIRE(sv(result[2]) == ">log2");
+        REQUIRE(sv(result[3]) == ">&1");
+    }
+
+    SECTION("a quoted angle bracket stays in its word")
+    {
+        auto const result = tokenize_shell_command(R"(echo 'a>b' "c<d" e\>f)");
+        REQUIRE(result.size() == 4);
+        REQUIRE(sv(result[1]) == "a>b");
+        REQUIRE(sv(result[2]) == "c<d");
+        REQUIRE(sv(result[3]) == "e>f");
+    }
+}

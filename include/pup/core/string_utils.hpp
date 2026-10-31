@@ -21,6 +21,7 @@ constexpr auto is_space(char c) -> bool
 /// Tokenize shell command into arguments with POSIX quoting semantics.
 /// Splits on space and tab — sh's blank class; see the definition for why.
 /// An unquoted ;, &, &&, | or || is a word of its own, except an & or | that follows < or >.
+/// An unquoted < or > begins a word unless the word so far is a file descriptor number.
 /// - Single quotes: no escaping, everything literal until closing '
 /// - Double quotes: \\ and \" are special, other \X is literal
 /// - Outside quotes: \ escapes next character
