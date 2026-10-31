@@ -40,6 +40,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <optional>
 #include <string_view>
 #include <utility>
@@ -422,6 +423,9 @@ struct ImplicitDepContext {
     /// What the previous record classified as generated, sorted by handle. A build without
     /// authority over the producing directory cannot answer that question itself (#369).
     pup::Vec<pup::StringId> const& prior_generated;
+    /// Wall-clock time this build started. A source file modified since may have been read
+    /// before the edit, so its record carries no hash and the next build re-runs its readers.
+    std::int64_t build_start_ns;
 };
 
 /// Whether the previous record classified this path as an output.
@@ -514,6 +518,10 @@ auto create_implicit_file(
         if (stat_result) {
             file_size = stat_result->size;
             mtime_ns = stat_result->mtime_ns;
+        }
+        if (type == pup::NodeType::File && mtime_ns >= ctx.build_start_ns) {
+            content_hash = {};
+            mtime_ns = 0;
         }
     }
 
@@ -633,6 +641,10 @@ auto serialize_graph_nodes(
                 if (stat_result) {
                     file_size = stat_result->size;
                     mtime_ns = stat_result->mtime_ns;
+                }
+                if (type == pup::NodeType::File && mtime_ns >= carried.build_start_ns) {
+                    content_hash = {};
+                    mtime_ns = 0;
                 }
             }
 
@@ -1555,10 +1567,11 @@ auto build_index(
     pup::Vec<pup::StringId> const& deleted_stale = {},
     pup::Vec<pup::OrderingEdge> const& enforced_ordering = {},
     pup::Vec<pup::StringId> const& examined_files = {},
-    pup::Vec<pup::StringId> const& prior_generated = {}
+    pup::Vec<pup::StringId> const& prior_generated = {},
+    std::int64_t build_start_ns = std::numeric_limits<std::int64_t>::max()
 ) -> pup::index::Index
 {
-    auto carried = CarriedState { .by_path = {}, .examined = examined_files, .refreshed = {} };
+    auto carried = CarriedState { .by_path = {}, .examined = examined_files, .refreshed = {}, .build_start_ns = build_start_ns };
     if (old_index != nullptr) {
         carried.by_path = pup::index::files_by_path(*old_index);
     }
@@ -1620,6 +1633,7 @@ auto build_index(
         .ordered_memo_reached = ordered_memo_reached,
         .ordering_hops = ordering_hops,
         .prior_generated = prior_generated,
+        .build_start_ns = build_start_ns,
     };
 
     process_implicit_deps(discovered_deps, ctx);
@@ -2074,6 +2088,7 @@ auto build_single_variant(
 ) -> int
 {
     auto variant_start = pup::SteadyClock::now();
+    auto const build_start_ns = pup::SystemClock::now().time_since_epoch().count();
     auto scanner_registry = make_scanner_registry();
     auto* const scanner_ptr = scanner_registry ? &*scanner_registry : nullptr;
     if (scanner_ptr && opts.verbose) {
@@ -2512,7 +2527,8 @@ auto build_single_variant(
             deleted_stale,
             stats.enforced_ordering,
             examined_files,
-            ctx.prior_generated()
+            ctx.prior_generated(),
+            build_start_ns
         ) };
 
         auto index_save_start = pup::SteadyClock::time_point { pup::SteadyClock::now() };

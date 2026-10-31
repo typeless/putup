@@ -10,6 +10,8 @@
 #include "pup/graph/dag.hpp"
 #include "pup/index/entry.hpp"
 
+#include <cstdint>
+#include <limits>
 #include <optional>
 #include <string_view>
 #include <utility>
@@ -41,6 +43,7 @@ struct CarriedState {
     index::FilesByPath by_path; ///< the old index, keyed by path
     Vec<StringId> examined;     ///< sorted: what change detection stat'ed
     Vec<StringId> refreshed;    ///< sorted: outputs of the commands that ran
+    std::int64_t build_start_ns = std::numeric_limits<std::int64_t>::max(); ///< a source modified since carries no hash
 
     /// The entry to keep for `path`, or nullptr when this build may observe the file itself.
     [[nodiscard]]

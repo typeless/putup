@@ -324,6 +324,16 @@ that remain.
 If a build does not examine a recorded file, then putup shall preserve that file's recorded
 state rather than replacing it with state observed during that build.
 
+### REQ-INPUT-MIDBUILD
+
+- leg: invariant
+- conformance: unclassified
+- reference: upstream mechanism not read
+- discharge: test "Scenario: A source edited while the build runs is rebuilt by the next build"
+
+If a source file is modified after a build starts, then putup shall run the commands that read
+it again on the next build.
+
 ### REQ-INPUT-UNRESOLVED
 
 - leg: invariant
