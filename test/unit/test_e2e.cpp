@@ -1868,6 +1868,38 @@ SCENARIO("A source edited while the build runs is rebuilt by the next build", "[
     }
 }
 
+SCENARIO("A compile behind an imported leading newline still tracks its headers", "[e2e][incremental][implicit]")
+{
+    GIVEN("a compile whose command begins with an imported newline")
+    {
+        auto env = EnvGuard { "PUP_T_LEAD", "\n" };
+        auto f = E2EFixture { "implicit_deps" };
+        REQUIRE(f.init().success());
+        f.write_file("Tupfile", "import PUP_T_LEAD\n"
+                                ": main.c |> $(PUP_T_LEAD)gcc -c %f -o %o |> main.o\n"
+                                ": main.o |> gcc %f -o %o |> program\n");
+        REQUIRE(f.build().success());
+        REQUIRE(f.run("program").stdout_output == "Version 1\n");
+        REQUIRE(f.build().is_noop());
+
+        WHEN("the header the compile includes changes")
+        {
+            f.write_file("config.h", "#ifndef CONFIG_H\n"
+                                     "#define CONFIG_H\n"
+                                     "#define VERSION 2\n"
+                                     "#endif\n");
+            auto result = f.build();
+
+            THEN("the compile runs again")
+            {
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+                REQUIRE(f.run("program").stdout_output == "Version 2\n");
+            }
+        }
+    }
+}
+
 SCENARIO("A dependency outside the source tree is recorded rather than dropped", "[e2e][incremental][implicit]")
 {
     GIVEN("a compile whose depfile names system headers")

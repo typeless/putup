@@ -124,6 +124,26 @@ the redirection, as the shell does.
 If a control operator or a redirection is quoted or escaped, then putup shall read it as part of
 a word of the invocation, as the shell does.
 
+### REQ-SCAN-NEWLINE-SEPARATOR
+
+- conformance: putup-only
+- reference: no Tupfile text can carry a newline into a command (REQ-CONT-NO-NEWLINE); an imported environment value can (#347)
+- discharge: test "tokenize_shell_command ends a command at an unquoted newline"
+- discharge: test "A newline in the command text ends an invocation as the shell's does"
+- discharge: test "Scenario: A compile behind an imported leading newline still tracks its headers"
+
+When a command's text holds an unquoted newline, putup shall end the invocation at that newline,
+as the shell does.
+
+### REQ-SCAN-EMPTY-WORD
+
+- conformance: putup-only
+- discharge: test "tokenize_shell_command keeps a quoted empty word"
+- discharge: test "Scenario: A quoted word and a bare operator tokenize back to themselves"
+
+If a command spells an empty word with quotes, then putup shall keep it as a word of the
+invocation, as the shell does.
+
 ### REQ-SCAN-CARRIES-COMPILE-WORDS
 
 - conformance: putup-only

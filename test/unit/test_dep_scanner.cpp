@@ -1678,32 +1678,37 @@ TEST_CASE("ClangClScanner reads the same prefix its sibling does", "[dep_scanner
     }
 }
 
-TEST_CASE("a line continuation never reaches the scan command", "[dep_scanner]")
+TEST_CASE("A newline in the command text ends an invocation as the shell's does", "[dep_scanner]")
 {
-    SECTION("a continuation the command text kept is not a word the scan carries")
+    SECTION("a leading newline begins an invocation that runs nothing")
     {
         auto scanner = scanners::GccScanner {};
-        auto scan = only_scan(scanner, 
-            gcc_compile(60, "gcc -O2 \n -DFOO=1 -c foo.c -o foo.o \n ")
-        );
+        auto scan = only_scan(scanner, gcc_compile(60, "\ngcc -O2 -DFOO=1 -c foo.c -o foo.o"));
         REQUIRE(pup::global_pool().get(scan.command) == "gcc -M -O2 -DFOO=1 foo.c");
+        REQUIRE(pup::global_pool().get(scan.object) == "foo.o");
     }
 
-    SECTION("a newline inside a word survives the shell that runs the scan")
+    SECTION("a newline after the compile ends it")
     {
         auto scanner = scanners::GccScanner {};
-        auto scan = only_scan(scanner, gcc_compile(61, "gcc -DA=a\nb -c foo.c -o foo.o"));
+        auto scan = only_scan(scanner, gcc_compile(61, "gcc -c foo.c -o foo.o\nrm junk.c"));
+        REQUIRE(pup::global_pool().get(scan.command) == "gcc -M foo.c");
+        REQUIRE(pup::global_pool().get(scan.object) == "foo.o");
+    }
+
+    SECTION("a quoted newline inside a word survives the shell that runs the scan")
+    {
+        auto scanner = scanners::GccScanner {};
+        auto scan = only_scan(scanner, gcc_compile(62, "gcc '-DA=a\nb' -c foo.c -o foo.o"));
         REQUIRE(
             scan_words(scan) == std::vector<std::string> { "gcc", "-M", "-DA=a\nb", "foo.c" }
         );
     }
 
-    SECTION("a carriage return from a Windows-authored Tupfile")
+    SECTION("a newline after the clang-cl compile ends it")
     {
         auto scanner = scanners::ClangClScanner {};
-        auto scan = only_scan(scanner, 
-            clang_cl_compile(62, "clang-cl /O2 \r\n /I inc -c foo.cpp -o foo.obj")
-        );
+        auto scan = only_scan(scanner, clang_cl_compile(63, "clang-cl /O2 /I inc -c foo.cpp -o foo.obj\necho done"));
         REQUIRE(pup::global_pool().get(scan.command) == "clang-cl /clang:-M /O2 /I inc foo.cpp");
     }
 }
