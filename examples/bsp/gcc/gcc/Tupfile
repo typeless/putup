@@ -18,6 +18,7 @@ endif
 # Platform selection (from root tup.config):
 #   @(TARGET)           — target triple (e.g. x86_64-pc-linux-gnu)
 #   @(HOST_OS)          — host OS for source selection (linux, darwin)
+#   @(HOST_CPU)         — host CPU for darwin host hooks (aarch64, i386)
 #   @(EXTRA_MODES_FILE) — target modes definition file
 #   @(PLATFORM_LDFLAGS) — platform-specific link flags
 #
@@ -837,6 +838,9 @@ EXTRA_DEFS = -DPREFIX=\"/usr/local\" -DBASEVER=\"15.2.0\"
 
 # Host hooks (platform-specific replaces default when available)
 : config/host-@(HOST_OS).cc |> !cxx |> host-@(HOST_OS).o <cc1-objs>
+ifeq (@(HOST_OS),darwin)
+: config/@(HOST_CPU)/host-@(HOST_CPU)-darwin.cc |> !cxx |> host-@(HOST_CPU)-darwin.o <cc1-objs>
+endif
 
 # main.o
 : main.cc |> !cxx |> main.o <cc1-objs>
