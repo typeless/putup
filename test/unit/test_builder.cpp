@@ -807,16 +807,8 @@ TEST_CASE("GraphBuilder cross-directory order-only group with relative path", "[
 // normalize_group_dir edge cases
 // =============================================================================
 
-TEST_CASE("GraphBuilder normalize_group_dir empty string returns dot", "[e2e][builder][normalize]")
+TEST_CASE("GraphBuilder a bare group reference names the group of the referencing directory", "[e2e][builder][normalize]")
 {
-    // This test documents the critical behavior:
-    // normalize_group_dir("", current_dir, source_root) should return "."
-    // NOT current_dir
-
-    // The refactoring regression happened because the helper function
-    // returned current_dir when dir_prefix was empty, but the original
-    // code called normalize_group_dir("") which returns "."
-
     auto fixture = BuilderTestFixture {};
     auto bs = make_build_graph();
     auto vars = VarDb {};
@@ -832,7 +824,6 @@ TEST_CASE("GraphBuilder normalize_group_dir empty string returns dot", "[e2e][bu
     };
     auto builder_state = make_builder(options);
 
-    // Case 1: Group defined at root level (directory ".")
     auto tupfile1 = Tupfile {};
     tupfile1.filename = intern(fixture.tupfile_path(""));
     fixture.create_file("Tupfile");
@@ -842,53 +833,50 @@ TEST_CASE("GraphBuilder normalize_group_dir empty string returns dot", "[e2e][bu
     auto out1 = PathPattern {};
     out1.path.parts.push_back(Expression::Literal { intern("root.h") });
     rule1.outputs.push_back(out1);
-    rule1.output_order_only_group = intern("root-group");
+    rule1.output_order_only_group = intern("shared-group");
     tupfile1.statements.push_back(make_rule_statement(std::move(rule1)));
 
     auto r1 = add_tupfile(bs, tupfile1, ctx, builder_state);
     REQUIRE(r1.has_value());
 
-    // Case 2: Reference with empty path from modules/kernel
-    // The expanded path will be "<root-group>" (no dir prefix)
-    // This should look up {".", "root-group"} NOT {"modules/kernel", "root-group"}
     auto tupfile2 = Tupfile {};
     tupfile2.filename = intern(fixture.tupfile_path("modules/kernel"));
     fixture.create_file("modules/kernel/Tupfile");
 
-    auto rule2 = Rule {};
-    rule2.command.parts.push_back(Expression::Literal { intern("compile") });
+    auto producer = Rule {};
+    producer.command.parts.push_back(Expression::Literal { intern("gen-kernel") });
+    auto kernel_out = PathPattern {};
+    kernel_out.path.parts.push_back(Expression::Literal { intern("kernel.h") });
+    producer.outputs.push_back(kernel_out);
+    producer.output_order_only_group = intern("shared-group");
+    tupfile2.statements.push_back(make_rule_statement(std::move(producer)));
 
-    // Use path pattern that after expansion is just "<root-group>"
-    auto input = make_path_pattern("<root-group>");
-    rule2.order_only_inputs.push_back(input);
-
+    auto consumer = Rule {};
+    consumer.command.parts.push_back(Expression::Literal { intern("compile") });
+    consumer.order_only_inputs.push_back(make_path_pattern("<shared-group>"));
     auto out2 = PathPattern {};
     out2.path.parts.push_back(Expression::Literal { intern("output.o") });
-    rule2.outputs.push_back(out2);
-    tupfile2.statements.push_back(make_rule_statement(std::move(rule2)));
+    consumer.outputs.push_back(out2);
+    tupfile2.statements.push_back(make_rule_statement(std::move(consumer)));
 
     auto r2 = add_tupfile(bs, tupfile2, ctx, builder_state);
     REQUIRE(r2.has_value());
 
-    // Resolve deferred order-only edges (required after all tupfiles are parsed)
     auto resolve_result = finalize_graph(bs, builder_state);
     REQUIRE(resolve_result.has_value());
 
-    // The critical verification: check that the group WAS found
-    // If normalize_group_dir("") returns "." then it will match
-    // If it returns current_dir ("modules/kernel") then it won't match
-    auto found_order_only = false;
-    for (auto id : nodes_of_type(bs.graph,NodeType::Command)) {
-        auto cmd_str = expand_instruction(bs.graph, id);
-        if (sv(cmd_str).find("compile") != std::string_view::npos) {
-            auto order_only = get_order_only(bs.graph,id);
-            if (!order_only.empty()) {
-                found_order_only = true;
+    auto member_names = std::vector<std::string_view> {};
+    for (auto id : nodes_of_type(bs.graph, NodeType::Command)) {
+        if (sv(expand_instruction(bs.graph, id)).find("compile") == std::string_view::npos) {
+            continue;
+        }
+        for (auto group_id : get_order_only(bs.graph, id)) {
+            for (auto member : get_inputs(bs.graph, group_id)) {
+                member_names.push_back(sv(get<Name>(bs.graph, member)));
             }
-            break;
         }
     }
-    CHECK(found_order_only);
+    CHECK(member_names == std::vector<std::string_view> { "kernel.h" });
 }
 
 // =============================================================================

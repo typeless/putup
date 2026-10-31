@@ -30,6 +30,16 @@ When a rule expands a `!`-macro whose order-only inputs name a group in a direct
 not parsed yet, putup shall parse that directory before resolving the reference rather than
 resolving it to an empty group.
 
+### REQ-GROUPREF-RELATIVE-TO-TUPFILE
+
+- conformance: tup-conformant
+- reference: upstream resolves every path in an input list against the directory of the Tupfile being parsed, a group's included, so a bare `<g>` and `./<g>` name the same group. Measured against tup in `sub/Tupfile`: `: <g> ./<g> a.c |> echo 'ALL=[%f] N1=[%1f] N2=[%2f] N3=[%3f]'` writes `ALL=[<g> a.c] N1=[<g>] N2=[] N3=[a.c]`. putup bound a reference whose directory part was empty or began with `./` to the project root when it reached the resolver as text rather than as a parsed group pattern, a convention kept for `$(S)/…/<g>` with `S` expanding to `.`; `TUP_CWD` expands relative to the including Tupfile in putup as upstream, so `$(S)` names the right directory without it (#456)
+- discharge: test "Scenario: A group named two ways from a subdirectory is one operand"
+- discharge: test "GraphBuilder a bare group reference names the group of the referencing directory"
+
+When a rule names a group by a relative path, an empty one or one beginning with `./` included,
+putup shall resolve it against the directory of the Tupfile the rule is in.
+
 ### REQ-GROUPREF-PRODUCING-DIRECTORY
 
 - conformance: putup-only

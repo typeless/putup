@@ -15038,6 +15038,31 @@ SCENARIO("A group named two ways from a subdirectory is one operand", "[e2e][bui
             }
         }
     }
+
+    GIVEN("a subdirectory rule naming its own group plainly and through a leading dot")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("sub/a.c", "");
+        f.write_file("sub/Tupfile",
+            ": |> echo h > %o |> gen.h <g>\n"
+            ": <g> ./<g> a.c |> echo 'ALL=[%f] N1=[%1f] N2=[%2f] N3=[%3f]' > %o |> out.txt\n");
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+            auto graph = f.pup({ "show", "graph" });
+
+            THEN("both spellings name the subdirectory's group, so only the first token owns it")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("sub/out.txt") == "ALL=[<g> a.c] N1=[<g>] N2=[] N3=[a.c]\n");
+                REQUIRE(graph.stdout_output.find("label=\"<g>\"") == std::string::npos);
+            }
+        }
+    }
 }
 
 SCENARIO("An input named two ways is one operand", "[e2e][build]")

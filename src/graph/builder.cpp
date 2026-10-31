@@ -83,7 +83,7 @@ auto strip_trailing_slashes(std::string_view s) -> std::string_view
 /// Normalize a directory path for group key lookup.
 /// - Strips trailing slashes
 /// - Converts absolute paths to project-relative
-/// - Resolves parent references (..) against current_dir
+/// - Resolves a relative path, an empty one included, against current_dir
 auto normalize_group_dir(
     std::string_view path_str,
     std::string_view current_dir,
@@ -91,21 +91,13 @@ auto normalize_group_dir(
 ) -> StringId
 {
     auto cleaned = strip_trailing_slashes(path_str);
-    if (cleaned.empty()) {
-        return intern(".");
-    }
-
     auto& pool = global_pool();
-    auto normalized = pool.get(pup::path::normalize(cleaned));
+    auto normalized = pool.get(pup::path::normalize(cleaned.empty() ? std::string_view { "." } : cleaned));
 
     if (pup::path::is_absolute(normalized)) {
         normalized = pool.get(pup::path::relative(normalized, source_root));
-    } else if (!current_dir.empty() && normalized != ".") {
-        auto first_slash = cleaned.find('/');
-        auto first_component = cleaned.substr(0, first_slash);
-        if (first_component != ".") {
-            normalized = pool.get(pup::path::normalize(pool.get(pup::path::join(current_dir, normalized))));
-        }
+    } else if (!current_dir.empty()) {
+        normalized = pool.get(pup::path::normalize(pool.get(pup::path::join(current_dir, normalized))));
     }
 
     return (normalized.empty() || normalized == ".") ? intern(".") : intern(normalized);
