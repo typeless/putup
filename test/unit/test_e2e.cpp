@@ -16630,6 +16630,21 @@ SCENARIO("A rule cannot put an output or a group under a path that is not a dire
             }
         }
 
+        WHEN("a rule puts a group under a path an earlier rule generates as a file")
+        {
+            f.write_file("Tupfile", ": |> echo hi > %o |> d\n: |> echo a > %o |> a.txt d/<g>\n");
+            auto result = f.build();
+
+            THEN("the Tupfile is refused and names the generated file")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("the generated file 'd' is not a directory") != std::string::npos);
+                REQUIRE_FALSE(f.exists("a.txt"));
+            }
+        }
+
         WHEN("a rule puts a group under the source file and no other rule names the file")
         {
             f.write_file("Tupfile", ": |> echo a > %o |> a.txt sub/<g>\n");

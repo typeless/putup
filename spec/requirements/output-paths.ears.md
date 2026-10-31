@@ -57,14 +57,15 @@ putup shall reject the Tupfile and name that path, whether or not the rule's gua
 ### REQ-OUTPUT-UNDER-DIRECTORY
 
 - conformance: tup-conformant
-- reference: upstream refuses the same class in `find_dir_tupid_dt_pg` (`src/tup/create_name_file.c`), which accepts only a directory or a generated directory as a path component of an output or a group and reports "Unable to output to a different directory"; upstream knows a source path's type from its scan, where putup stats each component of the output's or group's directory that no node holds yet, so in an in-tree build the refusal does not depend on whether a rule reads the file before or after; in a variant build upstream places both in the variant tree and accepts them, and so does putup; putup does not yet refuse a group under an earlier rule's generated output, because the group's directory is a source path and the output is a build path, and in-tree putup aliases a build path to its source twin but not the reverse
+- reference: upstream refuses the same class in `find_dir_tupid_dt_pg` (`src/tup/create_name_file.c`), which accepts only a directory or a generated directory as a path component of an output or a group and reports "Unable to output to a different directory"; upstream knows a source path's type from its scan, where putup stats each component of the output's or group's directory that no node holds yet, so in an in-tree build the refusal does not depend on whether a rule reads the file before or after; in a variant build upstream places both in the variant tree and accepts them, and so does putup; in-tree putup refuses a group under an earlier rule's generated output by giving a source path with no node of its own the node of its build twin (#499); in a variant build putup does not yet refuse a group under a generated output, which upstream refuses because it puts both in the variant tree, since putup keeps a group's directory in the source tree and the output in the variant tree
 - discharge: test "add_file_node refuses a parent that is not a directory node"
 - discharge: test "Scenario: A rule cannot put an output or a group under a path that is not a directory"
 
 If a rule names an output under a path that the graph holds as a file, a generated file or a group,
-or a group under a path that the graph holds as a file or a group, or, in an in-tree build, either
-under a path that is a file in the source tree the previous build did not generate, then putup shall
-reject the Tupfile and name that path and what it is.
+or a group under a path that the graph holds as a file or a group, or, in an in-tree build, a group
+under a path that the graph holds as a generated file or either under a path that is a file in the
+source tree the previous build did not generate, then putup shall reject the Tupfile and name that
+path and what it is.
 
 ### REQ-OUTPUT-VARIANT-INPUT-READS-SOURCE
 

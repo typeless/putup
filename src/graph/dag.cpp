@@ -186,6 +186,17 @@ auto ensure_file_node(Graph& graph, PathId path_id, NodeType type) -> Result<Nod
         }
     }
 
+    if (graph.paths.root(path_id) == PathId::SourceRoot && get_build_root_name(graph).empty()) {
+        auto& pool = global_pool();
+        auto rel = pool.get(graph.paths.to_string(path_id, pool));
+        if (auto build_pid = graph.paths.find_path(rel, pool, PathId::BuildRoot)) {
+            if (auto const* hit = graph.path_to_node.find(to_underlying(*build_pid))) {
+                graph.path_to_node.insert(to_underlying(path_id), NodeId { *hit });
+                return NodeId { *hit };
+            }
+        }
+    }
+
     if (!graph.paths.is_grounded(path_id)) {
         auto build_id = graph.paths.ground(path_id, PathId::BuildRoot);
         if (auto const* hit = graph.path_to_node.find(to_underlying(build_id))) {
