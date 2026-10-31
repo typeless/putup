@@ -1,0 +1,2 @@
+: |> printf '#define VERSION 1\n' > %o |> gen.h
+: main.c | gen.h |> gcc -I$(TUP_VARIANT_OUTPUTDIR) -c %f -o %o |> main.o
