@@ -16635,7 +16635,7 @@ SCENARIO("A rule splicing a group it does not take as an input is refused", "[e2
     }
 }
 
-SCENARIO("A glob into a directory nothing provides is refused", "[e2e][parse][glob]")
+SCENARIO("An input inside a directory nothing provides is refused", "[e2e][parse][glob]")
 {
     GIVEN("a project with one source file and no nodir directory")
     {
@@ -16654,6 +16654,63 @@ SCENARIO("A glob into a directory nothing provides is refused", "[e2e][parse][gl
                 REQUIRE_FALSE(result.success());
                 REQUIRE(result.stderr_output.find("Failed to find directory ID for dir 'nodir/*.c'") != std::string::npos);
                 REQUIRE_FALSE(f.exists("out.txt"));
+            }
+        }
+
+        WHEN("a rule names an input file inside a directory that does not exist")
+        {
+            f.write_file("Tupfile", ": nodir/a.c |> cat %f > %o |> out.txt\n");
+            auto result = f.build();
+
+            THEN("the Tupfile is refused and names the input")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("Failed to find directory ID for dir 'nodir/a.c'") != std::string::npos);
+                REQUIRE_FALSE(f.exists("out.txt"));
+            }
+        }
+
+        WHEN("a rule names an input file only a later-parsed directory's output provides")
+        {
+            f.write_file("Tupfile", "");
+            f.mkdir("m");
+            f.mkdir("n");
+            f.write_file("m/Tupfile", ": ../b/gen.q |> cat %f > %o |> out.txt\n");
+            f.write_file("n/Tupfile", ": |> mkdir -p ../b && echo x > %o |> ../b/gen.q\n");
+            auto result = f.build();
+
+            THEN("the input resolves to the generated file")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("m/out.txt") == "x\n");
+            }
+        }
+
+        WHEN("a rule names an input inside a directory only the config tree has")
+        {
+            f.mkdir("src");
+            f.mkdir("cfg/scripts");
+            f.mkdir("out");
+            f.write_file("cfg/Tupfile.ini", "");
+            f.write_file("cfg/Tupfile", ": scripts/gen.sh |> sh %f > %o |> out.txt\n");
+            f.write_file("cfg/scripts/gen.sh", "echo x\n");
+            f.write_file("out/tup.config", "");
+            auto result = f.pup({
+                "-S", (f.workdir() / "src").string(),
+                "-C", (f.workdir() / "cfg").string(),
+                "-B", (f.workdir() / "out").string(),
+            });
+
+            THEN("the input resolves from the config tree")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("out/out.txt") == "x\n");
             }
         }
 

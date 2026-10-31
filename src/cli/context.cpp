@@ -1057,7 +1057,7 @@ auto build_context(
             auto stable = graph::check_glob_stability(ctx.impl_->graph, builder_state);
             if (stable) {
                 if (ctx_opts.parse_scopes.empty()) {
-                    auto provided = graph::check_glob_dirs_provided(ctx.impl_->graph, builder_state);
+                    auto provided = graph::check_input_dirs_provided(ctx.impl_->graph, builder_state);
                     if (!provided) {
                         return unexpected<Error>(provided.error());
                     }

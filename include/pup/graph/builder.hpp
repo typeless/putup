@@ -210,12 +210,12 @@ struct GlobResolution {
     Vec<StringId> matches;              ///< Generated matches visible when it resolved
 };
 
-/// A glob written inside a directory the source tree lacks, kept so the directory can
-/// be looked for among the outputs of every Tupfile once the parse completes.
-struct GlobIntoAbsentDir {
-    StringId dir = StringId::Empty;         ///< Directory of the rule that wrote the pattern
-    StringId written = StringId::Empty;     ///< Pattern as the Tupfile spells it
-    StringId pattern_dir = StringId::Empty; ///< Project-relative directory the pattern globs inside
+/// An input path inside a directory the source and config trees lack, kept so the
+/// directory can be looked for among the outputs of every Tupfile once the parse completes.
+struct InputInAbsentDir {
+    StringId dir = StringId::Empty;       ///< Directory of the rule that wrote the input
+    StringId written = StringId::Empty;   ///< Input path or glob as the Tupfile spells it
+    StringId input_dir = StringId::Empty; ///< Project-relative directory the input names
 };
 
 /// Per-session state that persists across multiple Tupfiles
@@ -233,8 +233,8 @@ struct Builder {
     /// Globs resolved during the parse, for the post-fixpoint stability check
     Vec<GlobResolution> glob_resolutions;
 
-    /// Globs inside a directory absent from the source tree, for the post-fixpoint check
-    Vec<GlobIntoAbsentDir> globs_into_absent_dirs;
+    /// Inputs inside a directory absent from the source and config trees, for the post-fixpoint check
+    Vec<InputInAbsentDir> inputs_in_absent_dirs;
 
     /// Config variable nodes (interned name StringId → NodeId)
     SortedPairVec config_var_nodes;
@@ -289,10 +289,10 @@ auto check_glob_stability(
     Builder const& state
 ) -> Result<void>;
 
-/// Refuse a glob inside a directory that neither the source tree nor any rule's
-/// output provides, as tup refuses an input whose directory it cannot find.
+/// Refuse an input inside a directory that neither the source tree, the config tree,
+/// nor any rule's output provides, as tup refuses an input whose directory it cannot find.
 [[nodiscard]]
-auto check_glob_dirs_provided(
+auto check_input_dirs_provided(
     BuildGraph& build_state,
     Builder const& state
 ) -> Result<void>;

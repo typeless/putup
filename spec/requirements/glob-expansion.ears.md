@@ -140,11 +140,11 @@ file or a group after expansion, then putup shall generate no command for it.
 ### REQ-GLOB-ABSENT-DIR-REFUSED
 
 - conformance: deliberate-deviation
-- reference: upstream refuses an input path whose directory has no node, "tup error: Failed to find directory ID for dir '%s' relative to '…'" (`path_list_fill_dt_pel`, parser.c:2523), and skips a path outside the tup hierarchy; a directory gets a node from the source tree or when a rule parsed earlier names an output inside it, so upstream on a fresh database refuses `m/Tupfile`'s `: ../b/*.q |>` when the rule writing `../b/gen.q` lives in `n/`, parsed after `m/`, and accepts it when the producer is `a/` (read from the code, not measured against a tup binary). putup refuses after the parse fixpoint, when no rule anywhere in the project writes inside the directory, so the verdict does not depend on parse order (REQ-GLOB-PROJECT). A build scoped to some directories parses only those and cannot rule out a producer outside the scope, so it does not refuse (#469)
-- discharge: test "Scenario: A glob into a directory nothing provides is refused"
+- reference: upstream refuses an input path whose directory has no node, "tup error: Failed to find directory ID for dir '%s' relative to '…'" (`path_list_fill_dt_pel`, parser.c:2523), and skips a path outside the tup hierarchy; a directory gets a node from the source tree or when a rule parsed earlier names an output inside it, so upstream on a fresh database refuses `m/Tupfile`'s `: ../b/*.q |>` when the rule writing `../b/gen.q` lives in `n/`, parsed after `m/`, and accepts it when the producer is `a/` (read from the code, not measured against a tup binary). putup refuses after the parse fixpoint, when no rule anywhere in the project writes inside the directory, so the verdict does not depend on parse order (REQ-GLOB-PROJECT). A build scoped to some directories parses only those and cannot rule out a producer outside the scope, so it does not refuse. A plain input path, regular or order-only, shares the refusal, since upstream applies it to every input path list (`path_list_to_nl` → `parse_dependent_tupfiles`, regular and order-only alike). Upstream has one tree; putup resolves an input from the source tree, then the config tree, then the build tree, and the refusal counts the first two, not a build-tree directory an earlier build left on disk, so the verdict does not depend on build history; an input spelled through the build directory is compared with that prefix removed. It lives in this area because no area covers plain input operands (#469)
+- discharge: test "Scenario: An input inside a directory nothing provides is refused"
 
-If a glob names a directory inside the project that neither the source tree nor any rule's output
-provides, then putup shall refuse the parse and name the glob.
+If an input path or glob names a directory inside the project that neither the source tree, the
+config tree, nor any rule's output provides, then putup shall refuse the parse and name the input.
 
 ---
 

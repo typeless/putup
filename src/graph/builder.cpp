@@ -718,6 +718,28 @@ auto file_input(BuilderContext& ctx, std::string_view project_relative) -> RuleI
     };
 }
 
+/// Record an input whose directory, inside the project, is in neither the source tree
+/// nor the config tree; check_input_dirs_provided refuses it unless a rule's output provides it.
+auto record_if_input_dir_absent(
+    BuilderContext& ctx,
+    std::string_view written,
+    std::string_view abs_input_dir_sv
+) -> void
+{
+    auto& pool = global_pool();
+    if (!ctx.builder || abs_input_dir_sv.empty() || abs_input_dir_sv == "." || abs_input_dir_sv == ".." || abs_input_dir_sv.starts_with("../")) {
+        return;
+    }
+    auto input_dir = pup::strip_path_prefix(abs_input_dir_sv, get_build_root_name(ctx.state->graph));
+    auto in_root = [&](StringId root) {
+        return !is_empty(root) && pup::platform::is_directory(pool.get(pup::path::join(str(root), str(input_dir))));
+    };
+    if (in_root(ctx.options.source_root) || in_root(ctx.options.config_root)) {
+        return;
+    }
+    ctx.builder->inputs_in_absent_dirs.push_back(InputInAbsentDir { ctx.current_dir, pool.intern(written), input_dir });
+}
+
 /// Expand a glob pattern against the filesystem and the graph's generated nodes.
 /// Adds matched paths to result vector.
 ///
@@ -746,10 +768,7 @@ auto expand_glob_pattern(
     auto abs_pattern_dir_sv = pool.get(pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), pattern_dir))));
     request_demand_driven_parse(*ctx.eval, abs_pattern_dir_sv);
 
-    auto const pattern_dir_inside_tree = !pattern_dir.empty() && abs_pattern_dir_sv != "." && abs_pattern_dir_sv != ".." && !abs_pattern_dir_sv.starts_with("../");
-    if (ctx.builder && pattern_dir_inside_tree && !pup::platform::is_directory(pool.get(pup::path::join(base_sv, pattern_dir)))) {
-        ctx.builder->globs_into_absent_dirs.push_back(GlobIntoAbsentDir { ctx.current_dir, pool.intern(path), pool.intern(abs_pattern_dir_sv) });
-    }
+    record_if_input_dir_absent(ctx, path, abs_pattern_dir_sv);
 
     auto pattern_path_sv = is_empty(ctx.current_dir) ? path : pool.get(pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), path))));
     auto pattern_id = pool.intern(pattern_path_sv);
@@ -1163,6 +1182,7 @@ auto expand_inputs(
                     auto file_dir = pup::path::parent(path_sv);
                     auto abs_file_dir_sv = pool.get(pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), file_dir))));
                     request_demand_driven_parse(*ctx.eval, abs_file_dir_sv);
+                    record_if_input_dir_absent(ctx, path_sv, abs_file_dir_sv);
                 }
             }
         }
@@ -2813,7 +2833,7 @@ auto check_glob_stability(
     return {};
 }
 
-auto check_glob_dirs_provided(
+auto check_input_dirs_provided(
     BuildGraph& build_state,
     Builder const& state
 ) -> Result<void>
@@ -2821,9 +2841,9 @@ auto check_glob_dirs_provided(
     auto& pool = global_pool();
     auto generated = collect_generated_paths(build_state);
 
-    for (auto const& absent : state.globs_into_absent_dirs) {
+    for (auto const& absent : state.inputs_in_absent_dirs) {
         auto prefix = Buf {};
-        prefix += pool.get(absent.pattern_dir);
+        prefix += pool.get(absent.input_dir);
         prefix += '/';
         auto provided = std::ranges::any_of(generated, [&](StringId path) { return pool.get(path).starts_with(prefix.view()); });
         if (provided) {
