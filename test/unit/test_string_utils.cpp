@@ -366,8 +366,8 @@ SCENARIO("A quoted word and a bare operator tokenize back to themselves", "[stri
     {
         auto const seed = GENERATE(1U, 2U, 3U, 12345U, 999983U);
         auto rng = Lcg { seed };
-        auto const alphabet = std::string_view { "ab12;&|<> '\"\\$" };
-        auto const operators = std::vector<std::string_view> { ";", "&", "&&", "|", "||" };
+        auto const alphabet = std::string_view { "ab12;&|<> '\"\\$\n" };
+        auto const operators = std::vector<std::string_view> { ";", "&", "&&", "|", "||", "\n" };
 
         WHEN("each command is rendered and tokenized")
         {
@@ -390,7 +390,7 @@ SCENARIO("A quoted word and a bare operator tokenize back to themselves", "[stri
                         expected.emplace_back(std::string { op }, pup::core::ShellTokenKind::Operator);
                     } else {
                         auto word = std::string {};
-                        auto const length = 1 + rng.next(4);
+                        auto const length = rng.next(5);
                         for (auto c = 0U; c < length; ++c) {
                             word += alphabet[rng.next(static_cast<std::uint32_t>(alphabet.size()))];
                         }
@@ -423,4 +423,33 @@ SCENARIO("A quoted word and a bare operator tokenize back to themselves", "[stri
             }
         }
     }
+}
+
+TEST_CASE("tokenize_shell_command ends a command at an unquoted newline", "[string_utils]")
+{
+    SECTION("a newline between two commands")
+    {
+        auto const result = tokenize_shell_command("a\nb");
+        REQUIRE(result.size() == 3);
+        REQUIRE(result[1].kind == pup::core::ShellTokenKind::Operator);
+        REQUIRE(sv(result[1]) == "\n");
+        REQUIRE(sv(result[2]) == "b");
+    }
+
+    SECTION("a quoted newline stays in its word")
+    {
+        auto const result = tokenize_shell_command("echo 'a\nb'");
+        REQUIRE(result.size() == 2);
+        REQUIRE(sv(result[1]) == "a\nb");
+    }
+}
+
+TEST_CASE("tokenize_shell_command keeps a quoted empty word", "[string_utils]")
+{
+    auto const result = tokenize_shell_command(R"(echo '' "" x)");
+    REQUIRE(result.size() == 4);
+    REQUIRE(sv(result[1]).empty());
+    REQUIRE(result[1].kind == pup::core::ShellTokenKind::Word);
+    REQUIRE(sv(result[2]).empty());
+    REQUIRE(sv(result[3]) == "x");
 }

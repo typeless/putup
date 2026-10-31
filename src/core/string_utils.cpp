@@ -32,6 +32,7 @@ constexpr auto stop_at = [] {
     table[static_cast<unsigned char>('|')] = stop_normal;
     table[static_cast<unsigned char>('<')] = stop_normal;
     table[static_cast<unsigned char>('>')] = stop_normal;
+    table[static_cast<unsigned char>('\n')] = stop_normal;
     return table;
 }();
 
@@ -48,7 +49,7 @@ auto tokenize_shell_command(std::string_view cmd) -> Vec<ShellToken>
     auto word_quoted = false;
     auto redirection_end = std::size_t { 0 };
     auto flush_word = [&] {
-        if (!current.empty()) {
+        if (!current.empty() || word_quoted) {
             args.push_back(ShellToken { .text = current.intern(pool), .kind = ShellTokenKind::Word });
             current.clear();
         }
@@ -107,13 +108,13 @@ auto tokenize_shell_command(std::string_view cmd) -> Vec<ShellToken>
             redirection_end = current.size();
         } else if ((c == '&' || c == '|') && redirection_end != 0 && redirection_end == current.size()) {
             current += c;
-        } else if (c == ';' || c == '&' || c == '|') {
+        } else if (c == ';' || c == '&' || c == '|' || c == '\n') {
             flush_word();
-            auto const doubled = c != ';' && i < cmd.size() && cmd[i] == c;
+            auto const doubled = (c == '&' || c == '|') && i < cmd.size() && cmd[i] == c;
             args.push_back(ShellToken { .text = pool.intern(cmd.substr(i - 1, doubled ? 2 : 1)), .kind = ShellTokenKind::Operator });
             i += doubled ? 1 : 0;
         } else {
-            // sh's blank class, deliberately: \r\v\f stay in words so the scan carries the compile's words; unquoted \n is sh's command separator, not a word break — #347.
+            // sh's blank class, deliberately: \r\v\f stay in words so the scan carries the compile's words.
             flush_word();
         }
     }
