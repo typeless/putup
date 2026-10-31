@@ -981,7 +981,7 @@ auto build_context(
     auto prior_generated_by_path = ctx.impl_->prior_generated;
     std::ranges::sort(prior_generated_by_path, {}, [&pool](StringId id) { return pool.get(id); });
     std::ranges::sort(parsed_prior_generated, {}, [&pool](StringId id) { return pool.get(id); });
-    auto generated_seed = Vec<StringId> {};
+    auto generated_seed = Vec<graph::GeneratedPath> {};
     auto builder_state = graph::Builder {};
 
     for (auto round = 0; round < max_parse_rounds; ++round) {

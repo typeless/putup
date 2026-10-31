@@ -127,10 +127,19 @@ once.
 putup shall expand a glob to the same match set whatever order the project's Tupfiles were
 parsed in.
 
+### REQ-GLOB-SAME-TUPFILE-ORDER
+
+- conformance: tup-conformant
+- reference: upstream expands a glob against its node table when `execute_rule` reaches the rule and never re-parses a Tupfile for a file the same Tupfile generates later, so `: *.h |> ... |> all.txt` above `: |> touch %o |> gen.h` never runs, while the same pair in the other order runs over `gen.h` (measured in #470). putup's parse fixpoint seeds each round with what the previous round generated, and drops from that seed every path whose producing rule lives in the globbing rule's own Tupfile: an earlier rule there has already put its output in the graph when the glob runs, and a later one must stay invisible. The stability check skips the same producers, or the dropped match would read as a parse-order dependence. Producers in other directories still count in either order (REQ-GLOB-PROJECT) (#470)
+- discharge: test "Scenario: A glob does not see a file a later rule in the same Tupfile generates"
+
+If a rule's glob would match a file that a rule written later in the same Tupfile generates, then
+putup shall leave that file out of the glob's matches.
+
 ### REQ-GLOB-NO-MATCH-NO-COMMAND
 
 - conformance: tup-conformant
-- reference: upstream runs a rule only when its expanded input list is non-empty or its input section was written empty (`execute_rule`, `r->inputs.num_entries > 0 || r->empty_input`), so `: *.o |> ld %f |>` with no objects generates no command while `: |> script |>` runs once; the test is on the user's text, so a section that is one variable evaluating to nothing also generates none. Measured against tup over `a.c` alone: `: *.none |> echo hi > %o |> out.txt` and the same rule spelling `%f` write nothing and exit zero, `SRCS =` / `: $(SRCS) |>` writes nothing, and `: *.none a.c |>` runs over `a.c`. putup meant to skip the same case but counted the glob's own placeholder operand as an input, so the rule ran with every input flag expanded to nothing; the guard now counts operands that name a file or a group, which is also what lets a rule over a glob that matches only files another directory generates pass its first parse and be re-parsed at the fixpoint rather than refused; a producer later in the same Tupfile is #470, where the fixpoint runs a rule upstream never runs. A bang macro with a `!name.EMPTY` variant runs that variant over the empty match instead, REQ-GLOB-EMPTY-BANG-VARIANT. A glob whose directory nothing provides never reaches this guard's empty match: the parse refuses it, REQ-GLOB-ABSENT-DIR-REFUSED (#463)
+- reference: upstream runs a rule only when its expanded input list is non-empty or its input section was written empty (`execute_rule`, `r->inputs.num_entries > 0 || r->empty_input`), so `: *.o |> ld %f |>` with no objects generates no command while `: |> script |>` runs once; the test is on the user's text, so a section that is one variable evaluating to nothing also generates none. Measured against tup over `a.c` alone: `: *.none |> echo hi > %o |> out.txt` and the same rule spelling `%f` write nothing and exit zero, `SRCS =` / `: $(SRCS) |>` writes nothing, and `: *.none a.c |>` runs over `a.c`. putup meant to skip the same case but counted the glob's own placeholder operand as an input, so the rule ran with every input flag expanded to nothing; the guard now counts operands that name a file or a group, which is also what lets a rule over a glob that matches only files another directory generates pass its first parse and be re-parsed at the fixpoint rather than refused; a producer later in the same Tupfile is not seen, REQ-GLOB-SAME-TUPFILE-ORDER. A bang macro with a `!name.EMPTY` variant runs that variant over the empty match instead, REQ-GLOB-EMPTY-BANG-VARIANT. A glob whose directory nothing provides never reaches this guard's empty match: the parse refuses it, REQ-GLOB-ABSENT-DIR-REFUSED (#463)
 - discharge: test "Scenario: A rule whose glob matches nothing produces no command"
 - discharge: test "Scenario: A glob's match set does not depend on the producing directory's name"
 

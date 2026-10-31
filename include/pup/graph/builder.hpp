@@ -23,6 +23,12 @@ namespace pup::graph {
 class DepScannerRegistry;
 class RulePatternRegistry;
 
+/// A path a parse round generated, and the directory whose Tupfile holds the rule producing it
+struct GeneratedPath {
+    StringId path = StringId::Empty;
+    std::optional<StringId> producer_dir = std::nullopt;
+};
+
 /// Options for graph building
 struct BuilderOptions {
     StringId source_root = StringId::Empty;                  ///< Source tree root (where source files live)
@@ -36,7 +42,7 @@ struct BuilderOptions {
     DepScannerRegistry const* scanner_registry = nullptr;    ///< Optional scanner registry for implicit deps
     RulePatternRegistry const* pattern_registry = nullptr;   ///< Optional pattern registry for auto-generated rules
     Vec<std::pair<StringId, StringId>> cached_env_vars = {}; ///< Cached env vars from previous build (sorted by key)
-    Vec<StringId> generated_seed = {};                       ///< Paths a previous parse round generated, sorted by path text; empty on the first round
+    Vec<GeneratedPath> generated_seed = {};                  ///< Paths a previous parse round generated, sorted by path text; empty on the first round
     Vec<StringId> prior_generated = {};                      ///< Paths the previous record classified as outputs, sorted by path text; answers who owns a path this build cannot attribute, never what a glob matches (#369, #213)
     Vec<StringId> parsed_prior_generated = {};               ///< Paths the previous record classified as outputs in directories this parse covers, sorted by path text; never a source file, whatever is on disk
 };
@@ -278,7 +284,7 @@ auto add_tupfile(
 /// Every path the graph declares as generated, canonical and sorted — the seed that
 /// lets the next parse round resolve globs against what the project produces.
 [[nodiscard]]
-auto collect_generated_paths(BuildGraph& build_state) -> Vec<StringId>;
+auto collect_generated_paths(BuildGraph& build_state) -> Vec<GeneratedPath>;
 
 /// Recheck every glob resolved during the parse against the completed graph.
 /// A rule that globs over files a later-parsed directory generates resolved against

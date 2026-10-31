@@ -323,11 +323,10 @@ auto transform_output_path(
 auto is_seeded_generated(BuilderContext const& ctx, std::string_view path) -> bool
 {
     auto& pool = global_pool();
-    auto contains = [&pool, path](Vec<StringId> const& paths) {
-        return !paths.empty()
-            && std::ranges::binary_search(paths, path, {}, [&pool](StringId id) { return pool.get(id); });
-    };
-    return contains(ctx.options.generated_seed) || contains(ctx.options.prior_generated);
+    auto const& seed = ctx.options.generated_seed;
+    auto const& prior = ctx.options.prior_generated;
+    return std::ranges::binary_search(seed, path, {}, [&pool](GeneratedPath const& seeded) { return pool.get(seeded.path); })
+        || std::ranges::binary_search(prior, path, {}, [&pool](StringId id) { return pool.get(id); });
 }
 
 auto resolve_input_node(
@@ -785,9 +784,12 @@ auto expand_glob_pattern(
         }
     }
 
-    for (auto seeded : ctx.options.generated_seed) {
-        if (glob.matches(pool.get(seeded))) {
-            matches.push_back(RuleInput { RuleInput::Kind::File, seeded });
+    for (auto const& seeded : ctx.options.generated_seed) {
+        if (seeded.producer_dir == ctx.current_dir) {
+            continue;
+        }
+        if (glob.matches(pool.get(seeded.path))) {
+            matches.push_back(RuleInput { RuleInput::Kind::File, seeded.path });
         }
     }
 
@@ -2835,20 +2837,42 @@ auto reject_ambiguous_keys(BuildGraph& build_state) -> Result<void>
     return make_error<void>(ErrorCode::DuplicateNode, err.view());
 }
 
-auto collect_generated_paths(BuildGraph& build_state) -> Vec<StringId>
+auto producer_dir(
+    Graph& graph,
+    NodeId generated
+) -> std::optional<StringId>
+{
+    for (auto id : get_inputs(graph, generated)) {
+        if (!node_id::is_command(id)) {
+            continue;
+        }
+        if (auto const* cmd = get_command_node(graph, id)) {
+            return cmd->source_dir;
+        }
+    }
+    return std::nullopt;
+}
+
+auto collect_generated_paths(BuildGraph& build_state) -> Vec<GeneratedPath>
 {
     auto& pool = global_pool();
     auto build_root_name = get_build_root_name(build_state.graph);
-    auto paths = Vec<StringId> {};
+    auto paths = Vec<GeneratedPath> {};
     for (auto id : nodes_of_type(build_state.graph, NodeType::Generated)) {
         auto node_path_sv = get_full_path(build_state.graph, id, build_state.path_cache);
         if (node_path_sv.empty()) {
             continue;
         }
-        paths.push_back(pup::strip_path_prefix(pool.get(pup::path::normalize(node_path_sv)), build_root_name));
+        paths.push_back(GeneratedPath {
+            pup::strip_path_prefix(pool.get(pup::path::normalize(node_path_sv)), build_root_name),
+            producer_dir(build_state.graph, id),
+        });
     }
-    std::ranges::sort(paths, {}, [&pool](StringId id) { return pool.get(id); });
-    paths.erase(std::unique(paths.begin(), paths.end()), paths.end());
+    std::ranges::sort(paths, {}, [&pool](GeneratedPath const& generated) { return pool.get(generated.path); });
+    paths.erase(
+        std::unique(paths.begin(), paths.end(), [](GeneratedPath const& a, GeneratedPath const& b) { return a.path == b.path; }),
+        paths.end()
+    );
     return paths;
 }
 
@@ -2872,6 +2896,9 @@ auto check_glob_stability(
                 continue;
             }
             if (std::ranges::find(resolved.matches, candidate) != resolved.matches.end()) {
+                continue;
+            }
+            if (producer_dir(build_state.graph, id) == resolved.dir) {
                 continue;
             }
             auto err = Buf {};
@@ -2901,7 +2928,7 @@ auto check_input_dirs_provided(
         auto prefix = Buf {};
         prefix += pool.get(absent.input_dir);
         prefix += '/';
-        auto provided = std::ranges::any_of(generated, [&](StringId path) { return pool.get(path).starts_with(prefix.view()); });
+        auto provided = std::ranges::any_of(generated, [&](GeneratedPath const& path) { return pool.get(path.path).starts_with(prefix.view()); });
         if (provided) {
             continue;
         }
