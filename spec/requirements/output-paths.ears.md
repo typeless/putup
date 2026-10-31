@@ -79,12 +79,12 @@ shall delete the stale output and build the rule.
 ### REQ-OUTPUT-NOT-A-DIRECTORY
 
 - conformance: deliberate-deviation
-- reference: upstream refuses the same class in `validate_output` (`src/tup/parser.c`) with "Attempting to insert '<name>' as a generated node when it already exists as a different type"; putup differs three times: it names the type "directory" where upstream says "generated directory", because putup never creates a generated-directory node; it refuses a rule under an unsatisfied guard, which upstream never evaluates, so that whether the Tupfile is accepted does not depend on the configuration, as REQ-OUTPUT-INSIDE-HIERARCHY does; and it does not refuse at parse time an output onto a directory in the source tree or onto a group's directory, which upstream refuses (in-tree putup refuses the source directory later, as a file the build does not own)
+- reference: upstream refuses the same class in `validate_output` (`src/tup/parser.c`) with "Attempting to insert '<name>' as a generated node when it already exists as a different type"; putup differs three times: it names the type "directory" where upstream says "generated directory", because putup never creates a generated-directory node; it refuses a rule under an unsatisfied guard, which upstream never evaluates, so that whether the Tupfile is accepted does not depend on the configuration, as REQ-OUTPUT-INSIDE-HIERARCHY does; and it refuses an output onto a source-tree directory or a group's directory but not onto a source file, since a generated file may shadow a source file (REQ-GLOB-DEDUP), where upstream's variant check refuses any source entry
 - discharge: test "Scenario: A rule cannot output to a path another rule uses as a directory"
 
-If a rule declares an output at a path under which another rule has declared an output, then putup
-shall reject the Tupfile and name that path and what it holds, whether or not the rule's guards are
-satisfied.
+If a rule declares an output at a path that is a directory in the source tree, holds a group, or
+lies under another rule's declared output, then putup shall reject the Tupfile and name that path
+and what it holds, whether or not the rule's guards are satisfied.
 
 ## Group: canonicality
 

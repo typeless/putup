@@ -2372,6 +2372,27 @@ auto expand_rule(
         }
         }
 
+        {
+            auto& pool = global_pool();
+            auto const output_rel = pool.get(ctx.state->graph.paths.to_string(output_path, pool));
+            auto twin_is_directory = pup::platform::is_directory(pool.get(pup::path::join(str(ctx.options.source_root), output_rel)));
+            if (auto twin_path = ctx.state->graph.paths.find_path(output_rel, pool, PathId::SourceRoot)) {
+                if (auto const* twin = ctx.state->graph.path_to_node.find(to_underlying(*twin_path))) {
+                    auto const* twin_node = get_file_node(ctx.state->graph, NodeId { *twin });
+                    twin_is_directory = twin_is_directory || (twin_node && twin_node->type == NodeType::Directory);
+                }
+            }
+            if (twin_is_directory) {
+                auto err = Buf {};
+                err.fmt(
+                    "Attempting to insert '{}' as a generated node when it already exists as a different type (directory){}",
+                    output_rel,
+                    get_build_root_name(ctx.state->graph).empty() ? "" : " in the source directory"
+                );
+                return make_error<void>(ErrorCode::DuplicateNode, err.view());
+            }
+        }
+
         auto output_inputs = get_inputs(ctx.state->graph, *output_id);
         if (!output_inputs.empty()) {
             for (auto existing_id : output_inputs) {

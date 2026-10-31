@@ -16632,6 +16632,53 @@ SCENARIO("A rule cannot output to a path another rule uses as a directory", "[e2
             }
         }
 
+        WHEN("a rule outputs onto a directory of the source tree")
+        {
+            f.write_file("Tupfile", ": |> echo hi > %o |> srcdir\n");
+            auto result = f.build();
+
+            THEN("the Tupfile is refused before any command runs and names the directory")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("Attempting to insert 'srcdir' as a generated node when it already exists as a different type (directory)") != std::string::npos);
+                REQUIRE(result.stderr_output.find("FAILED:") == std::string::npos);
+            }
+        }
+
+        WHEN("a rule outputs onto a directory of the source tree in a variant build")
+        {
+            f.mkdir("build");
+            f.write_file("build/tup.config", "");
+            f.write_file("Tupfile", ": |> echo hi > %o |> srcdir\n");
+            auto result = f.build({ "-B", "build" });
+
+            THEN("the Tupfile is refused and names the source directory")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("Attempting to insert 'srcdir' as a generated node when it already exists as a different type (directory) in the source directory") != std::string::npos);
+                REQUIRE_FALSE(f.is_file("build/srcdir"));
+            }
+        }
+
+        WHEN("a rule outputs onto the directory a group lives in")
+        {
+            f.write_file("Tupfile", ": |> echo a > %o |> a.txt d/<g>\n: |> echo hi > %o |> d\n");
+            auto result = f.build();
+
+            THEN("the Tupfile is refused and names the directory")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("Attempting to insert 'd' as a generated node when it already exists as a different type (directory)") != std::string::npos);
+                REQUIRE_FALSE(f.is_file("d"));
+            }
+        }
+
         WHEN("the same two rules build as a variant")
         {
             f.mkdir("build");
