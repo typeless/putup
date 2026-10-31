@@ -1778,6 +1778,96 @@ SCENARIO("Implicit dependencies track header changes", "[e2e][incremental]")
     }
 }
 
+SCENARIO("A source edited while the build runs is rebuilt by the next build", "[e2e][incremental]")
+{
+    GIVEN("a first build whose command reads its input and then rewrites it")
+    {
+        auto f = E2EFixture { "no_output_command" };
+        REQUIRE(f.init().success());
+        f.write_file("Tupfile", ": a.txt |> cat %f > %o; if grep -q v1 %f; then printf 'v2\\n' > %f; sleep 2; fi |> a.out\n");
+        f.write_file("a.txt", "v1\n");
+        REQUIRE(f.build().success());
+        REQUIRE(f.read_file("a.out") == "v1\n");
+
+        WHEN("the project is built again")
+        {
+            auto result = f.build();
+
+            THEN("the command reads the edited input")
+            {
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+                REQUIRE(f.read_file("a.out") == "v2\n");
+            }
+
+            THEN("the following build is a no-op")
+            {
+                REQUIRE(f.build().is_noop());
+            }
+        }
+    }
+
+    GIVEN("an incremental build in which one command edits another command's input")
+    {
+        auto f = E2EFixture { "no_output_command" };
+        REQUIRE(f.init().success());
+        f.write_file("Tupfile", ": a.txt |> cat %f > %o |> a.out\n"
+                                ": b.txt |> cat %f > %o; if grep -q edit %f; then printf 'v2\\n' > a.txt; sleep 2; fi |> b.out\n");
+        f.write_file("a.txt", "v1\n");
+        f.write_file("b.txt", "keep\n");
+        REQUIRE(f.build().success());
+        REQUIRE(f.read_file("a.out") == "v1\n");
+
+        f.write_file("b.txt", "edit\n");
+        REQUIRE(f.build().success());
+        REQUIRE(f.read_file("a.txt") == "v2\n");
+
+        WHEN("the project is built again")
+        {
+            auto result = f.build();
+
+            THEN("the edited input's command runs")
+            {
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+                REQUIRE(f.read_file("a.out") == "v2\n");
+            }
+
+            THEN("the following build is a no-op")
+            {
+                REQUIRE(f.build().is_noop());
+            }
+        }
+    }
+
+    GIVEN("a first build that rewrites a header after the compile has read it")
+    {
+        auto f = E2EFixture { "implicit_deps" };
+        REQUIRE(f.init().success());
+        f.write_file("Tupfile", ": main.c |> gcc -c %f -o %o |> main.o\n"
+                                ": main.o |> gcc %f -o %o; if grep -q 'VERSION 1' config.h; then sed 's/VERSION 1/VERSION 2/' config.h > config.h.new; mv config.h.new config.h; sleep 2; fi |> program\n");
+        REQUIRE(f.build().success());
+        REQUIRE(f.run("program").stdout_output == "Version 1\n");
+
+        WHEN("the project is built again")
+        {
+            auto result = f.build();
+
+            THEN("the compile reads the edited header")
+            {
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+                REQUIRE(f.run("program").stdout_output == "Version 2\n");
+            }
+
+            THEN("the following build is a no-op")
+            {
+                REQUIRE(f.build().is_noop());
+            }
+        }
+    }
+}
+
 SCENARIO("A dependency outside the source tree is recorded rather than dropped", "[e2e][incremental][implicit]")
 {
     GIVEN("a compile whose depfile names system headers")
