@@ -1,6 +1,8 @@
 ifeq (@(TESTS),y)
 include_rules
 
+CXXFLAGS += -DCATCH_CONFIG_NO_COUNTER
+
 # A dedicated MSVC-style linker (@(LINKER) set) links the real MSVC CRT, which
 # supplies the C++ runtime and math library — and does not understand GCC-style
 # -l flags. The GCC/Clang-driver builds link libstdc++/libc++ and libm explicitly.
