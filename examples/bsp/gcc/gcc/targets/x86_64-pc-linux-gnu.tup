@@ -117,9 +117,9 @@ target_srcs += config/i386/x86-tune-sched-atom.cc config/i386/x86-tune-sched-cor
 target_srcs += config/i386/gnu-property.cc
 
 target_srcs += config/linux.cc
-target_srcs += config/glibc-c.cc
 
 : foreach $(target_srcs) |> !cxx |> %B.o <cc1-objs>
+: config/glibc-c.cc | $(S)/$(GCC_DIR)/c-family/<c-family-gen> |> !cxx |> glibc-c.o <cc1-objs>
 
 # x86_64 host CPU detection for the driver (gcc.cc references host_detect_local_cpu)
 : config/i386/driver-i386.cc |> !cxx |> driver-i386.o <xgcc-objs>

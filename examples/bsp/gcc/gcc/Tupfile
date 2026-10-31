@@ -145,7 +145,7 @@ BUILD_ERRORS = host-errors.o
 : errors.cc |> !hostcxx |> host-errors.o
 
 # genmodes needs EXTRA_MODES_FILE for the target architecture
-: genmodes.cc |> ^ HOSTCXX %b^ $(HOSTCC) $(HOST_CXXFLAGS) \
+: genmodes.cc | $(S)/$(GCC_DIR)/<gen-config-headers> |> ^ HOSTCXX %b^ $(HOSTCC) $(HOST_CXXFLAGS) \
   -DEXTRA_MODES_FILE=\"@(EXTRA_MODES_FILE)\" -c %f -o %o \
   |> host-genmodes.o
 
@@ -156,11 +156,12 @@ BUILD_ERRORS = host-errors.o
 : | genmodes |> ^ GEN %o^ $(TUP_VARIANT_OUTPUTDIR)/genmodes > %o    |> insn-modes.cc
 : | genmodes |> ^ GEN %o^ $(TUP_VARIANT_OUTPUTDIR)/genmodes -m > %o |> min-insn-modes.cc
 
+EARLY_GEN_DEPS = insn-modes.h insn-modes-inline.h
+
 # min-insn-modes.o (host, from generated source)
-: min-insn-modes.cc |> !hostcxx |> host-min-insn-modes.o
+: min-insn-modes.cc | $(EARLY_GEN_DEPS) |> !hostcxx |> host-min-insn-modes.o
 
 # BUILD_MD (no tm.h → no insn-constants.h needed)
-EARLY_GEN_DEPS = insn-modes.h insn-modes-inline.h
 : read-md.cc | $(EARLY_GEN_DEPS) |> !hostcxx |> host-read-md.o
 
 # genconstants (MD input only — early because tm.h includes insn-constants.h)
@@ -198,7 +199,7 @@ BUILD_MD   = host-read-md.o
 
 : $(MD) | genconditions |> ^ GEN %o^ $(TUP_VARIANT_OUTPUTDIR)/genconditions %f > %o |> gencondmd.cc
 
-: gencondmd.cc |> !hostcxx |> host-gencondmd.o
+: gencondmd.cc | $(BUILD_RTL_DEPS) tm-preds.h tm-constrs.h tree-check.h |> !hostcxx |> host-gencondmd.o
 
 : host-gencondmd.o $(BUILD_ERRORS) $(LIBIBERTY_A) |> \
   ^ LINK gencondmd^ $(HOSTCC) %f -o %o |> gencondmd

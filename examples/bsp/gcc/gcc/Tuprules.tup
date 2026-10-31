@@ -66,12 +66,14 @@ TARGET_CXXFLAGS += -DIN_GCC -DHAVE_CONFIG_H
 TARGET_CXXFLAGS += $(GCC_INCLUDES)
 
 !cxx = | $(S)/$(GCC_DIR)/<gen-config-headers> $(S)/$(GCC_DIR)/<gen-insn-headers> \
-        $(S)/$(GCC_DIR)/<gen-gtype-headers> |> \
+        $(S)/$(GCC_DIR)/<gen-gtype-headers> $(S)/$(GMP_DIR)/<gen-headers> \
+        $(S)/$(LIBDECNUMBER_DIR)/<gen-headers> |> \
   ^ CXX %b^ $(CXX) $(TARGET_CXXFLAGS) -c %f -o %o |>
 
 # Like !cxx but with $(EXTRA_DEFS) for per-file -D flags
 !cxx-defs = | $(S)/$(GCC_DIR)/<gen-config-headers> $(S)/$(GCC_DIR)/<gen-insn-headers> \
-             $(S)/$(GCC_DIR)/<gen-gtype-headers> |> \
+             $(S)/$(GCC_DIR)/<gen-gtype-headers> $(S)/$(GMP_DIR)/<gen-headers> \
+             $(S)/$(LIBDECNUMBER_DIR)/<gen-headers> |> \
   ^ CXX %b^ $(CXX) $(TARGET_CXXFLAGS) $(EXTRA_DEFS) -c %f -o %o |>
 
 !gen-config = |> ^ GEN %o^ awk -F= \
