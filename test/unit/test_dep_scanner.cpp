@@ -1352,6 +1352,25 @@ TEST_CASE("GccScanner scans the prefix before an invocation that is not a compil
     }
 }
 
+TEST_CASE("GccScanner ends an invocation at an operator written against a word", "[dep_scanner][gcc]")
+{
+    auto scanner = scanners::GccScanner {};
+
+    SECTION("a terminator after the object")
+    {
+        auto scan = only_scan(scanner, gcc_compile(89, "gcc -c a.c -o a.o; if grep -q x a.h; then rm a.h; fi"));
+        REQUIRE(pup::global_pool().get(scan.command) == "gcc -M a.c");
+        REQUIRE(pup::global_pool().get(scan.object) == "a.o");
+    }
+
+    SECTION("an and-list operator between the object and the next command")
+    {
+        auto scan = only_scan(scanner, gcc_compile(90, "gcc -c a.c -o a.o&&rm junk.c"));
+        REQUIRE(pup::global_pool().get(scan.command) == "gcc -M a.c");
+        REQUIRE(pup::global_pool().get(scan.object) == "a.o");
+    }
+}
+
 TEST_CASE("A depfile flag outside the scannable prefix suppresses nothing", "[dep_scanner]")
 {
     // The suppression stands for a compile that writes its own depfile, so it may only read the

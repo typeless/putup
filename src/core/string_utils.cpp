@@ -5,6 +5,7 @@
 #include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/string_id.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/core/vec.hpp"
 #include <array>
 #include <cstdint>
@@ -25,6 +26,9 @@ constexpr auto stop_at = [] {
     table[static_cast<unsigned char>('\'')] = stop_normal | stop_single;
     table[static_cast<unsigned char>(' ')] = stop_normal;
     table[static_cast<unsigned char>('\t')] = stop_normal;
+    table[static_cast<unsigned char>(';')] = stop_normal;
+    table[static_cast<unsigned char>('&')] = stop_normal;
+    table[static_cast<unsigned char>('|')] = stop_normal;
     return table;
 }();
 
@@ -76,6 +80,16 @@ auto tokenize_shell_command(std::string_view cmd) -> Vec<StringId>
             in_single_quote = true;
         } else if (c == '"') {
             in_double_quote = true;
+        } else if ((c == '&' || c == '|') && !current.empty() && (current.view().back() == '>' || current.view().back() == '<')) {
+            current += c;
+        } else if (c == ';' || c == '&' || c == '|') {
+            if (!current.empty()) {
+                args.push_back(current.intern(pool));
+                current.clear();
+            }
+            auto const doubled = c != ';' && i < cmd.size() && cmd[i] == c;
+            args.push_back(pool.intern(cmd.substr(i - 1, doubled ? 2 : 1)));
+            i += doubled ? 1 : 0;
         } else {
             // sh's blank class, deliberately: \r\v\f stay in words so the scan carries the compile's words; unquoted \n is sh's command separator, not a word break — #347.
             if (!current.empty()) {
