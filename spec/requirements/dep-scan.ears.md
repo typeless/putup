@@ -202,7 +202,19 @@ leaves the compile it feeds out of date at every build from then on.
 - conformance: putup-only
 - discharge: test "Scenario: A dependency outside the source tree is recorded rather than dropped"
 
-Where a dependency a scan reports resolves outside the source tree, putup shall record it under
-its absolute path rather than skip it, because a header under a sysroot or a toolchain prefix is
-one the compile read like any other, and dropping it — the arm a relativize-or-skip reading of the
-path would take — leaves the compile silently stale after a toolchain change.
+Where a dependency a scan reports resolves outside both the source tree and the build tree, putup
+shall record it under its absolute path rather than skip it, because a header under a sysroot or a
+toolchain prefix is one the compile read like any other, and dropping it — the arm a
+relativize-or-skip reading of the path would take — leaves the compile silently stale after a
+toolchain change.
+
+### REQ-SCAN-BUILD-TREE-OUTPUT
+
+- conformance: putup-only
+- discharge: test "Scenario: A 3-tree build whose compile includes a generated header is up to date afterwards"
+
+Where a dependency a scan reports resolves inside a build tree that lies outside the source tree,
+putup shall record it under the build tree's name for that path, the one the command producing
+the file declared, because recorded under its absolute path it is a second node for the same file,
+typed as a source, and a source written during the build is recorded as unknown, so every build
+reruns the commands that include it.

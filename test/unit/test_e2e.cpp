@@ -12225,6 +12225,34 @@ SCENARIO("3-tree: group pattern %o must include build root prefix", "[e2e][out-o
     }
 }
 
+SCENARIO("A 3-tree build whose compile includes a generated header is up to date afterwards", "[e2e][out-of-tree-config][implicit]")
+{
+    GIVEN("a 3-tree project that generates a header into the build tree and compiles against it")
+    {
+        auto f = E2EFixture { "3tree_generated_header" };
+        auto const tree_args = std::vector<std::string> {
+            "-S", (f.workdir() / "source").string(),
+            "-C", (f.workdir() / "config").string(),
+            "-B", (f.workdir() / "build").string(),
+        };
+        f.mkdir("build");
+        f.write_file("build/tup.config", "");
+        REQUIRE(f.pup(tree_args).success());
+
+        WHEN("the project is built again")
+        {
+            auto result = f.pup(tree_args);
+
+            THEN("nothing runs")
+            {
+                INFO("stdout:\n" << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE(result.is_noop());
+            }
+        }
+    }
+}
+
 namespace {
 
 struct PhaseReport {

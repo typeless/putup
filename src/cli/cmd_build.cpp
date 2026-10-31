@@ -405,6 +405,7 @@ struct ImplicitDepContext {
     pup::NodeId& next_id;
     pup::NodeIdPairSet& added_edges;
     std::string_view source_root;
+    std::string_view output_root;
     pup::NodeIdMap32 const& cmd_remap;
     /// Files written by commands that ran in this build, by index id. A consumer that reads one
     /// of these with nothing ordering it after the producer may have read it before it existed,
@@ -931,7 +932,7 @@ auto process_implicit_deps(
             auto dep_path = pool.get(dep_id_val);
             auto abs_path = pup::path::is_absolute(dep_path) ? dep_path : pool.get(pup::path::join(ctx.source_root, dep_path));
 
-            auto rel_path = pup::is_path_under(abs_path, ctx.source_root)
+            auto rel_path = pup::is_path_under(abs_path, ctx.source_root) || pup::is_path_under(abs_path, ctx.output_root)
                 ? pup::path::relative(abs_path, ctx.source_root)
                 : pool.intern(abs_path);
 
@@ -1627,6 +1628,7 @@ auto build_index(
         .next_id = next_id,
         .added_edges = added_edges,
         .source_root = source_root,
+        .output_root = output_root,
         .cmd_remap = cmd_remap,
         .produced_this_build = produced_this_build,
         .ordered_memo_deps = ordered_memo_deps,
