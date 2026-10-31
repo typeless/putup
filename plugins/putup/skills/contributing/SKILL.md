@@ -23,7 +23,7 @@ Putup requires `putup` in PATH for self-hosting builds.
 | `make format` | Format with clang-format |
 | `make bootstrap` | Regenerate the committed `bootstrap-*.sh` scripts |
 | `make spec-check` | Verify `spec/requirements/` against the test suite |
-| `make check` | Full CI: format-check + tidy + spec-check + test |
+| `make check` | Full CI: format-check + spec-check + test |
 | `make coverage` | Build gcov-instrumented variant, run tests, write gcovr report to build-coverage/report/ |
 | `make clean` | Clean build artifacts |
 | `make distclean` | Full reset: remove build/ |

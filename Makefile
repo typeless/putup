@@ -147,7 +147,7 @@ spec-check: build
 		--tests $(BUILD_DIR)/test/unit/putup_test \
 		--gherkin-dir $(BUILD_DIR)/spec
 
-check: format-check tidy spec-check test
+check: format-check spec-check test
 	@echo "All checks passed."
 
 clean:

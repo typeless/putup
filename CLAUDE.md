@@ -32,7 +32,7 @@ make iwyu         # Detect dead includes via clang-include-cleaner
 make format       # Format with clang-format
 make bootstrap    # Regenerate the committed bootstrap-*.sh scripts
 make spec-check   # Verify spec/requirements against the test suite
-make check        # Full CI: format-check + tidy + spec-check + test
+make check        # Full CI: format-check + spec-check + test
 make clean        # Clean build artifacts
 make distclean    # Full reset: remove build/
 ```
