@@ -1397,7 +1397,11 @@ TEST_CASE("A quoted operator is a word and not a separator", "[dep_scanner]")
     SECTION("a quoted terminator is not a barrier to the flags after it")
     {
         auto scan = only_scan(scanners::GccScanner {}, gcc_compile(92, "gcc -c a.c -o a.o ';' -Iinc"));
-        REQUIRE(pup::global_pool().get(scan.command) == "gcc -M ';' -Iinc a.c");
+        auto expected = pup::Buf {};
+        expected += "gcc -M ";
+        scanners::shell_quote_into(expected, ";");
+        expected += " -Iinc a.c";
+        REQUIRE(pup::global_pool().get(scan.command) == expected.view());
     }
 }
 
