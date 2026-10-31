@@ -174,6 +174,38 @@ SCENARIO("run_process captures stderr separately", "[platform][process]")
     }
 }
 
+SCENARIO("The host shell ends a command at a newline in the command text", "[platform][process]")
+{
+    auto stdout_lines = [](std::string_view command) {
+        auto opts = make_opts(command);
+        auto result = run_process(opts);
+        REQUIRE(result.has_value());
+        auto text = std::string {};
+        for (auto c : sv(result->stdout_output)) {
+            if (c != '\r') {
+                text += c;
+            }
+        }
+        return text;
+    };
+
+    GIVEN("two echo commands joined by a newline")
+    {
+        THEN("each runs on its own and neither takes the other as arguments")
+        {
+            CHECK(stdout_lines("echo first\necho second") == "first\nsecond\n");
+        }
+    }
+
+    GIVEN("a command behind a leading newline")
+    {
+        THEN("the command still runs")
+        {
+            CHECK(stdout_lines("\necho first") == "first\n");
+        }
+    }
+}
+
 SCENARIO("run_process passes environment variables", "[platform][process]")
 {
     GIVEN("a command that reads an environment variable")

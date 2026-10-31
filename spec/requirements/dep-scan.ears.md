@@ -131,6 +131,7 @@ a word of the invocation, as the shell does.
 - discharge: test "tokenize_shell_command ends a command at an unquoted newline"
 - discharge: test "A newline in the command text ends an invocation as the shell's does"
 - discharge: test "Scenario: A compile behind an imported leading newline still tracks its headers"
+- discharge: test "Scenario: The host shell ends a command at a newline in the command text"
 
 When a command's text holds an unquoted newline, putup shall end the invocation at that newline,
 as the shell does.
