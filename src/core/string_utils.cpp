@@ -7,6 +7,7 @@
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/core/vec.hpp"
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <string_view>
@@ -29,6 +30,8 @@ constexpr auto stop_at = [] {
     table[static_cast<unsigned char>(';')] = stop_normal;
     table[static_cast<unsigned char>('&')] = stop_normal;
     table[static_cast<unsigned char>('|')] = stop_normal;
+    table[static_cast<unsigned char>('<')] = stop_normal;
+    table[static_cast<unsigned char>('>')] = stop_normal;
     return table;
 }();
 
@@ -80,6 +83,15 @@ auto tokenize_shell_command(std::string_view cmd) -> Vec<StringId>
             in_single_quote = true;
         } else if (c == '"') {
             in_double_quote = true;
+        } else if (c == '<' || c == '>') {
+            auto const word = current.view();
+            auto const continues_redirection = word.empty() || word.back() == '<' || word.back() == '>'
+                || std::ranges::all_of(word, [](char d) { return d >= '0' && d <= '9'; });
+            if (!continues_redirection) {
+                args.push_back(current.intern(pool));
+                current.clear();
+            }
+            current += c;
         } else if ((c == '&' || c == '|') && !current.empty() && (current.view().back() == '>' || current.view().back() == '<')) {
             current += c;
         } else if (c == ';' || c == '&' || c == '|') {
