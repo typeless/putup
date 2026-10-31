@@ -505,9 +505,13 @@ auto get_or_create_group_node(
     return result;
 }
 
-auto group_operand_spelling(std::string_view reference) -> StringId
+auto group_operand_spelling(
+    PathTransformContext const& tc,
+    std::string_view reference
+) -> StringId
 {
-    return reference.starts_with("./") ? intern(reference.substr(2)) : intern(reference);
+    auto& pool = global_pool();
+    return pup::make_source_relative(pool.get(pup::path::normalize(reference)), str(tc.source_to_root), str(tc.current_dir_id));
 }
 
 auto resolve_group_operand_node(
@@ -516,13 +520,15 @@ auto resolve_group_operand_node(
     std::string_view reference
 ) -> Result<NodeId>
 {
-    auto parsed = parse_group_reference(reference, str(ctx.current_dir), str(ctx.options.source_root));
-    if (!parsed) {
+    auto lt_pos = reference.rfind('<');
+    if (lt_pos == std::string_view::npos || !reference.ends_with('>') || lt_pos + 2 >= reference.size()) {
         auto msg = Buf {};
         msg.fmt("Malformed group reference in inputs: '{}'", reference);
         return make_error<NodeId>(ErrorCode::ParseError, msg.view());
     }
-    return get_or_create_group_node(ctx, state, str(parsed->group_dir), parsed->group_name);
+    auto group_dir = strip_trailing_slashes(reference.substr(0, lt_pos));
+    auto group_name = reference.substr(lt_pos + 1, reference.size() - lt_pos - 2);
+    return get_or_create_group_node(ctx, state, group_dir.empty() ? std::string_view { "." } : group_dir, group_name);
 }
 
 auto ensure_env_var_node(BuilderContext& ctx, Builder& state, std::string_view var_name, std::string_view value)
@@ -2037,7 +2043,7 @@ auto spell_operands(
     for (auto const& inp : operands) {
         spelled.push_back(str(
             inp.kind == RuleInput::Kind::GroupRef
-                ? group_operand_spelling(str(inp.value))
+                ? group_operand_spelling(tc, str(inp.value))
                 : transform_input_path(*ctx.state, tc, str(inp.value))
         ));
     }

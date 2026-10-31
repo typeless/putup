@@ -1033,6 +1033,51 @@ SCENARIO("Group references in regular inputs expand correctly", "[e2e][groups]")
     }
 }
 
+SCENARIO("A group reference in a nested Tupfile names its group relative to that Tupfile", "[e2e][groups]")
+{
+    GIVEN("pkg/Tupfile names the group pkg/sub/Tupfile declares as sub/<grp>")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.mkdir("pkg/sub");
+        f.write_file("pkg/a.c", "a\n");
+        f.write_file("pkg/sub/s.h", "s\n");
+        f.write_file("pkg/sub/Tupfile", ": s.h |> cp %f %o |> gen.h | <grp>\n");
+        REQUIRE(f.init().success());
+
+        WHEN("the reference is an input and the command spells it with %f")
+        {
+            f.write_file("pkg/Tupfile", ": a.c sub/<grp> |> echo 'f=[%f]' > %o |> out.txt\n");
+            auto result = f.build();
+            auto graph = f.pup({ "show", "graph" });
+
+            THEN("%f spells it as written and the graph holds one node for the group")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("pkg/out.txt") == "f=[a.c sub/<grp>]\n");
+                REQUIRE(graph.stdout_output.find("pkg/pkg/sub/<grp>") == std::string::npos);
+            }
+        }
+
+        WHEN("the reference is an order-only input and the command spells it with %i")
+        {
+            f.write_file("pkg/Tupfile", ": a.c | sub/<grp> |> echo 'i=[%i]' > %o |> out.txt\n");
+            auto result = f.build();
+            auto graph = f.pup({ "show", "graph" });
+
+            THEN("%i spells it as written and the graph holds one node for the group")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("pkg/out.txt") == "i=[sub/<grp>]\n");
+                REQUIRE(graph.stdout_output.find("pkg/pkg/sub/<grp>") == std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("Multi-directory group producers all contribute to percent-group expansion", "[e2e][groups]")
 {
     GIVEN("a group receiving members from two separate directories")
@@ -14988,7 +15033,7 @@ SCENARIO("A group named two ways from a subdirectory is one operand", "[e2e][bui
                 INFO("stderr: " << result.stderr_output);
                 REQUIRE(result.success());
                 REQUIRE(
-                    f.read_file("sub/out.txt") == "ALL=[sub/<g> a.c] N1=[sub/<g>] N2=[] N3=[a.c]\n"
+                    f.read_file("sub/out.txt") == "ALL=[<g> a.c] N1=[<g>] N2=[] N3=[a.c]\n"
                 );
             }
         }

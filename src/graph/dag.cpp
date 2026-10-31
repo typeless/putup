@@ -847,7 +847,7 @@ struct ExecSite {
             return get_operand_path(id);
         }
         auto const dir = get_operand_path(node->parent_dir);
-        if (dir.empty()) {
+        if (dir.empty() || dir == ".") {
             return operand_name(id);
         }
         auto spelled = Buf {};
