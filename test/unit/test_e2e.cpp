@@ -8858,6 +8858,42 @@ SCENARIO("A glob does not see a file a later rule in the same Tupfile generates"
     }
 }
 
+SCENARIO("An input only a later rule in the same Tupfile generates resolves to that rule's output", "[e2e][build]")
+{
+    GIVEN("a project whose only header is generated")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+
+        WHEN("a rule names the header as an input before the rule generating it")
+        {
+            f.write_file("Tupfile", ": gen.h |> cat %f > %o |> all.txt\n: |> echo x > %o |> gen.h\n");
+            auto result = f.build();
+
+            THEN("both rules run, the consumer after the producer")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("all.txt") == "x\n");
+            }
+        }
+
+        WHEN("a rule names the header as an order-only input before the rule generating it")
+        {
+            f.write_file("Tupfile", ": | gen.h |> cat gen.h > %o |> all.txt\n: |> echo x > %o |> gen.h\n");
+            auto result = f.build();
+
+            THEN("both rules run, the consumer after the producer")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("all.txt") == "x\n");
+            }
+        }
+    }
+}
+
 SCENARIO("A foreach glob instantiates a command for a later-generated file", "[e2e][glob][traversal][foreach]")
 {
     GIVEN("a foreach rule over files a later-parsed sibling generates")
@@ -16922,6 +16958,20 @@ SCENARIO("An input inside a directory nothing provides is refused", "[e2e][parse
                 INFO("stderr: " << result.stderr_output);
                 REQUIRE(result.success());
                 REQUIRE(f.read_file("out/out.txt") == "x\n");
+            }
+        }
+
+        WHEN("a rule globs inside a directory only a later rule in the same Tupfile creates")
+        {
+            f.write_file("Tupfile", ": gen/*.c |> cat %f > %o |> out.txt\n: |> mkdir -p gen && echo x > %o |> gen/b.c\n");
+            auto result = f.build();
+
+            THEN("the Tupfile is refused and names the glob")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("Failed to find directory ID for dir 'gen/*.c'") != std::string::npos);
             }
         }
 

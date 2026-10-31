@@ -718,6 +718,22 @@ auto file_input(BuilderContext& ctx, std::string_view project_relative) -> RuleI
     };
 }
 
+auto producer_dir(
+    Graph& graph,
+    NodeId generated
+) -> std::optional<StringId>
+{
+    for (auto id : get_inputs(graph, generated)) {
+        if (!node_id::is_command(id)) {
+            continue;
+        }
+        if (auto const* cmd = get_command_node(graph, id)) {
+            return cmd->source_dir;
+        }
+    }
+    return std::nullopt;
+}
+
 /// Record an input whose directory, inside the project, is in neither the source tree
 /// nor the config tree; check_input_dirs_provided refuses it unless a rule's output provides it.
 auto record_if_input_dir_absent(
@@ -736,6 +752,19 @@ auto record_if_input_dir_absent(
     };
     if (in_root(ctx.options.source_root) || in_root(ctx.options.config_root)) {
         return;
+    }
+    auto prefix = Buf {};
+    prefix += str(input_dir);
+    prefix += '/';
+    auto const build_root_name = get_build_root_name(ctx.state->graph);
+    for (auto id : nodes_of_type(ctx.state->graph, NodeType::Generated)) {
+        auto node_path_sv = get_full_path(ctx.state->graph, id, ctx.state->path_cache);
+        if (node_path_sv.empty() || producer_dir(ctx.state->graph, id) != ctx.current_dir) {
+            continue;
+        }
+        if (pool.get(pup::strip_path_prefix(pool.get(pup::path::normalize(node_path_sv)), build_root_name)).starts_with(prefix.view())) {
+            return;
+        }
     }
     ctx.builder->inputs_in_absent_dirs.push_back(InputInAbsentDir { ctx.current_dir, pool.intern(written), input_dir });
 }
@@ -2837,22 +2866,6 @@ auto reject_ambiguous_keys(BuildGraph& build_state) -> Result<void>
     return make_error<void>(ErrorCode::DuplicateNode, err.view());
 }
 
-auto producer_dir(
-    Graph& graph,
-    NodeId generated
-) -> std::optional<StringId>
-{
-    for (auto id : get_inputs(graph, generated)) {
-        if (!node_id::is_command(id)) {
-            continue;
-        }
-        if (auto const* cmd = get_command_node(graph, id)) {
-            return cmd->source_dir;
-        }
-    }
-    return std::nullopt;
-}
-
 auto collect_generated_paths(BuildGraph& build_state) -> Vec<GeneratedPath>
 {
     auto& pool = global_pool();
@@ -2928,7 +2941,7 @@ auto check_input_dirs_provided(
         auto prefix = Buf {};
         prefix += pool.get(absent.input_dir);
         prefix += '/';
-        auto provided = std::ranges::any_of(generated, [&](GeneratedPath const& path) { return pool.get(path.path).starts_with(prefix.view()); });
+        auto provided = std::ranges::any_of(generated, [&](GeneratedPath const& path) { return path.producer_dir != absent.dir && pool.get(path.path).starts_with(prefix.view()); });
         if (provided) {
             continue;
         }
