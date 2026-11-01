@@ -240,19 +240,22 @@ def runner_cpu_model():
     return "unknown"
 
 
-PUTUP_RACY_CLEAN_WINDOW_S = 1.0
-
-
 def cmd_stat(args):
     tree_args = ["-C", args.config_dir, "-S", args.source_dir, "-B", args.build_dir]
-    for settle_delay_s in (0, PUTUP_RACY_CLEAN_WINDOW_S):
-        time.sleep(settle_delay_s)
-        settle = subprocess.run(
-            [args.putup, *tree_args], capture_output=True, text=True, check=False
-        )
-        if settle.returncode != 0:
-            sys.stderr.write(settle.stderr)
-            return 1
+    settle = subprocess.run(
+        [args.putup, "--stat", *tree_args], capture_output=True, text=True, check=False
+    )
+    window = re.search(r"Racy-clean window:\s+(\d+) ms", settle.stdout)
+    if settle.returncode != 0 or window is None:
+        sys.stderr.write(settle.stdout + settle.stderr)
+        return 1
+    time.sleep(int(window.group(1)) / 1000)
+    settle = subprocess.run(
+        [args.putup, *tree_args], capture_output=True, text=True, check=False
+    )
+    if settle.returncode != 0:
+        sys.stderr.write(settle.stderr)
+        return 1
     outputs = []
     for _ in range(max(1, args.runs)):
         run = subprocess.run(

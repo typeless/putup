@@ -69,6 +69,8 @@ auto PathIdMap::insert(StringId path, NodeId id) -> void
 namespace {
 using DiscoveredDeps = Vec<std::pair<pup::NodeId, Vec<StringId>>>;
 
+auto constexpr RACY_CLEAN_THRESHOLD_NS = std::int64_t { 1'000'000'000 };
+
 auto discovered_deps_get(DiscoveredDeps& m, pup::NodeId key) -> Vec<StringId>&
 {
     for (auto& [k, v] : m) {
@@ -111,6 +113,7 @@ auto print_stats(
     print("  Hash computations:  {}\n", Pad { metrics.hash_computations, 6 });
     print("  Hashes skipped:     {} (stat cache)\n", Pad { metrics.hashes_skipped, 6 });
     print("  Stat calls:         {}\n", Pad { metrics.stat_calls, 6 });
+    print("  Racy-clean window:  {} ms\n", Pad { RACY_CLEAN_THRESHOLD_NS / 1'000'000, 6 });
     print("  String pool:        {} strings, {} bytes\n", Pad { metrics.pool_strings, 6 }, metrics.pool_bytes);
 
     auto as_ms = [](std::chrono::microseconds us) { return Fixed { static_cast<double>(us.count()) / 1000.0, 1, 8 }; };
@@ -269,7 +272,6 @@ auto find_changed_files_with_implicit(
     auto& metrics = pup::thread_metrics();
 
     auto const save_time_ns = old_index.save_time_ns();
-    auto constexpr RACY_CLEAN_THRESHOLD_NS = std::int64_t { 1'000'000'000 };
 
     for (auto const& file : old_index.files()) {
         auto const is_ghost = file.type == pup::NodeType::Ghost && !pup::is_empty(file.path);

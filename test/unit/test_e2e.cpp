@@ -10425,6 +10425,29 @@ SCENARIO("A source touched into the future does not rebuild an up-to-date tree",
     }
 }
 
+SCENARIO("Build stats report the racy-clean window", "[e2e][incremental]")
+{
+    GIVEN("a built project")
+    {
+        auto f = E2EFixture { "stat_cache" };
+        f.write_file("in.txt", "AAAA\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+
+        WHEN("a build runs with --stat")
+        {
+            auto result = f.build({ "--stat" });
+
+            THEN("it names the window within which a recorded mtime is not trusted")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output.find("Racy-clean window:    1000 ms") != std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("A source edited and dated in the future settles after one rebuild", "[e2e][incremental]")
 {
     GIVEN("a built project whose input is edited and then dated in the future")

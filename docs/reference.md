@@ -2391,6 +2391,7 @@ Shows:
 - Files checked and changed
 - Files, edges, and implicit deps in index
 - Hash computations and stat calls
+- The racy-clean window: a file whose recorded mtime falls within it before the last index save is re-hashed rather than trusted
 - String pool size (interned strings count and bytes)
 
 **Phase timing breakdown** (for diagnosing slow incremental builds):
@@ -2406,6 +2407,7 @@ Stats:
   Hash computations:     771
   Hashes skipped:        769 (stat cache)
   Stat calls:            772
+  Racy-clean window:    1000 ms
   String pool:        366156 strings, 14861508 bytes
 
   Phase timing:
