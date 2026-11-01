@@ -269,6 +269,17 @@ auto exists(std::string_view path) -> bool
     return !stat_error_means_absent(rc);
 }
 
+auto lexists(std::string_view path) -> bool
+{
+    auto p = CPath { path };
+    auto st = sys::Stat {};
+    auto rc = sys::lstat(p.c_str(), st);
+    if (rc == 0) {
+        return true;
+    }
+    return !stat_error_means_absent(rc);
+}
+
 auto is_file(std::string_view path) -> bool
 {
     auto p = CPath { path };

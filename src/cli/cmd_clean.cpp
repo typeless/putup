@@ -75,7 +75,7 @@ auto remove_indexed_outputs(
             output_dirs.push_back(pup::global_pool().intern(parent));
         }
 
-        if (!pup::platform::exists(abs_path_sv)) {
+        if (!pup::platform::lexists(abs_path_sv)) {
             continue;
         }
 
@@ -167,7 +167,7 @@ auto distclean_single_variant(Options const& opts, std::string_view variant_name
         // Over the files still owned, not the reasons the removals gave: a reason at a time is how #373 happened.
         if (!mode.dry_run) {
             for (auto path_id : prior.generated) {
-                if (pup::platform::exists(pool.get(pup::path::join(root_sv, pool.get(path_id))))) {
+                if (pup::platform::lexists(pool.get(pup::path::join(root_sv, pool.get(path_id))))) {
                     ++surviving_outputs;
                 }
             }

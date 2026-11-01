@@ -131,6 +131,20 @@ TEST_CASE("stat_file returns file metadata", "[e2e][platform][file_io]")
     }
 }
 
+TEST_CASE("lexists reports a symlink present whether or not its target exists", "[e2e][platform][file_io]")
+{
+    auto f = E2EFixture { "simple_c" };
+    f.write_file("target.txt", "x");
+    std::filesystem::create_symlink("target.txt", f.workdir() / "live");
+    std::filesystem::create_symlink("missing.txt", f.workdir() / "dangling");
+
+    REQUIRE(lexists((f.workdir() / "target.txt").string()));
+    REQUIRE(lexists((f.workdir() / "live").string()));
+    REQUIRE(lexists((f.workdir() / "dangling").string()));
+    REQUIRE_FALSE(exists((f.workdir() / "dangling").string()));
+    REQUIRE_FALSE(lexists((f.workdir() / "missing.txt").string()));
+}
+
 TEST_CASE("atomic_write creates file atomically", "[e2e][platform][file_io]")
 {
     auto f = E2EFixture { "simple_c" };

@@ -4896,6 +4896,93 @@ SCENARIO("Distclean removes all build artifacts", "[e2e][clean]")
     }
 }
 
+SCENARIO("A reset removes a generated symlink whose target is gone", "[e2e][clean]")
+{
+    GIVEN("a build that generated a symlink, and its target since deleted")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("data.txt", "hi\n");
+        f.write_file("Tupfile", ": data.txt |> cp %f %o |> copy.txt\n: copy.txt |> ln -s copy.txt %o |> link.txt\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        f.remove_file("copy.txt");
+        REQUIRE(std::filesystem::is_symlink(f.workdir() / "link.txt"));
+        REQUIRE_FALSE(f.exists("link.txt"));
+
+        WHEN("pup clean is executed")
+        {
+            auto result = f.clean();
+
+            THEN("the symlink is removed")
+            {
+                REQUIRE(result.success());
+                REQUIRE_FALSE(std::filesystem::is_symlink(f.workdir() / "link.txt"));
+            }
+        }
+
+        WHEN("pup distclean is executed")
+        {
+            auto result = f.distclean();
+
+            THEN("the symlink is removed along with the record")
+            {
+                REQUIRE(result.success());
+                REQUIRE_FALSE(std::filesystem::is_symlink(f.workdir() / "link.txt"));
+                REQUIRE_FALSE(f.exists(".pup"));
+            }
+        }
+    }
+}
+
+SCENARIO("A build removes a stale generated symlink whose target is gone", "[e2e][incremental]")
+{
+    GIVEN("a build that generated a symlink, and its target since deleted")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("data.txt", "hi\n");
+        f.write_file("Tupfile", ": data.txt |> cp %f %o |> copy.txt\n: copy.txt |> ln -s copy.txt %o |> link.txt\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        f.remove_file("copy.txt");
+        REQUIRE(std::filesystem::is_symlink(f.workdir() / "link.txt"));
+
+        WHEN("the rule that generated the symlink is deleted and the project rebuilt")
+        {
+            f.write_file("Tupfile", ": data.txt |> cp %f %o |> copy.txt\n");
+            auto result = f.build();
+
+            THEN("the symlink is removed as a stale output")
+            {
+                REQUIRE(result.success());
+                REQUIRE_FALSE(std::filesystem::is_symlink(f.workdir() / "link.txt"));
+            }
+        }
+    }
+}
+
+SCENARIO("A command may write a symlink whose target does not exist", "[e2e][incremental]")
+{
+    GIVEN("a rule whose output is a symlink to a missing file")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": |> ln -s missing %o |> link.txt\n");
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("the build succeeds with the symlink in place, and a second build has nothing to do")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(std::filesystem::is_symlink(f.workdir() / "link.txt"));
+                REQUIRE(f.build().is_noop());
+            }
+        }
+    }
+}
+
 SCENARIO("Distclean dry-run shows what would be removed", "[e2e][clean]")
 {
     GIVEN("a built project")

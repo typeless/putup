@@ -34,9 +34,10 @@ Whether the files a rule declares exist once its command has exited.
 ### REQ-OUTPUT-PRODUCED
 
 - conformance: tup-conformant
-- reference: upstream reports `tup error: Expected to write to file '...'` from `src/tup/db.c` (cited in issue #415, not read here); the outcome matches, the mechanism does not — tup observes the write through FUSE where putup stats the declared path after the command exits, which narrows it three ways: an output written and then removed is indistinguishable from one never written; a directory created at the declared path satisfies it; and a dangling symlink reads as absent on POSIX, where `stat` follows the link, but as present on Windows, where `GetFileAttributesW` answers for the reparse point, so that one shape is rejected on one platform and accepted on the other
+- reference: upstream reports `tup error: Expected to write to file '...'` from `src/tup/db.c` (cited in issue #415, not read here); the outcome matches, the mechanism does not — tup observes the write through FUSE where putup stats the declared path after the command exits, which narrows it three ways: an output written and then removed is indistinguishable from one never written; a directory created at the declared path satisfies it; and a symlink counts as written whether or not its target exists, on POSIX through `lstat` and on Windows through `GetFileAttributesW`, which answers for the reparse point, as tup does, whose `tup_fs_symlink` (`server/fuse_fs.c`) creates a command's symlink at its output (#376)
 - discharge: test "Scenario: A command that creates none of its declared outputs names every one of them"
 - discharge: test "Scenario: A command that writes only some of its declared outputs fails the build"
+- discharge: test "Scenario: A command may write a symlink whose target does not exist"
 
 If a command exits successfully without creating every file it declares as an output, then putup
 shall fail that command and name each declared output that does not exist.

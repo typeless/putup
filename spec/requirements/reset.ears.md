@@ -56,6 +56,15 @@ build was in tree.
 If a reset cannot read the build record, then putup shall keep that record and name the command
 that resets the project without it, rather than removing a record whose files it could not name.
 
+### REQ-RESET-DANGLING-SYMLINK
+
+- conformance: putup-only
+- discharge: test "Scenario: A reset removes a generated symlink whose target is gone"
+
+Where a file the record names as generated is a symlink, putup shall treat it as on disk in both
+a reset's removal pass and its count of surviving files, whether or not its target exists, so a
+dangling symlink is removed rather than left behind under a record a distclean then discards.
+
 ## Group: removal-reporting
 
 What a reset may claim it removed.

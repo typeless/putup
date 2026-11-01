@@ -355,6 +355,11 @@ auto exists(std::string_view path) -> bool
     return !attr_error_means_absent(GetLastError());
 }
 
+auto lexists(std::string_view path) -> bool
+{
+    return exists(path);
+}
+
 auto is_file(std::string_view path) -> bool
 {
     auto wpath = to_wide(path);

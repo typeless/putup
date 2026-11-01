@@ -64,6 +64,8 @@ auto atomic_write(
 [[nodiscard]]
 auto exists(std::string_view path) -> bool;
 [[nodiscard]]
+auto lexists(std::string_view path) -> bool;
+[[nodiscard]]
 auto is_file(std::string_view path) -> bool;
 [[nodiscard]]
 auto is_directory(std::string_view path) -> bool;

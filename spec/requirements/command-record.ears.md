@@ -97,6 +97,15 @@ performed.
 If putup cannot delete a stale output, then putup shall fail the build and keep the record
 that names that output.
 
+### REQ-KEY-STALE-SYMLINK
+
+- leg: invariant
+- conformance: tup-conformant
+- reference: tup `delete_file` (`delete_name_file.c`) removes a stale output with `unlinkat`, which removes a symlink itself without reading its target
+- discharge: test "Scenario: A build removes a stale generated symlink whose target is gone"
+
+Where a stale output is a symlink, putup shall delete it whether or not its target exists.
+
 ### REQ-KEY-INJECTIVE
 
 - leg: invariant

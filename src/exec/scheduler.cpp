@@ -192,7 +192,7 @@ auto reject_unwritten_outputs(
         auto output_path = pup::path::is_absolute(output_sv)
             ? output_sv
             : resolve_variant_path(source_root_sv, output_root_sv, output_root_prefix, output_sv);
-        if (pup::platform::exists(output_path)) {
+        if (pup::platform::lexists(output_path)) {
             continue;
         }
         if (!msg.empty()) {

@@ -1987,7 +1987,7 @@ auto remove_stale_outputs(
 
             auto file_path_sv = pup::global_pool().get(file->path);
             auto abs_path = pup::global_pool().get(pup::path::join(source_root, file_path_sv));
-            if (pup::platform::exists(abs_path)) {
+            if (pup::platform::lexists(abs_path)) {
                 if (dry_run) {
                     vprint(variant_name, "Would remove stale: {}\n", file_path_sv);
                 } else {
