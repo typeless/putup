@@ -61,6 +61,7 @@ auto is_root(std::string_view p) -> bool;
 auto is_normal(std::string_view p) -> bool;
 
 /// Lexically normalize a path by resolving '.' and '..' segments.
+/// A '..' never removes a UNC path's host or share.
 /// Does not touch the filesystem.
 [[nodiscard]]
 auto normalize(std::string_view p) -> StringId;

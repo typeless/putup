@@ -452,9 +452,26 @@ TEST_CASE("path::normalize keeps a UNC path rooted", "[path][windows]")
 {
     REQUIRE(sv(normalize("\\\\host\\share\\victim.txt")) == "//host/share/victim.txt");
     REQUIRE(sv(normalize("\\\\host\\share")) == "//host/share");
-
-    // Where the parent references resolve to does not matter: staying rooted is what refuses it.
     REQUIRE(is_absolute(sv(normalize("\\\\host\\share\\..\\..\\victim.txt"))));
+}
+
+TEST_CASE("path::normalize never climbs out of a UNC path's host and share", "[path][windows]")
+{
+    REQUIRE(sv(normalize("\\\\host\\share\\..\\..\\x")) == "//host/share/x");
+    REQUIRE(sv(normalize("//host/..")) == "//host");
+    REQUIRE(sv(normalize("//a/.")) == "//a");
+    REQUIRE(sv(normalize("//a/./b/..")) == "//a/b");
+
+    auto const alphabet = std::array<std::string_view, 5> { "a", "b", ".", "..", "" };
+    for (auto x : alphabet) {
+        for (auto y : alphabet) {
+            for (auto z : alphabet) {
+                auto const p = std::string { "//host/share/" } + std::string { x } + "/" + std::string { y } + "/" + std::string { z };
+                INFO("input: " << p);
+                REQUIRE(sv(normalize(p)).starts_with("//host/share"));
+            }
+        }
+    }
 }
 
 TEST_CASE("path::normalize keeps a drive-relative prefix unseparated", "[path][windows]")
@@ -622,8 +639,7 @@ TEST_CASE("path::normalize obeys its laws", "[path]")
         check_laws_under_root("C:");
     }
 
-    // The root a UNC path normalizes onto. The authority that follows it is ordinary components,
-    // which is why the laws are stated against "//" and not against "//host/share" (#388).
+    // The root a UNC path normalizes onto (#388).
     SECTION("UNC-rooted paths")
     {
         check_laws_under_root("//");

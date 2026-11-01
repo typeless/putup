@@ -232,6 +232,7 @@ auto normalize(std::string_view p) -> StringId
     auto const root_len = root_length(p);
     auto start = root_len;
     auto absolute = root_len != 0;
+    auto const host_and_share = std::size_t { root_len == 2 && is_separator(p[0]) && is_separator(p[1]) ? 2U : 0U };
 
     while (start < p.size()) {
         auto end = p.find_first_of(separators, start);
@@ -241,7 +242,7 @@ auto normalize(std::string_view p) -> StringId
         auto part = p.substr(start, end - start);
         if (part.empty() || part == ".") {
             // skip
-        } else if (part == ".." && !parts.empty() && parts.back() != "..") {
+        } else if (part == ".." && parts.size() > host_and_share && parts.back() != "..") {
             parts.pop_back();
         } else if (part == ".." && absolute) {
             // Cannot go above root
