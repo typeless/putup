@@ -44,10 +44,16 @@ struct CarriedState {
     Vec<StringId> examined;                                                 ///< sorted: what change detection stat'ed
     Vec<StringId> refreshed;                                                ///< sorted: outputs of the commands that ran
     std::int64_t build_start_ns = std::numeric_limits<std::int64_t>::max(); ///< a source modified since carries no hash
+    Vec<std::pair<StringId, Hash256>> hashed_before_commands;               ///< sorted: sources dated after build start, as change detection read them
 
     /// The entry to keep for `path`, or nullptr when this build may observe the file itself.
     [[nodiscard]]
     auto carry_for(StringId path) const -> index::FileEntry const*;
+
+    /// The content change detection read for `path` before any command ran, or nullptr when it
+    /// read none because the file was not dated after the build's start.
+    [[nodiscard]]
+    auto hash_before_commands(StringId path) const -> Hash256 const*;
 };
 
 /// Serialize non-command nodes from the build graph to the index.

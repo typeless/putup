@@ -1909,6 +1909,35 @@ SCENARIO("A source edited while the build runs is rebuilt by the next build", "[
         }
     }
 
+    GIVEN("a first build whose command replaces its input with a copy dated in the future")
+    {
+        auto f = E2EFixture { "no_output_command" };
+        REQUIRE(f.init().success());
+        f.write_file("Tupfile", ": a.txt |> cat %f > %o; if grep -q v1 %f; then printf 'v2\\n' > a.new; touch -d 2030-01-01T00:00:00 a.new; mv a.new %f; fi |> a.out\n");
+        f.write_file("a.txt", "v1\n");
+        REQUIRE(f.build().success());
+        REQUIRE(f.read_file("a.out") == "v1\n");
+        REQUIRE(f.read_file("a.txt") == "v2\n");
+
+        WHEN("the project is built again")
+        {
+            auto result = f.build();
+
+            THEN("the command reads the replaced input")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+                REQUIRE(f.read_file("a.out") == "v2\n");
+            }
+
+            THEN("the following build is a no-op")
+            {
+                REQUIRE(f.build().is_noop());
+            }
+        }
+    }
+
     GIVEN("an incremental build in which one command edits another command's input")
     {
         auto f = E2EFixture { "no_output_command" };
@@ -10391,6 +10420,35 @@ SCENARIO("A source touched into the future does not rebuild an up-to-date tree",
                 INFO("second stdout: " << second.stdout_output);
                 REQUIRE(first.is_noop());
                 REQUIRE(second.is_noop());
+            }
+        }
+    }
+}
+
+SCENARIO("A source edited and dated in the future settles after one rebuild", "[e2e][incremental]")
+{
+    GIVEN("a built project whose input is edited and then dated in the future")
+    {
+        auto f = E2EFixture { "stat_cache" };
+        f.write_file("in.txt", "AAAA\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        f.write_file("in.txt", "BBBB\n");
+        REQUIRE(f.run("/usr/bin/touch", { "-d", "2030-01-01T00:00:00", "in.txt" }).success());
+
+        WHEN("the project is rebuilt, then built again with nothing changed")
+        {
+            auto rebuild = f.build();
+            auto again = f.build();
+
+            THEN("the rebuild picks up the edit and the next build runs nothing")
+            {
+                INFO("rebuild stdout: " << rebuild.stdout_output);
+                INFO("again stdout: " << again.stdout_output);
+                REQUIRE(rebuild.success());
+                REQUIRE_FALSE(rebuild.is_noop());
+                REQUIRE(f.read_file("out.txt") == "BBBB\n");
+                REQUIRE(again.is_noop());
             }
         }
     }

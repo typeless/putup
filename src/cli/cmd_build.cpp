@@ -246,6 +246,7 @@ struct ChangeScan {
     pup::Vec<StringId> changed;
     pup::Vec<StringId> examined;
     std::size_t reverified = 0;
+    pup::Vec<std::pair<StringId, pup::Hash256>> hashed_before_commands;
 };
 
 auto find_changed_files_with_implicit(
@@ -332,6 +333,12 @@ auto find_changed_files_with_implicit(
             continue;
         }
 
+        if (file.type == pup::NodeType::File && stat_result->mtime_ns >= build_start_ns) {
+            if (auto hash_before_commands = pup::sha256_file(path)) {
+                scan.hashed_before_commands.emplace_back(file.path, *hash_before_commands);
+            }
+        }
+
         auto current_size = stat_result->size;
         if (current_size != file.size) {
             if (verbose) {
@@ -375,6 +382,7 @@ auto find_changed_files_with_implicit(
     }
 
     std::sort(scan.examined.begin(), scan.examined.end(), pup::handle_less);
+    std::sort(scan.hashed_before_commands.begin(), scan.hashed_before_commands.end(), [](auto const& a, auto const& b) { return pup::handle_less(a.first, b.first); });
     return scan;
 }
 
@@ -405,9 +413,10 @@ struct ImplicitDepContext {
     /// What the previous record classified as generated, sorted by handle. A build without
     /// authority over the producing directory cannot answer that question itself (#369).
     pup::Vec<pup::StringId> const& prior_generated;
-    /// Wall-clock time this build started. A source file modified since may have been read
-    /// before the edit, so its record carries no hash and the next build re-runs its readers.
-    std::int64_t build_start_ns;
+    /// What this build may not restate, and when it started: a source file modified since may
+    /// have been read before the edit, so its record carries no hash and the next build re-runs
+    /// its readers.
+    CarriedState const& carried;
 };
 
 /// Whether the previous record classified this path as an output.
@@ -475,6 +484,29 @@ auto get_or_create_dir(
     return dir_id;
 }
 
+struct RecordedContent {
+    pup::Hash256 hash;
+    std::int64_t mtime_ns;
+};
+
+auto recorded_content(
+    CarriedState const& carried,
+    StringId path,
+    pup::NodeType type,
+    pup::Hash256 const& hash,
+    std::int64_t mtime_ns
+) -> RecordedContent
+{
+    if (type != pup::NodeType::File || mtime_ns < carried.build_start_ns) {
+        return { .hash = hash, .mtime_ns = mtime_ns };
+    }
+    auto const* hash_before_commands = carried.hash_before_commands(path);
+    if (hash_before_commands != nullptr && *hash_before_commands == hash) {
+        return { .hash = hash, .mtime_ns = 0 };
+    }
+    return { .hash = {}, .mtime_ns = 0 };
+}
+
 /// Create a file entry for an implicit dependency (header file discovered by compiler).
 /// Creates parent directories as needed and returns the file's NodeId.
 auto create_implicit_file(
@@ -501,10 +533,9 @@ auto create_implicit_file(
             file_size = stat_result->size;
             mtime_ns = stat_result->mtime_ns;
         }
-        if (type == pup::NodeType::File && mtime_ns >= ctx.build_start_ns) {
-            content_hash = {};
-            mtime_ns = 0;
-        }
+        auto const recorded = recorded_content(ctx.carried, rel_path, type, content_hash, mtime_ns);
+        content_hash = recorded.hash;
+        mtime_ns = recorded.mtime_ns;
     }
 
     auto& pool = pup::global_pool();
@@ -540,6 +571,15 @@ auto CarriedState::carry_for(StringId path) const -> pup::index::FileEntry const
         return nullptr;
     }
     return by_path.find(path);
+}
+
+auto CarriedState::hash_before_commands(StringId path) const -> pup::Hash256 const*
+{
+    auto pos = std::lower_bound(hashed_before_commands.begin(), hashed_before_commands.end(), path, [](auto const& entry, StringId key) { return pup::handle_less(entry.first, key); });
+    if (pos == hashed_before_commands.end() || pos->first != path) {
+        return nullptr;
+    }
+    return &pos->second;
 }
 
 /// Serialize file and directory nodes from the build graph to the index.
@@ -624,10 +664,9 @@ auto serialize_graph_nodes(
                     file_size = stat_result->size;
                     mtime_ns = stat_result->mtime_ns;
                 }
-                if (type == pup::NodeType::File && mtime_ns >= carried.build_start_ns) {
-                    content_hash = {};
-                    mtime_ns = 0;
-                }
+                auto const recorded = recorded_content(carried, path_id, type, content_hash, mtime_ns);
+                content_hash = recorded.hash;
+                mtime_ns = recorded.mtime_ns;
             }
 
             auto& pool = pup::global_pool();
@@ -1549,11 +1588,12 @@ auto build_index(
     pup::Vec<pup::StringId> const& deleted_stale = {},
     pup::Vec<pup::OrderingEdge> const& enforced_ordering = {},
     pup::Vec<pup::StringId> const& examined_files = {},
+    pup::Vec<std::pair<pup::StringId, pup::Hash256>> const& hashed_before_commands = {},
     pup::Vec<pup::StringId> const& prior_generated = {},
     std::int64_t build_start_ns = std::numeric_limits<std::int64_t>::max()
 ) -> pup::index::Index
 {
-    auto carried = CarriedState { .by_path = {}, .examined = examined_files, .refreshed = {}, .build_start_ns = build_start_ns };
+    auto carried = CarriedState { .by_path = {}, .examined = examined_files, .refreshed = {}, .build_start_ns = build_start_ns, .hashed_before_commands = hashed_before_commands };
     if (old_index != nullptr) {
         carried.by_path = pup::index::files_by_path(*old_index);
     }
@@ -1616,7 +1656,7 @@ auto build_index(
         .ordered_memo_reached = ordered_memo_reached,
         .ordering_hops = ordering_hops,
         .prior_generated = prior_generated,
-        .build_start_ns = build_start_ns,
+        .carried = carried,
     };
 
     process_implicit_deps(discovered_deps, ctx);
@@ -2162,6 +2202,7 @@ auto build_single_variant(
     auto changed_files = pup::Vec<StringId> {};
     auto examined_files = pup::Vec<StringId> {};
     auto reverified_files = std::size_t { 0 };
+    auto hashed_before_commands = pup::Vec<std::pair<StringId, pup::Hash256>> {};
     auto forced_cmds = pup::Vec<pup::NodeId> {};
     auto deleted_stale = pup::Vec<pup::StringId> {};
     auto join = CommandLookup {};
@@ -2243,6 +2284,7 @@ auto build_single_variant(
         changed_files = std::move(scan.changed);
         examined_files = std::move(scan.examined);
         reverified_files = scan.reverified;
+        hashed_before_commands = std::move(scan.hashed_before_commands);
         auto change_detect_elapsed = pup::SteadyClock::now() - change_detect_start;
         pup::thread_metrics().change_detection_time = std::chrono::duration_cast<std::chrono::microseconds>(change_detect_elapsed);
 
@@ -2518,6 +2560,7 @@ auto build_single_variant(
             deleted_stale,
             stats.enforced_ordering,
             examined_files,
+            hashed_before_commands,
             ctx.prior_generated(),
             build_start_ns
         ) };

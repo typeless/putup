@@ -343,6 +343,18 @@ state rather than replacing it with state observed during that build.
 If a source file is modified after a build starts, then putup shall run the commands that read
 it again on the next build.
 
+### REQ-INPUT-FUTURE-MTIME
+
+- leg: invariant
+- conformance: putup-only
+- discharge: test "Scenario: A source edited and dated in the future settles after one rebuild"
+- discharge: test "Scenario: A source touched into the future does not rebuild an up-to-date tree"
+- discharge: test "Scenario: A source edited while the build runs is rebuilt by the next build"
+
+If a source file's modification time is after the build started and its content is what putup read
+before any command ran, then putup shall record that content and decide whether the file changed
+by content on the next build.
+
 ### REQ-INPUT-UNRESOLVED
 
 - leg: invariant
