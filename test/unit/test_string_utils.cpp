@@ -2,12 +2,14 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "pup/cli/output.hpp"
 #include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/core/string_utils.hpp"
 #include "pup/graph/scanners/dep_words.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -452,4 +454,64 @@ TEST_CASE("tokenize_shell_command keeps a quoted empty word", "[string_utils]")
     REQUIRE(result[1].kind == pup::core::ShellTokenKind::Word);
     REQUIRE(sv(result[2]).empty());
     REQUIRE(sv(result[3]) == "x");
+}
+
+TEST_CASE("escape_json writes every byte so that a JSON string decoder returns it", "[string_utils][json]")
+{
+    auto decode = [](std::string_view escaped) -> std::string {
+        auto out = std::string {};
+        for (auto i = std::size_t { 0 }; i < escaped.size(); ++i) {
+            auto const c = static_cast<unsigned char>(escaped[i]);
+            if (c != '\\') {
+                REQUIRE(c >= 0x20);
+                REQUIRE(c != '"');
+                out += static_cast<char>(c);
+                continue;
+            }
+            REQUIRE(i + 1 < escaped.size());
+            auto const kind = escaped[++i];
+            switch (kind) {
+            case '"':
+            case '\\':
+            case '/':
+                out += kind;
+                break;
+            case 'b':
+                out += '\b';
+                break;
+            case 'f':
+                out += '\f';
+                break;
+            case 'n':
+                out += '\n';
+                break;
+            case 'r':
+                out += '\r';
+                break;
+            case 't':
+                out += '\t';
+                break;
+            case 'u': {
+                REQUIRE(i + 4 < escaped.size());
+                auto const code = std::stoul(std::string { escaped.substr(i + 1, 4) }, nullptr, 16);
+                REQUIRE(code < 0x20);
+                out += static_cast<char>(code);
+                i += 4;
+                break;
+            }
+            default:
+                FAIL("unknown escape \\" << kind);
+            }
+        }
+        return out;
+    };
+
+    for (auto first = 0; first < 256; ++first) {
+        for (auto second = 0; second < 256; ++second) {
+            auto const raw = std::string { 'a', static_cast<char>(first), static_cast<char>(second), 'z' };
+            auto const escaped = pup::global_pool().get(pup::cli::escape_json(raw));
+            INFO("bytes " << first << " " << second << " escaped as " << escaped);
+            REQUIRE(decode(escaped) == raw);
+        }
+    }
 }

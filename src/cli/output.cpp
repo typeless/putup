@@ -152,8 +152,12 @@ auto escape_json(std::string_view s) -> StringId
             buf += "\\t";
             break;
         default:
-            if (static_cast<unsigned char>(c) <= ASCII_CONTROL_CHAR_MAX) {
-                continue;
+            if (auto const byte = static_cast<unsigned char>(c); byte <= ASCII_CONTROL_CHAR_MAX) {
+                constexpr auto HEX_DIGITS = std::string_view { "0123456789abcdef" };
+                buf += "\\u00";
+                buf += HEX_DIGITS[byte >> 4U];
+                buf += HEX_DIGITS[byte & 0xFU];
+                break;
             }
             buf += c;
         }
