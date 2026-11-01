@@ -245,6 +245,7 @@ auto collect_inactive_output_paths(pup::graph::BuildGraph const& state) -> Vec<S
 struct ChangeScan {
     pup::Vec<StringId> changed;
     pup::Vec<StringId> examined;
+    std::size_t reverified = 0;
 };
 
 auto find_changed_files_with_implicit(
@@ -257,6 +258,7 @@ auto find_changed_files_with_implicit(
     Vec<std::string_view> const& upstream_files,
     Vec<StringId> const& scope_crossing_inputs,
     Vec<StringId> const& inactive_outputs,
+    std::int64_t build_start_ns,
     bool verbose = false,
     bool no_stat_cache = false
 ) -> ChangeScan
@@ -345,7 +347,9 @@ auto find_changed_files_with_implicit(
         auto const is_racy_clean = save_time_ns > 0
             && cached_mtime_ns >= save_time_ns - RACY_CLEAN_THRESHOLD_NS;
 
-        if (!no_stat_cache && cached_mtime_ns != 0 && current_mtime_ns == cached_mtime_ns && !is_racy_clean) {
+        auto const record_is_current = cached_mtime_ns != 0 && current_mtime_ns == cached_mtime_ns && !is_racy_clean;
+
+        if (!no_stat_cache && record_is_current) {
             ++metrics.hashes_skipped;
             continue;
         }
@@ -358,6 +362,8 @@ auto find_changed_files_with_implicit(
                 }
                 ++metrics.files_changed;
                 changed.push_back(pool.intern(file_path_sv));
+            } else if (!record_is_current && current_mtime_ns < build_start_ns - RACY_CLEAN_THRESHOLD_NS) {
+                ++scan.reverified;
             }
         } else {
             if (verbose) {
@@ -2155,6 +2161,7 @@ auto build_single_variant(
     auto must_rerun_cmds = pup::NodeIdMap32 {};
     auto changed_files = pup::Vec<StringId> {};
     auto examined_files = pup::Vec<StringId> {};
+    auto reverified_files = std::size_t { 0 };
     auto forced_cmds = pup::Vec<pup::NodeId> {};
     auto deleted_stale = pup::Vec<pup::StringId> {};
     auto join = CommandLookup {};
@@ -2229,11 +2236,13 @@ auto build_single_variant(
             upstream_files,
             scope_crossing_inputs,
             collect_inactive_output_paths(bs),
+            build_start_ns,
             opts.verbose,
             opts.no_stat_cache
         );
         changed_files = std::move(scan.changed);
         examined_files = std::move(scan.examined);
+        reverified_files = scan.reverified;
         auto change_detect_elapsed = pup::SteadyClock::now() - change_detect_start;
         pup::thread_metrics().change_detection_time = std::chrono::duration_cast<std::chrono::microseconds>(change_detect_elapsed);
 
@@ -2281,7 +2290,8 @@ auto build_single_variant(
             }
         }
 
-        if (changed_files.empty() && forced_cmds.empty() && !retired_commands) {
+        auto const record_unchanged = opts.dry_run || reverified_files == 0;
+        if (changed_files.empty() && forced_cmds.empty() && !retired_commands && record_unchanged) {
             if (refused_dir_count > 0) {
                 report_refused_dirs(variant_name, ctx.refused_dirs());
             } else {

@@ -38,3 +38,19 @@ unchanged.
 - discharge: test "Scenario: A file that cannot be hashed is named in a warning"
 
 If putup cannot read a file whose content it must hash, then putup shall warn and name that file.
+
+---
+
+## Group: cost
+
+What the predicate costs on the next build once it has answered.
+
+### REQ-CHANGE-REVERIFIED-RECORDED
+
+- conformance: putup-only
+- discharge: test "Scenario: An up-to-date build records the files it re-verified"
+- discharge: test "Scenario: A source touched into the future does not rebuild an up-to-date tree"
+
+When a build that is not a dry run hashes a file whose modification time is more than one second
+before the build started and finds its content unchanged, putup shall record that file's current
+modification time, so that the next build does not hash it again.

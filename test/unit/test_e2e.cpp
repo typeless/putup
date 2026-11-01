@@ -10343,6 +10343,59 @@ SCENARIO("Content change with preserved size and mtime", "[e2e][incremental]")
     }
 }
 
+SCENARIO("An up-to-date build records the files it re-verified", "[e2e][incremental]")
+{
+    GIVEN("a built project whose Tupfile, input and output were touched without changing content")
+    {
+        auto f = E2EFixture { "stat_cache" };
+        f.write_file("in.txt", "AAAA\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.run("/usr/bin/touch", { "-d", "2020-01-01T00:00:00", "Tupfile", "in.txt", "out.txt" }).success());
+
+        WHEN("an up-to-date build hashes them and finds them unchanged")
+        {
+            auto reverify = f.build();
+            REQUIRE(reverify.success());
+
+            THEN("the next build skips hashing them")
+            {
+                auto result = f.build({ "--stat" });
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output.find("Hash computations:       0") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("A source touched into the future does not rebuild an up-to-date tree", "[e2e][incremental]")
+{
+    GIVEN("a built project whose input was touched to a future time without changing content")
+    {
+        auto f = E2EFixture { "stat_cache" };
+        f.write_file("in.txt", "AAAA\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.run("/usr/bin/touch", { "-d", "2030-01-01T00:00:00", "in.txt" }).success());
+
+        WHEN("the project is built twice with nothing changed")
+        {
+            auto first = f.build();
+            auto second = f.build();
+
+            THEN("neither build runs a command")
+            {
+                INFO("first stdout: " << first.stdout_output);
+                INFO("second stdout: " << second.stdout_output);
+                REQUIRE(first.is_noop());
+                REQUIRE(second.is_noop());
+            }
+        }
+    }
+}
+
 SCENARIO("Untracked env vars do not leak into command environments", "[e2e][envdep]")
 {
     GIVEN("a rule that reads an env var that is never imported or exported")
@@ -12926,10 +12979,10 @@ endif
                 REQUIRE(result.stdout_output.find("Changed (") == std::string::npos);
             }
 
-            THEN("the build takes the up-to-date fast path")
+            THEN("the build runs no command")
             {
                 INFO("stdout: " << result.stdout_output);
-                REQUIRE(result.stdout_output.find("up to date") != std::string::npos);
+                REQUIRE(result.is_noop());
             }
         }
 

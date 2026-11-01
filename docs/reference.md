@@ -2094,6 +2094,11 @@ Putup rebuilds only what's necessary by tracking file changes and dependencies i
    re-hashes files whose mtime falls within 1s of the last index save.
 
 3. **Hash check** (authoritative): Otherwise, compute SHA-256 and compare.
+   A build that is not a dry run records the current mtime of every file it
+   hashed and found unchanged, rewriting the index even when there is nothing
+   to do, so the next build takes the stat-cache path for it. A file whose
+   mtime is within 1s of the build's start, or in the future, is not recorded
+   this way: it would still be racy against the new save.
 
 Content-based detection eliminates false positives from `touch file`, editor
 saves without changes, or `git checkout` restoring identical content — the
