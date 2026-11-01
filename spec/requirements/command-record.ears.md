@@ -734,6 +734,17 @@ the commands the newly taken branch declares rather than reporting the build up 
 While a variable a previous build imported is absent from the environment, putup shall use the
 value it recorded for that variable rather than an empty one.
 
+### REQ-ENV-RECORDS-ENVIRONMENT-VALUE
+
+- leg: invariant
+- conformance: tup-conformant
+- reference: upstream keeps one node per environment variable, shared by `export` and `import` (both call `tup_db_findenv` in parser.c), whose value is what `tup_db_findenv` (db.c) read with `getenv`; `import`'s default reaches only the Tupfile variable (`luadb_set`), never the node. putup recorded whatever the directive resolved, and only the first directive's value took effect, so with `export FOO` ahead of `import FOO=one` and FOO unset the record held the default and setting FOO=one re-ran nothing although the command's environment changed (#488). The value REQ-ENV-IMPORTED falls back to is recorded only while no directive that reads the environment records the variable, because the environment's value is the one a command's subprocess gets
+- discharge: test "Scenario: A variable records its environment value whichever directive names it first"
+
+When an `import` or `export` names an environment variable, putup shall record the value its own
+environment gives that variable, whatever default an `import` names and whichever directive comes
+first.
+
 ### REQ-ENV-TEMPDIR
 
 - leg: invariant

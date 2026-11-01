@@ -45,6 +45,7 @@ auto get_file_node(Graph& graph, NodeId id) -> FileNode*;
 auto get_command_node(Graph& graph, NodeId id) -> CommandNode*;
 auto add_condition_node(Graph& graph, ConditionNode node) -> Result<NodeId>;
 auto get_condition_node(Graph const& graph, NodeId id) -> ConditionNode const*;
+auto invalidate_path_cache(PathCache& cache, NodeId id) -> void;
 
 namespace {
 auto str(StringId id) -> std::string_view { return global_pool().get(id); }
@@ -1460,11 +1461,13 @@ auto ensure_env_var_node(
     auto content_hash = sha256(value);
 
     if (auto const* existing_node_id = state.imported_env_var_nodes.find(var_name_id)) {
-        if (auto* existing = get_file_node(ctx.state->graph, *existing_node_id)) {
-            if (existing->name != name_id) {
-                existing->name = name_id;
-                existing->content_hash = content_hash;
-            }
+        auto* existing = get_file_node(ctx.state->graph, *existing_node_id);
+        auto const* env_var_dir = get_file_node(ctx.state->graph, state.env_var_dir_id);
+        if (existing && env_var_dir && existing->name != name_id) {
+            existing->name = name_id;
+            existing->path_id = ctx.state->graph.paths.intern(env_var_dir->path_id, name_id);
+            existing->content_hash = content_hash;
+            invalidate_path_cache(ctx.state->path_cache, *existing_node_id);
         }
         return *existing_node_id;
     }
@@ -1588,14 +1591,17 @@ auto process_import(
     auto name_buf = Buf {};
     name_buf += var_name_sv;
 
+    auto const var_name_id = to_underlying(intern(var_name_sv));
     if (auto const* env_val = pup::platform::get_env(name_buf.c_str())) {
         value_id = intern(env_val);
+        (void)ensure_env_var_node(ctx, state, var_name_sv, str(value_id));
     } else if (imp.default_value) {
         auto expanded = parser::expand(*ctx.eval, *imp.default_value);
         if (!expanded) {
             return pup::unexpected<Error>(expanded.error());
         }
         value_id = *expanded;
+        (void)ensure_env_var_node(ctx, state, var_name_sv, std::string_view {});
     } else if (auto it = std::lower_bound(
                    state.options.cached_env_vars.begin(),
                    state.options.cached_env_vars.end(),
@@ -1604,17 +1610,17 @@ auto process_import(
                );
                it != state.options.cached_env_vars.end() && str(it->first) == var_name_sv) {
         value_id = it->second;
+        if (!state.imported_env_var_nodes.find(var_name_id)) {
+            (void)ensure_env_var_node(ctx, state, var_name_sv, str(value_id));
+        }
+    } else {
+        (void)ensure_env_var_node(ctx, state, var_name_sv, std::string_view {});
     }
-
-    auto value_sv = str(value_id);
-
-    (void)ensure_env_var_node(ctx, state, var_name_sv, value_sv);
 
     if (ctx.vars) {
-        ctx.vars->set(var_name_sv, value_sv);
+        ctx.vars->set(var_name_sv, str(value_id));
     }
 
-    auto var_name_id = to_underlying(intern(var_name_sv));
     state.imported_var_names.insert(var_name_id);
 
     return {};

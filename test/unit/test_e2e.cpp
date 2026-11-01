@@ -9511,6 +9511,96 @@ SCENARIO("Exported env var consumed via subprocess environment triggers rebuild"
     }
 }
 
+SCENARIO("A variable records its environment value whichever directive names it first", "[e2e][import][envdep]")
+{
+    GIVEN("an exported variable a later import gives a default, built while the environment leaves it unset")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        auto unset_guard = EnvGuard { "PUP_RECORDED_VALUE", "" };
+        pup::platform::unset_env("PUP_RECORDED_VALUE");
+        f.write_file("Tupfile", "export PUP_RECORDED_VALUE\nimport PUP_RECORDED_VALUE=one\n: |> echo [$PUP_RECORDED_VALUE] > %o |> out.txt\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.read_file("out.txt") == "[]\n");
+
+        WHEN("the graph is shown")
+        {
+            auto result = f.pup({ "show", "graph" });
+
+            THEN("the variable's node carries the empty environment value rather than the default")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output.find("$/PUP_RECORDED_VALUE=\"]") != std::string::npos);
+            }
+        }
+
+        WHEN("the environment then sets the variable to the default's value")
+        {
+            auto env = EnvGuard { "PUP_RECORDED_VALUE", "one" };
+            auto result = f.build();
+
+            THEN("the command re-runs and its subprocess sees the value")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+                REQUIRE(f.read_file("out.txt") == "[one]\n");
+            }
+        }
+    }
+
+    GIVEN("two imports giving the same unset variable different defaults")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        auto unset_guard = EnvGuard { "PUP_RECORDED_VALUE", "" };
+        pup::platform::unset_env("PUP_RECORDED_VALUE");
+        f.write_file("Tupfile", "import PUP_RECORDED_VALUE=one\nimport PUP_RECORDED_VALUE=two\n: |> echo $(PUP_RECORDED_VALUE) > %o |> out.txt\n");
+        REQUIRE(f.init().success());
+
+        WHEN("the graph is shown")
+        {
+            auto result = f.pup({ "show", "graph" });
+
+            THEN("the command uses the later default and the node records neither")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output.find("echo two > out.txt") != std::string::npos);
+                REQUIRE(result.stdout_output.find("$/PUP_RECORDED_VALUE=\"]") != std::string::npos);
+            }
+        }
+    }
+
+    GIVEN("an export ahead of an import without a default, built with the variable set")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        auto unset_guard = EnvGuard { "PUP_RECORDED_VALUE", "first" };
+        f.write_file("Tupfile", "export PUP_RECORDED_VALUE\nimport PUP_RECORDED_VALUE\n: |> echo [$PUP_RECORDED_VALUE] > %o |> out.txt\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.read_file("out.txt") == "[first]\n");
+
+        WHEN("the environment then leaves the variable unset")
+        {
+            pup::platform::unset_env("PUP_RECORDED_VALUE");
+            auto result = f.build();
+            auto graph = f.pup({ "show", "graph" });
+
+            THEN("the command re-runs without the value and the node records the empty environment value")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("graph: " << graph.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+                REQUIRE(f.read_file("out.txt") == "[]\n");
+                REQUIRE(graph.stdout_output.find("$/PUP_RECORDED_VALUE=\"]") != std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("TMPDIR set for putup reaches every build command", "[e2e][envdep]")
 {
     GIVEN("a rule that prints the TMPDIR its shell sees")
