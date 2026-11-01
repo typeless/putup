@@ -996,7 +996,6 @@ auto build_context(
             .verbose = ctx_opts.verbose,
             .reject_empty_commands = !ctx_opts.root_config_only,
             .scanner_registry = ctx_opts.scanner_registry,
-            .pattern_registry = ctx_opts.pattern_registry,
             .cached_env_vars = cached_env_vars,
             .generated_seed = generated_seed,
             .prior_generated = prior_generated_by_path,

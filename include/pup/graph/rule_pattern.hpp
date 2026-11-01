@@ -3,13 +3,12 @@
 
 #pragma once
 
-#include "pup/core/function.hpp"
 #include "pup/core/path_id.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/types.hpp"
 #include "pup/core/vec.hpp"
 
-#include <string_view>
+#include <cstdint>
 
 namespace pup::graph {
 
@@ -54,48 +53,5 @@ struct GeneratedRule {
     NodeId parent_command = INVALID_NODE_ID;   ///< For InjectImplicitDeps
     StringId covered_object = StringId::Empty; ///< The parent's object this rule records headers for
 };
-
-/// Pattern that generates additional rules when matched
-struct RulePattern {
-    bool (*matches)(std::string_view command);
-
-    /// Generate the rules for a matched command; empty if the pattern matches but generates none
-    Function<Vec<GeneratedRule>(CommandInfo const&)> generate;
-};
-
-/// Registry for rule patterns
-class RulePatternRegistry final {
-public:
-    RulePatternRegistry() = default;
-
-    /// Register a pattern
-    auto register_pattern(RulePattern pattern) -> void;
-
-    /// Check if a command matches any pattern and generate rules
-    [[nodiscard]]
-    auto match_and_generate(CommandInfo const& cmd) const
-        -> Vec<GeneratedRule>;
-
-    /// Check if registry has any patterns
-    [[nodiscard]]
-    auto empty() const -> bool
-    {
-        return patterns_.empty();
-    }
-
-    /// Get number of registered patterns
-    [[nodiscard]]
-    auto size() const -> std::size_t
-    {
-        return patterns_.size();
-    }
-
-private:
-    Vec<RulePattern> patterns_;
-};
-
-/// Create the GCC/Clang depfile pattern
-[[nodiscard]]
-auto make_gcc_depfile_pattern() -> RulePattern;
 
 } // namespace pup::graph

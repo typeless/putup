@@ -41,7 +41,6 @@ srcs-y += src/parser/var_tracking.cpp
 srcs-y += src/graph/builder.cpp
 srcs-y += src/graph/dag.cpp
 srcs-y += src/graph/dep_scanner.cpp
-srcs-y += src/graph/rule_pattern.cpp
 srcs-y += src/graph/scanners/clang_cl.cpp
 srcs-y += src/graph/scanners/dep_words.cpp
 srcs-y += src/graph/scanners/gcc.cpp

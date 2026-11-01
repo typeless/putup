@@ -48,7 +48,7 @@ Which commands a scan is generated for.
 - discharge: test "GccScanner compiler wrapper handling"
 - discharge: test "GccScanner scans the prefix before a directory change"
 - discharge: test "GccScanner scans the prefix before an invocation that is not a compile"
-- discharge: test "matches_gcc_compile refuses a command whose first invocation is not a compile"
+- discharge: test "GccScanner refuses a command whose first invocation is not a compile"
 - discharge: test "A command whose first invocation is not a compile is scanned nowhere"
 - discharge: test "ClangClScanner scans the prefix before an invocation that is not a compile"
 - discharge: test "Scenario: The object of a compile that runs elsewhere is reported instead of scanned wrongly"

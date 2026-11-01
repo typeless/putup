@@ -167,12 +167,6 @@ auto is_dep_flag_word(std::string_view word) -> bool
 
 } // namespace
 
-auto matches_gcc_compile(std::string_view command) -> bool
-{
-    auto tokens = tokenize_command(global_pool().intern(command));
-    return !scannable_prefix(tokens.invocations()).empty();
-}
-
 auto GccScanner::matches(CommandInfo const& /*cmd*/, CommandTokens const& tokens) const -> bool
 {
     return !scannable_prefix(tokens.invocations()).empty();

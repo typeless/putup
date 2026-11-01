@@ -1514,32 +1514,32 @@ TEST_CASE("A separator with nothing after it begins no invocation", "[dep_scanne
 
     SECTION("a trailing backgrounding operator")
     {
-        REQUIRE(scanners::matches_gcc_compile("gcc -c a.c -o a.o &"));
+        REQUIRE(scanner_matches(scanners::GccScanner {}, gcc_compile(0, "gcc -c a.c -o a.o &")));
     }
 
     SECTION("a leading separator begins an invocation that runs nothing")
     {
-        REQUIRE(scanners::matches_gcc_compile("; gcc -c a.c -o a.o"));
+        REQUIRE(scanner_matches(scanners::GccScanner {}, gcc_compile(0, "; gcc -c a.c -o a.o")));
     }
 }
 
-TEST_CASE("matches_gcc_compile accepts a command whose prefix compiles", "[dep_scanner][gcc]")
+TEST_CASE("GccScanner claims a command whose prefix compiles", "[dep_scanner][gcc]")
 {
     // The diagnostic consumes the matcher and the scan consumes the builder; a rule they answer
     // differently about is a rule reported as covered and scanned wrongly.
-    REQUIRE(scanners::matches_gcc_compile("gcc -c a.c -o a.o && rm junk.c"));
+    REQUIRE(scanner_matches(scanners::GccScanner {}, gcc_compile(0, "gcc -c a.c -o a.o && rm junk.c")));
 }
 
-TEST_CASE("matches_gcc_compile refuses a command whose first invocation is not a compile", "[dep_scanner][gcc]")
+TEST_CASE("GccScanner refuses a command whose first invocation is not a compile", "[dep_scanner][gcc]")
 {
     // An empty prefix, so nothing downstream of it is reproducible -- the bound that keeps the
     // prefix rule from becoming scan-everything.
-    REQUIRE(!scanners::matches_gcc_compile("gcc -o prog main.c && gcc -c helper.c"));
+    REQUIRE(!scanner_matches(scanners::GccScanner {}, gcc_compile(0, "gcc -o prog main.c && gcc -c helper.c")));
 }
 
-TEST_CASE("matches_clang_cl_compile refuses a command whose first invocation is not a compile", "[dep_scanner][clang_cl]")
+TEST_CASE("ClangClScanner refuses a command whose first invocation is not a compile", "[dep_scanner][clang_cl]")
 {
-    REQUIRE(!scanners::matches_clang_cl_compile("clang-cl foo.obj -o foo.exe && clang-cl -c bar.cpp"));
+    REQUIRE(!scanner_matches(scanners::ClangClScanner {}, clang_cl_compile(0, "clang-cl foo.obj -o foo.exe && clang-cl -c bar.cpp")));
 }
 
 TEST_CASE("ClangClScanner scans the prefix before an invocation that is not a compile", "[dep_scanner][clang_cl]")
@@ -1581,20 +1581,20 @@ TEST_CASE("GccScanner keeps a leading environment assignment in the scan", "[dep
 
     SECTION("the matcher answers as the builder does")
     {
-        REQUIRE(scanners::matches_gcc_compile("FOO=1 gcc -c a.c -o a.o"));
+        REQUIRE(scanner_matches(scanners::GccScanner {}, gcc_compile(0, "FOO=1 gcc -c a.c -o a.o")));
     }
 
     SECTION("a standalone assignment is not absorbed")
     {
         // The prefix form scopes to one command; the standalone form persists into the rest of
         // the line, so no scan of a later invocation reproduces it.
-        REQUIRE(!scanners::matches_gcc_compile("FOO=1; gcc -c a.c -o a.o"));
+        REQUIRE(!scanner_matches(scanners::GccScanner {}, gcc_compile(0, "FOO=1; gcc -c a.c -o a.o")));
         REQUIRE(scans_of(scanner, gcc_compile(83, "FOO=1; gcc -c a.c -o a.o")).empty());
     }
 
     SECTION("a value the scan's own shell would expand a second time is not absorbed")
     {
-        REQUIRE(!scanners::matches_gcc_compile("FOO=$(date) gcc -c a.c -o a.o"));
+        REQUIRE(!scanner_matches(scanners::GccScanner {}, gcc_compile(0, "FOO=$(date) gcc -c a.c -o a.o")));
     }
 }
 
@@ -1616,20 +1616,20 @@ TEST_CASE("GccScanner scans past an invocation that changes nothing", "[dep_scan
 
     SECTION("the other programs that do nothing")
     {
-        REQUIRE(scanners::matches_gcc_compile("true && gcc -c a.c -o a.o"));
-        REQUIRE(scanners::matches_gcc_compile(": && gcc -c a.c -o a.o"));
+        REQUIRE(scanner_matches(scanners::GccScanner {}, gcc_compile(0, "true && gcc -c a.c -o a.o")));
+        REQUIRE(scanner_matches(scanners::GccScanner {}, gcc_compile(0, ": && gcc -c a.c -o a.o")));
     }
 
     SECTION("an announcement that writes a file is opaque")
     {
         // The write may create the very header the compile reads.
-        REQUIRE(!scanners::matches_gcc_compile("echo x > f.h && gcc -c f.c -o f.o"));
+        REQUIRE(!scanner_matches(scanners::GccScanner {}, gcc_compile(0, "echo x > f.h && gcc -c f.c -o f.o")));
         REQUIRE(scans_of(scanner, gcc_compile(86, "echo x >f.h && gcc -c f.c -o f.o")).empty());
     }
 
     SECTION("an announcement that runs a program is opaque")
     {
-        REQUIRE(!scanners::matches_gcc_compile("echo $(gen) && gcc -c a.c -o a.o"));
+        REQUIRE(!scanner_matches(scanners::GccScanner {}, gcc_compile(0, "echo $(gen) && gcc -c a.c -o a.o")));
     }
 
     SECTION("a program that is neither compile nor announcement still ends the prefix")
@@ -1639,7 +1639,7 @@ TEST_CASE("GccScanner scans past an invocation that changes nothing", "[dep_scan
 
     SECTION("a command that only announces is claimed by no scanner")
     {
-        REQUIRE(!scanners::matches_gcc_compile("echo nothing to do"));
+        REQUIRE(!scanner_matches(scanners::GccScanner {}, gcc_compile(0, "echo nothing to do")));
     }
 
     SECTION("an announcement after the last compile adds no scan")
@@ -1669,12 +1669,12 @@ TEST_CASE("ClangClScanner reads the same prefix its sibling does", "[dep_scanner
 
     SECTION("an announcement that writes a file is opaque")
     {
-        REQUIRE(!scanners::matches_clang_cl_compile("echo x > f.h && clang-cl -c f.cpp -o f.obj"));
+        REQUIRE(!scanner_matches(scanners::ClangClScanner {}, clang_cl_compile(0, "echo x > f.h && clang-cl -c f.cpp -o f.obj")));
     }
 
     SECTION("a standalone assignment is not absorbed")
     {
-        REQUIRE(!scanners::matches_clang_cl_compile("FOO=1; clang-cl -c a.cpp -o a.obj"));
+        REQUIRE(!scanner_matches(scanners::ClangClScanner {}, clang_cl_compile(0, "FOO=1; clang-cl -c a.cpp -o a.obj")));
     }
 }
 

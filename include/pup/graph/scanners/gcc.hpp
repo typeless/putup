@@ -35,11 +35,6 @@ public:
 [[nodiscard]]
 auto make_gcc_scanner() -> std::unique_ptr<DepScanner>;
 
-/// Check if a command string is a GCC/Clang compile command (compiler + -c flag).
-/// Used as a lightweight predicate for RulePattern matching without std::regex.
-[[nodiscard]]
-auto matches_gcc_compile(std::string_view command) -> bool;
-
 /// The scanner's flag tables. A test seam: the suite walks them so a flag added without an
 /// argument policy fails there instead of dropping its word at scan time. No production caller.
 [[nodiscard]]

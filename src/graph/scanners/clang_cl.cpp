@@ -167,12 +167,6 @@ auto scannable_prefix(std::span<std::span<std::string_view const> const> invocat
 
 } // namespace
 
-auto matches_clang_cl_compile(std::string_view command) -> bool
-{
-    auto tokens = tokenize_command(global_pool().intern(command));
-    return !scannable_prefix(tokens.invocations()).empty();
-}
-
 auto ClangClScanner::matches(CommandInfo const& /*cmd*/, CommandTokens const& tokens) const -> bool
 {
     return !scannable_prefix(tokens.invocations()).empty();

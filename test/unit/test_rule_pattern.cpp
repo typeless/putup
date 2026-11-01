@@ -6,7 +6,9 @@
 #include "pup/core/path_id.hpp"
 #include "pup/core/path_pool.hpp"
 #include "pup/core/string_pool.hpp"
+#include "pup/graph/dep_scanner.hpp"
 #include "pup/graph/rule_pattern.hpp"
+#include "pup/graph/scanners/gcc.hpp"
 #include "shell_words.hpp"
 
 #include <string>
@@ -24,28 +26,10 @@ auto path(std::string_view s) -> pup::PathId
 }
 } // namespace
 
-TEST_CASE("RulePatternRegistry basic operations", "[rule_pattern]")
-{
-    auto registry = RulePatternRegistry {};
-
-    SECTION("empty registry")
-    {
-        REQUIRE(registry.empty());
-        REQUIRE(registry.size() == 0);
-    }
-
-    SECTION("register pattern")
-    {
-        registry.register_pattern(make_gcc_depfile_pattern());
-        REQUIRE(!registry.empty());
-        REQUIRE(registry.size() == 1);
-    }
-}
-
 TEST_CASE("GCC depfile pattern", "[rule_pattern]")
 {
-    auto registry = RulePatternRegistry {};
-    registry.register_pattern(make_gcc_depfile_pattern());
+    auto registry = DepScannerRegistry {};
+    registry.register_scanner(scanners::make_gcc_scanner());
 
     SECTION("matches gcc compile command")
     {
@@ -59,7 +43,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .working_dir = intern("."),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.size() == 1);
 
         auto const& rule = generated[0];
@@ -84,7 +68,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .working_dir = intern("src"),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.size() == 1);
         REQUIRE(generated[0].command == intern("clang -M bar.cpp"));
     }
@@ -101,7 +85,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .working_dir = intern("."),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.size() == 1);
         REQUIRE(generated[0].command == intern("g++ -M -std=c++20 main.cpp"));
     }
@@ -118,7 +102,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .working_dir = intern("."),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.size() == 1);
         REQUIRE(generated[0].command == intern("ccache gcc -M foo.c"));
     }
@@ -135,7 +119,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .working_dir = intern("."),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.size() == 1);
         REQUIRE(generated[0].command == intern("distcc g++ -M bar.cpp"));
     }
@@ -152,7 +136,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .working_dir = intern("."),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.size() == 1);
         REQUIRE(generated[0].command == intern("arm-linux-gnueabihf-gcc -M foo.c"));
     }
@@ -169,7 +153,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .working_dir = intern("."),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.size() == 1);
         REQUIRE(generated[0].command == intern("/usr/bin/gcc -M foo.c"));
     }
@@ -186,7 +170,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .working_dir = intern("."),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.empty());
     }
 
@@ -202,7 +186,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .working_dir = intern("."),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.empty());
     }
 
@@ -218,7 +202,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .working_dir = intern("."),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.empty());
     }
 
@@ -234,7 +218,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .working_dir = intern("."),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.empty());
     }
 
@@ -250,7 +234,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .working_dir = intern("."),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.empty());
     }
 
@@ -266,7 +250,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .working_dir = intern("."),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.size() == 1);
         REQUIRE(generated[0].command == intern("gcc -M -DMYDEBUG foo.c"));
     }
@@ -283,7 +267,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .working_dir = intern("build/src"),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.size() == 1);
         REQUIRE(generated[0].command == intern("g++ -M -I../../include -I../../third_party foo.cpp"));
     }
@@ -300,7 +284,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .working_dir = intern("."),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.size() == 1);
         REQUIRE(
             generated[0].command
@@ -320,7 +304,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .working_dir = intern("."),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.empty());
     }
 
@@ -336,7 +320,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .working_dir = intern("."),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.empty());
     }
 
@@ -344,8 +328,8 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
 
 TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
 {
-    auto registry = RulePatternRegistry {};
-    registry.register_pattern(make_gcc_depfile_pattern());
+    auto registry = DepScannerRegistry {};
+    registry.register_scanner(scanners::make_gcc_scanner());
 
     SECTION("handles multiple source files")
     {
@@ -359,7 +343,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .working_dir = intern("."),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.size() == 1);
         REQUIRE(generated[0].command == intern("gcc -M foo.c bar.c"));
     }
@@ -376,7 +360,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .working_dir = intern("."),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.size() == 1);
         REQUIRE(generated[0].command == intern("gcc -M -isystem/usr/local/include foo.c"));
     }
@@ -393,7 +377,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .working_dir = intern("."),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.size() == 1);
         REQUIRE(generated[0].command == intern("gcc -M -iquote../include foo.c"));
     }
@@ -410,7 +394,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .working_dir = intern("."),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.size() == 1);
         REQUIRE(generated[0].command == intern("gcc -M -DFOO -UBAR foo.c"));
     }
@@ -427,7 +411,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .working_dir = intern("."),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.size() == 1);
         REQUIRE(generated[0].command == intern("gcc -M -include config.h foo.c"));
     }
@@ -444,7 +428,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .working_dir = intern("."),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.size() == 1);
         REQUIRE(generated[0].command == intern("gcc -M --sysroot=/opt/sdk foo.c"));
     }
@@ -464,7 +448,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .working_dir = intern("."),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.size() == 1);
         // The -D flag with inner double quotes should be preserved and re-quoted
         auto words = pup::test::split_for_host(pup::global_pool().get(generated[0].command));
@@ -495,7 +479,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .working_dir = intern("."),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.size() == 1);
         // The escaped quotes should be preserved and re-quoted
         auto words = pup::test::split_for_host(pup::global_pool().get(generated[0].command));
@@ -515,7 +499,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .working_dir = intern("."),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.size() == 1);
         REQUIRE(generated[0].command == intern("sccache gcc -M foo.c"));
     }
@@ -532,7 +516,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .working_dir = intern("."),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.size() == 1);
         REQUIRE(generated[0].command == intern("icecc g++ -M foo.cpp"));
     }
@@ -549,7 +533,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .working_dir = intern("."),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.size() == 1);
         REQUIRE(generated[0].display == intern("DEP main.c"));
     }
@@ -566,7 +550,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .working_dir = intern("."),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.size() == 1);  // Should match (no dep flags)
     }
 
@@ -582,7 +566,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .working_dir = intern("."),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.empty());
     }
 
@@ -598,7 +582,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .working_dir = intern("."),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.empty());
     }
 
@@ -616,7 +600,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
                 .working_dir = intern("."),
             };
 
-            auto generated = registry.match_and_generate(cmd);
+            auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
             REQUIRE(generated.size() == 1);
             REQUIRE(generated[0].command == intern("g++ -M foo.cc"));
         }
@@ -633,7 +617,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
                 .working_dir = intern("."),
             };
 
-            auto generated = registry.match_and_generate(cmd);
+            auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
             REQUIRE(generated.size() == 1);
             REQUIRE(generated[0].command == intern("g++ -M foo.cxx"));
         }
@@ -650,7 +634,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
                 .working_dir = intern("."),
             };
 
-            auto generated = registry.match_and_generate(cmd);
+            auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
             REQUIRE(generated.size() == 1);
             REQUIRE(generated[0].command == intern("g++ -M foo.C"));
         }
@@ -667,7 +651,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
                 .working_dir = intern("."),
             };
 
-            auto generated = registry.match_and_generate(cmd);
+            auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
             REQUIRE(generated.size() == 1);
             REQUIRE(generated[0].command == intern("g++ -M foo.c++"));
         }
@@ -686,7 +670,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .working_dir = intern("."),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.size() == 1);
         // Path normalized: build/dir/../../include -> include
         REQUIRE(generated[0].command == intern("gcc -M -Iinclude foo.c"));
@@ -708,7 +692,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .working_dir = intern("."),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.size() == 1);
         // Normalized: the driver/../../../ removes modules/MSR/driver, leaving build-s1f3/include/generated
         REQUIRE(generated[0].command == intern("gcc -M -I../../../build-s1f3/include/generated driver.c"));
@@ -726,7 +710,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .working_dir = intern("."),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.empty());
     }
 
@@ -742,7 +726,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .working_dir = intern("."),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.empty());
     }
 
@@ -758,7 +742,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .working_dir = intern("."),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.size() == 1);
         REQUIRE(generated[0].command == intern("gcc -M -I. foo.c"));
     }
@@ -766,8 +750,8 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
 
 TEST_CASE("Generated rules inherit order-only inputs", "[rule_pattern]")
 {
-    auto registry = RulePatternRegistry {};
-    registry.register_pattern(make_gcc_depfile_pattern());
+    auto registry = DepScannerRegistry {};
+    registry.register_scanner(scanners::make_gcc_scanner());
 
     SECTION("DEP rule inherits order-only inputs from parent compile command")
     {
@@ -781,7 +765,7 @@ TEST_CASE("Generated rules inherit order-only inputs", "[rule_pattern]")
             .working_dir = intern("modules/test"),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.size() == 1);
 
         // The generated DEP rule should inherit the order-only inputs
@@ -802,7 +786,7 @@ TEST_CASE("Generated rules inherit order-only inputs", "[rule_pattern]")
             .working_dir = intern("."),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.size() == 1);
         REQUIRE(generated[0].order_only_inputs.empty());
     }
@@ -819,7 +803,7 @@ TEST_CASE("Generated rules inherit order-only inputs", "[rule_pattern]")
             .working_dir = intern("src"),
         };
 
-        auto generated = registry.match_and_generate(cmd);
+        auto generated = registry.match_and_generate(cmd, tokenize_command(cmd.command));
         REQUIRE(generated.size() == 1);
         REQUIRE(generated[0].order_only_inputs.size() == 1);
         REQUIRE(generated[0].order_only_inputs[0] == intern("gen-headers/config.h"));

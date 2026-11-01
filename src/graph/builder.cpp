@@ -2324,8 +2324,6 @@ auto expand_rule(
     if (ctx.options.scanner_registry && !ctx.options.scanner_registry->empty()) {
         auto tokens = tokenize_command(cmd_text);
         generated_rules = ctx.options.scanner_registry->match_and_generate(cmd_info, tokens);
-    } else if (ctx.options.pattern_registry && !ctx.options.pattern_registry->empty()) {
-        generated_rules = ctx.options.pattern_registry->match_and_generate(cmd_info);
     }
 
     process_generated_rules(ctx, state, generated_rules, *cmd_id, deferred_group_vec);

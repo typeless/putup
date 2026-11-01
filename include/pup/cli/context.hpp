@@ -23,7 +23,6 @@ class VarDb;
 }
 namespace graph {
 struct BuildGraph;
-class RulePatternRegistry;
 }
 namespace index {
 class Index;
@@ -59,7 +58,6 @@ struct BuildContextOptions {
     Vec<StringId> parse_scopes = {};
     parser::IgnoreList excludes = {};
     graph::DepScannerRegistry* scanner_registry = nullptr;
-    graph::RulePatternRegistry* pattern_registry = nullptr;
     VarAssignedCallback on_var_assigned = {};
     StatementCallback on_statement = {};
 };

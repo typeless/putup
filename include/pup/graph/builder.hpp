@@ -21,7 +21,6 @@ class VarDb;
 namespace pup::graph {
 
 class DepScannerRegistry;
-class RulePatternRegistry;
 
 /// A path a parse round generated, and the directory whose Tupfile holds the rule producing it
 struct GeneratedPath {
@@ -40,7 +39,6 @@ struct BuilderOptions {
     bool verbose = false;                                    ///< Print verbose output
     bool reject_empty_commands = true;                       ///< Fail on empty-rendered commands (off for the configure pass, which evaluates before tup.config exists)
     DepScannerRegistry const* scanner_registry = nullptr;    ///< Optional scanner registry for implicit deps
-    RulePatternRegistry const* pattern_registry = nullptr;   ///< Optional pattern registry for auto-generated rules
     Vec<std::pair<StringId, StringId>> cached_env_vars = {}; ///< Cached env vars from previous build (sorted by key)
     Vec<GeneratedPath> generated_seed = {};                  ///< Paths a previous parse round generated, sorted by path text; empty on the first round
     Vec<StringId> prior_generated = {};                      ///< Paths the previous record classified as outputs, sorted by path text; answers who owns a path this build cannot attribute, never what a glob matches (#369, #213)
