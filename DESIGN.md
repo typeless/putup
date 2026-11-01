@@ -91,7 +91,7 @@ BuildJob[] (execution plan)
     ▼ Scheduler + CommandRunner
 Output files
     │
-    ▼ IndexWriter
+    ▼ write_index
 .pup/index (binary)
 ```
 
@@ -104,7 +104,7 @@ Output files
 | **Evaluator** | Variable expansion, pattern substitution |
 | **GraphBuilder** | AST to dependency graph transformation |
 | **Scheduler** | Parallel job execution with dependency ordering |
-| **IndexReader/Writer** | Binary index persistence |
+| **read_index / write_index** | Binary index persistence |
 
 ---
 
@@ -970,88 +970,46 @@ Commands with existing `-MD` flags are skipped (user handles deps manually).
 
 ## Index Module
 
-### Binary Format (v11)
+### Binary Format
 
-The index uses **instruction-based command storage** for significant space savings (introduced in v8). Instead of storing fully-expanded command strings, commands store an instruction pattern (e.g., `gcc -c %f -o %o`) plus operand NodeIds; full commands are reconstructed lazily when needed. Each file entry also carries an mtime stat-cache (v9) and each command carries a structural identity hash (v11).
+The authority for the layout is `include/pup/index/format.hpp`: its structs are the bytes, their
+`static_assert`s pin the sizes, and `INDEX_VERSION` carries the version a record's header names,
+with the bump criterion beside it. This section names the sections and their order and leaves the
+field widths to that header, so it does not need editing on every bump.
+
+The index uses **instruction-based command storage**. Instead of storing fully-expanded command
+strings, commands store an instruction pattern (e.g., `gcc -c %f -o %o`) plus operand NodeIds; full
+commands are reconstructed lazily when needed. Each file entry also carries an mtime stat cache, and
+each command carries a `key` (which rule this is, for the cross-build join) and a `signature` (what
+it will do, for deciding whether to re-run).
 
 ```
-┌─────────────────────────────────────┐
-│ Header (56 bytes)                   │
-│   magic: "PUPI" (4 bytes)           │
-│   version: u32 (11)                 │
-│   file_count: u32                   │
-│   command_count: u32                │
-│   edge_count: u32                   │
-│   string_table_size: u32            │
-│   file_offset: u32                  │
-│   command_offset: u32               │
-│   edge_offset: u32                  │
-│   operand_table_offset: u32         │
-│   operand_data_offset: u32          │
-│   string_offset: u32                │
-│   save_time_ns: u64                 │  ← v9 (racy-clean detection)
-├─────────────────────────────────────┤
-│ FileEntry[] (64 bytes each)         │
-│   parent_id: u32                    │
-│   src_id: u32                       │
-│   name_offset: u32                  │
-│   type: u8, flags_low/high: u16     │
-│   reserved: 1 byte                  │
-│   size: u64                         │
-│   content_hash: [u8; 32]            │
-│   mtime_ns: u64                     │  ← v9 (stat cache)
-│   (id computed from array index)    │
-├─────────────────────────────────────┤
-│ CommandEntry[] (48 bytes each)      │
-│   dir_id: u32                       │
-│   cmd_offset: u32                   │  ← Template string with %f/%o patterns (v8)
-│   display_offset: u32               │
-│   env_offset: u32                   │
-│   identity: [u8; 32]                │  ← Structural identity hash (v11)
-│   (id = index | 0x40000000)         │
-├─────────────────────────────────────┤
-│ Edge[] (16 bytes each)              │
-│   from_id: u32                      │
-│   to_id: u32                        │
-│   type: u8, reserved: 7 bytes       │
-├─────────────────────────────────────┤
-│ Operand Offset Table (4 bytes × N)  │  ← NEW
-│   offset[i] = position in data      │
-├─────────────────────────────────────┤
-│ Operand Data (variable length)      │  ← NEW
-│   Per command: u8 in_count,         │
-│                u8 out_count,        │
-│                NodeId inputs[],     │
-│                NodeId outputs[]     │
-├─────────────────────────────────────┤
-│ String Table (length-prefixed)      │
-│   [0]: u16(0) - empty string entry  │
-│   [...]: u16(len) + data bytes      │
-│   Deduplicated via offset reuse     │
-│   Instructions stored here (deduped)│
-├─────────────────────────────────────┤
-│ Footer (32 bytes)                   │
-│   checksum: [u8; 32] (SHA-256)      │
-└─────────────────────────────────────┘
+┌──────────────────────────────────────────┐
+│ RawHeader                                │  magic "PUPI", version, section counts and offsets,
+│                                          │  save_time_ns (racy-clean detection)
+├──────────────────────────────────────────┤
+│ RawFileEntry[file_count]                 │  id = position + 1
+├──────────────────────────────────────────┤
+│ RawCommandEntry[command_count]           │  id = make_command(position + 1)
+├──────────────────────────────────────────┤
+│ RawEdge[edge_count]                      │
+├──────────────────────────────────────────┤
+│ Operand offset table: u32 per command    │  position of each command's operand record
+├──────────────────────────────────────────┤
+│ Operand data                             │  per command: OPERAND_RECORD_HEAD_WORDS u32 counts
+│                                          │  (OperandRecordWord), then the NodeIds and tokens
+│                                          │  they count
+├──────────────────────────────────────────┤
+│ String table                             │  u16 length + bytes per entry, deduplicated;
+│                                          │  instructions are stored here
+├──────────────────────────────────────────┤
+│ RawFooter                                │  SHA-256 of every byte before it
+└──────────────────────────────────────────┘
 ```
 
-**Instruction deduplication**: Bang macros like `!cc = |> $(CC) -c %f -o %o |>` produce the same instruction for all source files. With 1000 C files, instead of storing 1000 nearly-identical command strings, v8 stores 1 instruction + 1000 operand records.
+**Instruction deduplication**: Bang macros like `!cc = |> $(CC) -c %f -o %o |>` produce the same instruction for all source files. With 1000 C files, instead of storing 1000 nearly-identical command strings, the record stores 1 instruction + 1000 operand records.
 
 **Lazy reconstruction**: Full command strings are computed on demand via `expand_instruction()`, which substitutes operand paths into the instruction pattern. CommandNode stores `instruction_id` (the pattern) plus explicit `inputs`/`order_only_inputs`/`outputs` operand vectors. This keeps index loading fast and avoids storing redundant expanded strings.
-
-Version history:
-- v1: Initial format with full path strings
-- v2: Added name field for (parent_dir, name) identification
-- v3: Removed path field, paths reconstructed from parent chain
-- v4: (removed) Directory Merkle hashes - not useful for change detection
-- v5: Removed mtime, change detection uses size + content hash
-- v6: Compact format: 32-bit IDs/offsets, length-prefixed strings
-- v7: Tagged ID spaces (files vs commands), ID computed from array index
-- v8: Instruction-based command storage with operand sections
-- v9: Stat cache — mtime_ns per file, save_time_ns header for racy-clean detection
-- v10: Removed unused group_cmd_id field from edges
-- v11: Per-command structural identity hash (command text + values of vars it depends
-  on); change detection keys on identity, not the rendered command string
 
 Design principles:
 - Fixed-size entries for O(1) random access
@@ -1066,7 +1024,7 @@ Design principles:
 
 ### What a record claims
 
-The binary layout says how the bytes are arranged (the diagram above predates v22). These are the
+The binary layout says how the bytes are arranged. These are the
 rules about what they mean, and they are what decides how a field is written when it cannot be
 written faithfully.
 
@@ -1133,35 +1091,22 @@ contradicts its own classification, not every wrong name. The same principle pre
 different checks: running with a live graph, the strongest check its inputs afford is reachability
 from a producing command, which `clean` has no parse to answer.
 
-### IndexReader
+### Reading and writing the record
 
-Memory-mapped for efficiency:
+Both surfaces are free functions over plain data, declared in `include/pup/index/reader.hpp` and
+`include/pup/index/writer.hpp`.
 
-```cpp
-class IndexReader {
-    static auto open(path) -> Result<IndexReader>;
-    auto read() -> Result<Index>;
-    auto verify_checksum() -> bool;
-    auto header() -> RawHeader const*;
-    auto get_string(offset) -> std::string_view;  // length from string table
-};
-```
+Reading maps the file: `open_index(path)` returns an `IndexFile` holding the mapping,
+`read_index(file)` decodes it into an `Index` (`read_index(path)` does both), and
+`index_verify_checksum(file)` checks the footer. `read_prior_paths(path)` reads only the header,
+file table and string table, for a record too old for `read_index`.
 
-### IndexWriter
+Writing has two steps, split along the seam that makes it atomic:
 
-Atomic writes prevent corruption:
-
-```cpp
-class IndexWriter {
-    static auto write(path, index) -> Result<Unit>;
-};
-```
-
-Write process:
-1. Serialize to temporary file
-2. Compute SHA-256 checksum
-3. Write footer with checksum
-4. Atomic rename to final path
+1. `serialize_index(index)` builds the whole record in memory, computing the SHA-256 over the buffer
+   and writing the footer into it.
+2. `write_index(path, index)` hands that buffer to `pup::platform::atomic_write`, which owns the
+   temporary file and the rename.
 
 What this buys the reader: the record at `.pup/index` was whole when putup last wrote it, because
 an interrupted write leaves the previous record in place rather than a prefix of the new one. A
@@ -1365,7 +1310,7 @@ scheduler.on_job_complete([](result) { print_result(result); });
 auto stats = scheduler.build(*graph);
 
 // 7. Save index for incremental builds
-IndexWriter::write(pup::path::join(pup::path::join(root, ".pup"), "index"), make_index(*graph));
+index::write_index(pup::path::join(pup::path::join(root, ".pup"), "index"), make_index(*graph));
 ```
 
 ### Incremental Build
@@ -1968,7 +1913,7 @@ Unlike some build systems that filter out system headers:
 - **Reproducibility** - Same source + same headers = same build
 - **Minimal overhead** - Header paths stored once per command, hash computed only when mtime differs
 
-### Why Structural Command Identity?
+### Why a Command Key and a Signature?
 
 A command must re-run when its *effective definition* changes. Earlier, a command's
 identity was its fully-expanded command string, and change detection asked "is this
@@ -1984,15 +1929,24 @@ is an exported environment variable the subprocess reads as `$VAR` — the comma
 byte-identical across values, so a string-keyed detector never re-runs it (stale output,
 "Nothing to do"). The same hole applies to a config var that gates an `export`.
 
-v11 separates the two. Each command carries a **structural identity** — a SHA-256 over the
-expanded command text *plus* the values (content hashes) of every variable it depends on,
-collected from its `Sticky` edges. Exported vars now contribute a sticky edge, so their
-values fold into the identity even when they never appear in the text. Change detection
-keys on identity (env/config change → identity changes → rebuild); stale-output detection
-keeps using the rendered string (the structural-shape key, correctly env-insensitive so an
-env change rebuilds in place rather than deleting and recreating). Two builds yield the
-same identity iff the command's effective definition is unchanged, which also makes it a
-sound cross-build join key — unlike a positional NodeId or a lossy string.
+Each command therefore carries two hashes, one per question (`compute_command_key` and
+`compute_command_signature` in `include/pup/graph/dag.hpp`):
+
+- **`signature`** answers the change signal — a SHA-256 over the expanded command text
+  *plus* the values (content hashes) of every variable it depends on, collected from its
+  `Sticky` edges. Exported vars contribute a sticky edge, so their values fold into the
+  signature even when they never appear in the text: env/config change → signature
+  changes → re-run.
+- **`key`** answers the stable key — which rule this is, for joining against the previous
+  build. A command that produces files is joined by those files, since output ownership
+  is unique; the textual key is the fallback for output-less commands. It excludes
+  variable values, so an env change re-runs the command in place rather than deleting
+  and recreating it.
+
+One value cannot do both: a recipe edit must change the signature without making the
+rule a different rule. Index v11 introduced a single structural identity for both
+questions; v19 split it into `key` and `signature` (issue #188). Neither depends on a
+positional NodeId, so both compare across builds.
 
 ### Future Work: Constructive Traces (Remote Caching)
 
@@ -2005,7 +1959,7 @@ cache between checkouts, developers, or CI (no Bazel/Nix-style "fetch instead of
 rebuild"). Upgrading to a **constructive trace** would require a content-addressed store
 for outputs and trace entries keyed purely by content (command identity → input hashes →
 output hashes) independent of node numbering. Much of the key is already in place —
-structural identity folds in variables, conditionals, the minimal declared environment,
+the signature folds in variables, conditionals, the minimal declared environment,
 and tracked tool binaries — so the missing pieces are the output store, a content-keyed
 trace format, and a fetch/publish protocol. Deliberately deferred until shared or remote
 caching becomes a goal.
