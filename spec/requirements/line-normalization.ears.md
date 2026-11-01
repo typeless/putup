@@ -4,9 +4,9 @@
 - required-legs: none
 
 The subject here is what the `Lexer` constructor rewrites before anything tokenizes: a line
-continued with a trailing backslash, and the carriage return of a CRLF line ending. Both are
-arms of one pass, and the subject is the bytes they leave in the text putup stores, runs and
-re-splits into words. See `README.md` for the format and the rules that apply to every area.
+continued with a trailing backslash, and the whitespace that ends a line, the carriage return
+of a CRLF line ending among it. Both are arms of one pass, and the subject is the bytes they
+leave in the text putup stores, runs and re-splits into words. See `README.md` for the format and the rules that apply to every area.
 
 This area requires no legs. Normalization is a function of the Tupfile text and carries no
 state across builds.
@@ -17,10 +17,6 @@ token, a variable value, or a command built from either has to allow for one. Ev
 length-preserving — each rewritten byte becomes a space rather than disappearing — so token
 offsets and the physical-line bookkeeping keep their meaning. (The requirement ids are
 `REQ-CONT-*` for historical reasons; they predate the area's rename and are stable citations.)
-
-The trailing run putup walks is narrower than the one tup trims: tup uses `isspace`, so a
-vertical tab or form feed before the line ending stops putup's walk and leaves the carriage
-returns behind it in place — issue #353.
 
 ---
 
@@ -76,15 +72,15 @@ paths as the same text with that continuation written out as spaces.
 ### REQ-EOL-CR
 
 - conformance: tup-conformant
-- reference: tup `parse_tupfile` trims each line's trailing whitespace run, `\r` included
+- reference: tup `parse_tupfile` trims each line's trailing `isspace` run, `\r`, `\v` and `\f` included
 - discharge: test "Lexer normalizes a CRLF line ending"
 - discharge: test "Parser ignores whitespace at the end of a line"
 - discharge: test "Scenario: A CRLF Tupfile builds what its LF twin builds"
 - discharge: test "Scenario: A CRLF Tupfile names its outputs without the carriage return"
 - discharge: test "Scenario: A CRLF include line resolves"
 
-putup shall replace with a space every carriage return in a line's trailing run of blanks and
-carriage returns, so no token text, variable value or output path carries it.
+putup shall replace with a space every carriage return, vertical tab and form feed in a line's
+trailing whitespace run, so no token text, variable value or output path carries one.
 
 ## Group: single-line text
 

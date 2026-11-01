@@ -694,7 +694,7 @@ TEST_CASE("Parser ignores whitespace at the end of a line", "[parser][continuati
         "!cc = |> gcc -c %f -o %o |>\n: foo.c |> !cc |> %B.o\n",
         "include extra.tup\n",
     };
-    auto const runs = std::vector<std::string> { " ", "\t", "  ", " \t ", "\t\t  ", "\r", " \r", "\t\r", "\r\r " };
+    auto const runs = std::vector<std::string> { " ", "\t", "  ", " \t ", "\t\t  ", "\r", " \r", "\t\r", "\r\r ", "\v", "\f", "\r\v\r", " \f\t", "\v\r\f " };
 
     auto cases = 0;
     for (auto const& base : bases) {
