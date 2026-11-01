@@ -2354,6 +2354,9 @@ auto build_single_variant(
                 pup::exec::finalize_progress(prev_lines);
             }
             veprint(variant_name, "FAILED: {}\n", pool.get(job.command));
+            if (job.parent_command != pup::INVALID_NODE_ID) {
+                veprint(variant_name, "  dependency scan for: {}\n", pool.get(pup::graph::expand_instruction(bs.graph, job.parent_command, bs.path_cache, source_root_str, config_root_str)));
+            }
             if (!pup::is_empty(job_result.output)) {
                 auto output_sv = pool.get(job_result.output);
                 eprint("{}\n", output_sv);

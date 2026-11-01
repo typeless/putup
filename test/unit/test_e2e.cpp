@@ -2982,6 +2982,34 @@ SCENARIO("A dep scan that prints anything but its rule fails the build", "[e2e][
     }
 }
 
+SCENARIO("A failing dep scan names the command it scans for", "[e2e][incremental]")
+{
+    auto env = EnvGuard { "PUP_IMPLICIT_DEPS", "1" };
+
+    GIVEN("a compile whose -o operand expands to two outputs")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("main.c", "int main(void) { return 0; }\n");
+        f.write_file("Tupfile", ": main.c |> gcc -c %f -o %o |> main.o main.d\n");
+        REQUIRE(f.init().success());
+
+        WHEN("the build runs the scan that compile yields")
+        {
+            auto result = f.build();
+
+            THEN("the failure names the rule's own command beside the scan's")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                auto combined = result.stdout_output + result.stderr_output;
+                REQUIRE_FALSE(result.success());
+                REQUIRE(combined.find("FAILED: gcc -M main.d main.c") != std::string::npos);
+                REQUIRE(combined.find("dependency scan for: gcc -c main.c -o main.o main.d") != std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("Implicit deps survive a flag whose path is a separate word", "[e2e][incremental]")
 {
     auto env = EnvGuard { "PUP_IMPLICIT_DEPS", "1" };

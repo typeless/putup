@@ -197,6 +197,15 @@ fail the build and name the scan's command rather than record what it read, beca
 taken for a dependency path names a file that does not exist, and a dependency that never stats
 leaves the compile it feeds out of date at every build from then on.
 
+### REQ-SCAN-FAILURE-NAMES-RULE-COMMAND
+
+- conformance: putup-only
+- discharge: test "Scenario: A failing dep scan names the command it scans for"
+
+When a scan fails, putup shall name the rule command the scan was derived from beside the scan's
+own command, because the scan is text putup wrote rather than the user, and an error naming only
+it gives no way back to the rule that needs changing (#417).
+
 ### REQ-SCAN-OUTSIDE-TREE-ABSOLUTE
 
 - conformance: putup-only
