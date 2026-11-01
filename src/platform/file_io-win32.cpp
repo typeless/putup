@@ -9,6 +9,7 @@
 #include "pup/platform/file_io.hpp"
 
 #include <algorithm>
+#include <optional>
 
 #include <windows.h>
 
@@ -113,6 +114,45 @@ auto attr_error_means_absent(DWORD err) -> bool
         || err == ERROR_PATH_NOT_FOUND
         || err == ERROR_INVALID_NAME
         || err == ERROR_FILENAME_EXCED_RANGE;
+}
+
+auto followed_attribute_data(std::wstring const& wpath) -> std::optional<WIN32_FILE_ATTRIBUTE_DATA>
+{
+    auto data = WIN32_FILE_ATTRIBUTE_DATA {};
+    if (!GetFileAttributesExW(wpath.c_str(), GetFileExInfoStandard, &data)) {
+        return std::nullopt;
+    }
+    if ((data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0) {
+        return data;
+    }
+    auto handle = CreateFileW(
+        wpath.c_str(),
+        FILE_READ_ATTRIBUTES,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        nullptr,
+        OPEN_EXISTING,
+        FILE_FLAG_BACKUP_SEMANTICS,
+        nullptr
+    );
+    if (handle == INVALID_HANDLE_VALUE) {
+        return std::nullopt;
+    }
+    auto info = BY_HANDLE_FILE_INFORMATION {};
+    auto const got_info = GetFileInformationByHandle(handle, &info);
+    auto const err = GetLastError();
+    CloseHandle(handle);
+    if (!got_info) {
+        SetLastError(err);
+        return std::nullopt;
+    }
+    return WIN32_FILE_ATTRIBUTE_DATA {
+        .dwFileAttributes = info.dwFileAttributes,
+        .ftCreationTime = info.ftCreationTime,
+        .ftLastAccessTime = info.ftLastAccessTime,
+        .ftLastWriteTime = info.ftLastWriteTime,
+        .nFileSizeHigh = info.nFileSizeHigh,
+        .nFileSizeLow = info.nFileSizeLow,
+    };
 }
 
 auto make_err_msg(std::string_view prefix, std::string_view path, DWORD err) -> StringId
@@ -262,11 +302,11 @@ auto MappedFile::close() -> void
 
 auto stat_file(std::string_view path) -> Result<FileStat>
 {
-    auto wpath = to_wide(path);
-    auto attrs = WIN32_FILE_ATTRIBUTE_DATA {};
-    if (!GetFileAttributesExW(wpath.c_str(), GetFileExInfoStandard, &attrs)) {
+    auto followed = followed_attribute_data(to_wide(path));
+    if (!followed) {
         return make_error<FileStat>(ErrorCode::IoError, make_err_msg("Failed to stat file: ", path, GetLastError()));
     }
+    auto const& attrs = *followed;
 
     auto file_size = ULARGE_INTEGER {};
     file_size.LowPart = attrs.nFileSizeLow;
@@ -348,8 +388,7 @@ auto atomic_write(
 
 auto exists(std::string_view path) -> bool
 {
-    auto wpath = to_wide(path);
-    if (GetFileAttributesW(wpath.c_str()) != INVALID_FILE_ATTRIBUTES) {
+    if (followed_attribute_data(to_wide(path))) {
         return true;
     }
     return !attr_error_means_absent(GetLastError());
@@ -357,27 +396,23 @@ auto exists(std::string_view path) -> bool
 
 auto lexists(std::string_view path) -> bool
 {
-    return exists(path);
+    auto wpath = to_wide(path);
+    if (GetFileAttributesW(wpath.c_str()) != INVALID_FILE_ATTRIBUTES) {
+        return true;
+    }
+    return !attr_error_means_absent(GetLastError());
 }
 
 auto is_file(std::string_view path) -> bool
 {
-    auto wpath = to_wide(path);
-    auto attrs = GetFileAttributesW(wpath.c_str());
-    if (attrs == INVALID_FILE_ATTRIBUTES) {
-        return false;
-    }
-    return (attrs & FILE_ATTRIBUTE_DIRECTORY) == 0;
+    auto followed = followed_attribute_data(to_wide(path));
+    return followed && (followed->dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0;
 }
 
 auto is_directory(std::string_view path) -> bool
 {
-    auto wpath = to_wide(path);
-    auto attrs = GetFileAttributesW(wpath.c_str());
-    if (attrs == INVALID_FILE_ATTRIBUTES) {
-        return false;
-    }
-    return (attrs & FILE_ATTRIBUTE_DIRECTORY) != 0;
+    auto followed = followed_attribute_data(to_wide(path));
+    return followed && (followed->dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
 }
 
 auto is_symlink(std::string_view path) -> bool
@@ -393,11 +428,11 @@ auto is_symlink(std::string_view path) -> bool
 auto is_empty(std::string_view path) -> bool
 {
     auto wpath = to_wide(path);
-    auto attrs = GetFileAttributesW(wpath.c_str());
-    if (attrs == INVALID_FILE_ATTRIBUTES) {
+    auto followed = followed_attribute_data(wpath);
+    if (!followed) {
         return true;
     }
-    if (attrs & FILE_ATTRIBUTE_DIRECTORY) {
+    if (followed->dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
         auto search = wpath + L"\\*";
         auto fd = WIN32_FIND_DATAW {};
         auto h = FindFirstFileW(search.c_str(), &fd);
@@ -414,11 +449,7 @@ auto is_empty(std::string_view path) -> bool
         FindClose(h);
         return empty;
     }
-    auto file_data = WIN32_FILE_ATTRIBUTE_DATA {};
-    if (!GetFileAttributesExW(wpath.c_str(), GetFileExInfoStandard, &file_data)) {
-        return true;
-    }
-    return file_data.nFileSizeHigh == 0 && file_data.nFileSizeLow == 0;
+    return followed->nFileSizeHigh == 0 && followed->nFileSizeLow == 0;
 }
 
 // Filesystem mutations

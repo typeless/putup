@@ -390,6 +390,37 @@ SCENARIO("walk_directory does not descend symlinked directories on POSIX", "[pla
 }
 #endif
 
+TEST_CASE("The existence, type and stat queries answer for a symlink's target", "[platform][file_io]")
+{
+    auto dir = TempDir { "follow" };
+    dir.write("file.txt", "x");
+    dir.write("sub/inside.txt", "x");
+    std::filesystem::create_symlink("file.txt", dir.path() / "to_file");
+    std::filesystem::create_directory_symlink("sub", dir.path() / "to_dir");
+    std::filesystem::create_symlink("missing.txt", dir.path() / "dangling");
+    auto at = [&](char const* name) { return (dir.path() / name).string(); };
+
+    CHECK(exists(at("to_file")));
+    CHECK(is_file(at("to_file")));
+    CHECK_FALSE(is_directory(at("to_file")));
+    CHECK_FALSE(is_empty(at("to_file")));
+    auto file_stat = stat_file(at("to_file"));
+    REQUIRE(file_stat.has_value());
+    CHECK(file_stat->size == 1);
+
+    CHECK(exists(at("to_dir")));
+    CHECK(is_directory(at("to_dir")));
+    CHECK_FALSE(is_file(at("to_dir")));
+    CHECK_FALSE(is_empty(at("to_dir")));
+
+    CHECK(lexists(at("dangling")));
+    CHECK(is_symlink(at("dangling")));
+    CHECK_FALSE(exists(at("dangling")));
+    CHECK_FALSE(is_file(at("dangling")));
+    CHECK_FALSE(is_directory(at("dangling")));
+    CHECK_FALSE(stat_file(at("dangling")).has_value());
+}
+
 SCENARIO("read_directory lists a directory's immediate entries", "[platform][file_io][walk]")
 {
     GIVEN("a directory with files and subdirectories")
