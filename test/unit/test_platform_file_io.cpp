@@ -679,6 +679,25 @@ SCENARIO("canonical resolves a symlinked prefix before cancelling what follows i
 }
 #endif
 
+TEST_CASE("canonical resolves the existing prefix of a path that does not exist", "[platform][file_io][canonical]")
+{
+    auto dir = TempDir { "canonical_prefix" };
+    dir.write("real/keep.txt", "x");
+    std::filesystem::create_directory_symlink("real", dir.path() / "link");
+    auto const real_id = pup::platform::canonical((dir.path() / "real").string());
+    REQUIRE(real_id.has_value());
+    auto const real = std::string { pup::global_pool().get(*real_id) };
+    auto canonical_of = [&](char const* rel) {
+        auto const r = pup::platform::canonical((dir.path() / rel).string());
+        REQUIRE(r.has_value());
+        return std::string { pup::global_pool().get(*r) };
+    };
+
+    CHECK(canonical_of("real/new.txt") == real + "/new.txt");
+    CHECK(canonical_of("link/new.txt") == real + "/new.txt");
+    CHECK(canonical_of("link/a/b.txt") == real + "/a/b.txt");
+}
+
 /// Untagged so Windows CI, which filters `~[e2e]~[shell]`, is where this runs: a root always
 /// exists, and only there does asking the OS to create one fail the build (#388).
 TEST_CASE("create_directories succeeds for what already exists", "[platform][file_io]")

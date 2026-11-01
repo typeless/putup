@@ -581,48 +581,58 @@ auto current_directory() -> Result<StringId>
 auto canonical(std::string_view path) -> Result<StringId>
 {
     auto wpath = to_wide(path);
-
-    auto h = CreateFileW(
-        wpath.c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr
-    );
-
-    if (h != INVALID_HANDLE_VALUE) {
-        auto len = GetFinalPathNameByHandleW(h, nullptr, 0, FILE_NAME_NORMALIZED);
-        auto wbuf = std::wstring(len, L'\0');
-        auto written = len > 0 ? GetFinalPathNameByHandleW(h, wbuf.data(), len, FILE_NAME_NORMALIZED) : DWORD { 0 };
-        CloseHandle(h);
-        if (written > 0 && written < len) {
-            wbuf.resize(written);
-            auto raw = Buf {};
-            from_wide(wbuf, raw);
-            auto sv = raw.view();
-            // Strip \\?\ prefix
-            if (sv.size() > 4 && sv[0] == '\\' && sv[1] == '\\' && sv[2] == '?' && sv[3] == '\\') {
-                sv = sv.substr(4);
-            }
-            auto fixed = Buf {};
-            backslash_to_forward(sv, fixed);
-            return global_pool().intern(fixed.view());
-        }
-    }
-
-    // Fallback for non-existent paths: lexical resolution only
     auto len = GetFullPathNameW(wpath.c_str(), 0, nullptr, nullptr);
     if (len == 0) {
         return make_error<StringId>(ErrorCode::IoError, make_err_msg("Failed to resolve path: ", path, GetLastError()));
     }
-    auto wbuf = std::wstring(len, L'\0');
+    auto wfull = std::wstring(len, L'\0');
     // The query call sizes the buffer before `..` collapsing; only the filling call reports what it actually wrote.
-    auto written = GetFullPathNameW(wpath.c_str(), len, wbuf.data(), nullptr);
+    auto written = GetFullPathNameW(wpath.c_str(), len, wfull.data(), nullptr);
     if (written == 0 || written >= len) {
         return make_error<StringId>(ErrorCode::IoError, make_err_msg("Failed to resolve path: ", path, GetLastError()));
     }
-    wbuf.resize(written);
-    auto raw = Buf {};
-    from_wide(wbuf, raw);
-    auto fixed = Buf {};
-    backslash_to_forward(raw.view(), fixed);
-    return global_pool().intern(fixed.view());
+    wfull.resize(written);
+    auto raw_full = Buf {};
+    from_wide(wfull, raw_full);
+    auto full = Buf {};
+    backslash_to_forward(raw_full.view(), full);
+
+    auto& pool = global_pool();
+    auto const full_id = pup::path::normalize(full.view());
+    auto existing = pool.get(full_id);
+    auto tail_id = StringId::Empty;
+    while (!existing.empty()) {
+        auto h = CreateFileW(
+            to_wide(existing).c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr
+        );
+        if (h != INVALID_HANDLE_VALUE) {
+            auto final_len = GetFinalPathNameByHandleW(h, nullptr, 0, FILE_NAME_NORMALIZED);
+            auto wbuf = std::wstring(final_len, L'\0');
+            auto final_written = final_len > 0 ? GetFinalPathNameByHandleW(h, wbuf.data(), final_len, FILE_NAME_NORMALIZED) : DWORD { 0 };
+            CloseHandle(h);
+            if (final_written > 0 && final_written < final_len) {
+                wbuf.resize(final_written);
+                auto raw = Buf {};
+                from_wide(wbuf, raw);
+                auto sv = raw.view();
+                // Strip \\?\ prefix
+                if (sv.size() > 4 && sv[0] == '\\' && sv[1] == '\\' && sv[2] == '?' && sv[3] == '\\') {
+                    sv = sv.substr(4);
+                }
+                auto fixed = Buf {};
+                backslash_to_forward(sv, fixed);
+                return pup::path::join(fixed.view(), pool.get(tail_id));
+            }
+        }
+        auto par = pup::path::parent(existing);
+        auto name = pup::path::filename(existing);
+        tail_id = pup::is_empty(tail_id) ? pool.intern(name) : pup::path::join(name, pool.get(tail_id));
+        if (par == existing) {
+            break;
+        }
+        existing = par;
+    }
+    return full_id;
 }
 
 auto read_symlink(std::string_view path) -> Result<StringId>

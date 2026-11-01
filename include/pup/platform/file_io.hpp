@@ -94,13 +94,11 @@ auto current_directory() -> Result<StringId>;
 ///
 /// Guaranteed on every platform: the result is absolute, normal (no `.` or `..` component, no
 /// repeated or trailing separator) and `/`-separated, and for a path that exists it is physical --
-/// every symlink resolved.
+/// every symlink resolved. For a path that does not exist, the deepest existing prefix is resolved
+/// and the rest appended, so a file yet to be built is spelled the way its directory is (#314, #330).
 ///
-/// Not guaranteed the same everywhere: for a path that does *not* exist, POSIX resolves the
-/// symlinks of the deepest existing prefix and appends the rest, while Windows resolves the whole
-/// thing lexically. So on Windows the canonical of a file yet to be built is textual where the
-/// canonical of its directory is physical, and relativizing one against the other crosses
-/// spellings if a junction lies anywhere above them (#314).
+/// Not guaranteed the same everywhere: on Windows a `..` cancels the name before it, as the OS
+/// itself reads the path; on POSIX it cancels against the resolved target of a symlinked prefix.
 [[nodiscard]]
 auto canonical(std::string_view path) -> Result<StringId>;
 
