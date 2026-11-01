@@ -5351,6 +5351,60 @@ SCENARIO("Show graph shows only declared deps by default", "[e2e][show]")
     }
 }
 
+SCENARIO("Show graph leaves out what a conditional gates off", "[e2e][show]")
+{
+    GIVEN("a Tupfile whose unsatisfied branch declares one output of its own and one the other branch also declares")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", "ifeq (@(NOPE),y)\n: |> echo x > %o |> phantom.txt\n: |> echo a > %o |> shared.txt\nelse\n: |> echo b > %o |> shared.txt\nendif\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+
+        WHEN("show graph is run")
+        {
+            auto result = f.pup({ "show", "graph" });
+            auto const& dot = result.stdout_output;
+
+            THEN("the gated-off commands and the output only they declare are absent")
+            {
+                INFO("stdout: " << dot);
+                REQUIRE(result.success());
+                REQUIRE(dot.find("phantom.txt") == std::string::npos);
+                REQUIRE(dot.find("echo x") == std::string::npos);
+                REQUIRE(dot.find("echo a") == std::string::npos);
+                REQUIRE(dot.find("echo b > shared.txt") != std::string::npos);
+                REQUIRE(dot.find("[label=\"shared.txt\"]") != std::string::npos);
+            }
+
+            THEN("every edge joins two drawn nodes")
+            {
+                INFO("stdout: " << dot);
+                auto declared = std::vector<std::string> {};
+                auto edges = std::vector<std::pair<std::string, std::string>> {};
+                auto lines = std::istringstream { dot };
+                for (auto line = std::string {}; std::getline(lines, line);) {
+                    auto words = std::istringstream { line };
+                    auto first = std::string {};
+                    auto second = std::string {};
+                    auto third = std::string {};
+                    words >> first >> second >> third;
+                    if (second == "->") {
+                        edges.emplace_back(first, third.substr(0, third.find_first_of(";[")));
+                    } else if (second.starts_with("[label=")) {
+                        declared.push_back(first);
+                    }
+                }
+                REQUIRE_FALSE(edges.empty());
+                for (auto const& [from, to] : edges) {
+                    INFO(from << " -> " << to);
+                    REQUIRE(std::ranges::find(declared, from) != declared.end());
+                    REQUIRE(std::ranges::find(declared, to) != declared.end());
+                }
+            }
+        }
+    }
+}
+
 SCENARIO("Show graph --all includes implicit deps", "[e2e][show]")
 {
     GIVEN("a built implicit_deps project")

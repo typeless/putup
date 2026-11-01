@@ -248,6 +248,10 @@ auto is_stdout_capture(Graph const& graph, NodeId id) -> bool;
 [[nodiscard]]
 auto is_guard_satisfied(Graph const& graph, NodeId id) -> bool;
 
+/// Collect the nodes that guard-unsatisfied commands declare as outputs and no satisfied command produces
+[[nodiscard]]
+auto collect_inactive_outputs(Graph const& graph) -> NodeIdMap32;
+
 /// Find a node by parent directory and basename (tup-style lookup)
 [[nodiscard]]
 auto find_by_dir_name(

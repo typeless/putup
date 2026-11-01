@@ -236,22 +236,11 @@ auto collect_scope_crossing_inputs(
 auto collect_inactive_output_paths(pup::graph::BuildGraph const& state) -> Vec<StringId>
 {
     auto const& g = state.graph;
-    auto produced_by_active = pup::NodeIdMap32 {};
-    auto declared_by_inactive = pup::NodeIdMap32 {};
-
-    for (auto id : pup::graph::all_nodes(g)) {
-        if (!pup::node_id::is_command(id)) {
-            continue;
-        }
-        auto& outputs = pup::graph::is_guard_satisfied(g, id) ? produced_by_active : declared_by_inactive;
-        for (auto output_id : pup::graph::get_outputs(g, id)) {
-            outputs.set(output_id, 1);
-        }
-    }
+    auto const inactive_outputs = pup::graph::collect_inactive_outputs(g);
 
     auto result = Vec<StringId> {};
     for (auto id : pup::graph::all_nodes(g)) {
-        if (!declared_by_inactive.contains(id) || produced_by_active.contains(id)) {
+        if (!inactive_outputs.contains(id)) {
             continue;
         }
         auto node_path = pup::graph::get_full_path(g, id, state.path_cache);

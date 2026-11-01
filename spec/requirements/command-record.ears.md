@@ -611,6 +611,16 @@ attribution the previous record gave that output and delete the output as stale.
 If an output declared by more than one branch of a conditional is missing from disk, then putup
 shall schedule the command that produces it rather than reporting the build up to date.
 
+### REQ-OUT-INACTIVE-GRAPH
+
+- leg: invariant
+- conformance: tup-conformant
+- reference: upstream never evaluates an unsatisfied branch (`src/tup/parser.c` skips the block, as REQ-OUT-INACTIVE records), so `tup graph` has no node for its rules; putup's `show graph` drew them beside the commands that run, unmarked, while `show script` and `show compdb` already left them out (#438). The record still carries a file entry for such an output, because record file ids are dense and equal to graph ids, which `show graph` relies on to place the record's implicit edges; the change scan skips that entry while the file is absent (`collect_inactive_output_paths`)
+- discharge: test "Scenario: Show graph leaves out what a conditional gates off"
+
+Where a command sits in an inactive conditional branch, putup shall leave out of `show graph`
+that command, every output that only inactive commands declare, and every edge that touches either.
+
 ---
 
 ## Group: group-membership

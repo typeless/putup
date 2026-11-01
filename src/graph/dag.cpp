@@ -539,6 +539,28 @@ auto is_guard_satisfied(Graph const& graph, NodeId id) -> bool
     return true;
 }
 
+auto collect_inactive_outputs(Graph const& graph) -> NodeIdMap32
+{
+    auto produced_by_active = NodeIdMap32 {};
+    auto declared_by_inactive = NodeIdMap32 {};
+    for (auto id : all_nodes(graph)) {
+        if (!node_id::is_command(id)) {
+            continue;
+        }
+        auto& outputs = is_guard_satisfied(graph, id) ? produced_by_active : declared_by_inactive;
+        for (auto output_id : get_outputs(graph, id)) {
+            outputs.set(output_id, 1);
+        }
+    }
+    auto result = NodeIdMap32 {};
+    for (auto id : all_nodes(graph)) {
+        if (declared_by_inactive.contains(id) && !produced_by_active.contains(id)) {
+            result.set(id, 1);
+        }
+    }
+    return result;
+}
+
 auto find_by_dir_name(Graph const& graph, NodeId parent_dir, std::string_view name)
     -> std::optional<NodeId>
 {

@@ -270,8 +270,15 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
     print("digraph G {\n");
     print("  rankdir=LR;\n");
 
+    auto const inactive_outputs = graph::collect_inactive_outputs(ctx.graph().graph);
+    auto is_gated_off = [&](NodeId id) {
+        return inactive_outputs.contains(id) || !graph::is_guard_satisfied(ctx.graph().graph, id);
+    };
     auto declared_nodes = pup::NodeIdMap32 {};
     for (auto id : graph::all_nodes(ctx.graph().graph)) {
+        if (is_gated_off(id)) {
+            continue;
+        }
         declared_nodes.set(id, 1);
 
         auto get_label = [&]() -> std::string_view {
@@ -285,11 +292,17 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
         print("  {} [label=\"{}\"];\n", format_node_id(id), pool.get(label));
 
         for (auto input_id : graph::get_inputs(ctx.graph().graph, id)) {
+            if (is_gated_off(input_id)) {
+                continue;
+            }
             print("  {} -> {};\n", format_node_id(input_id), format_node_id(id));
         }
 
         // Output order-only edges (dotted)
         for (auto oo_id : graph::get_order_only(ctx.graph().graph, id)) {
+            if (is_gated_off(oo_id)) {
+                continue;
+            }
             print("  {} -> {} [style=dotted color=\"#0088ff\"];\n", format_node_id(oo_id), format_node_id(id));
         }
     }
