@@ -4,7 +4,9 @@
 #pragma once
 
 #include "pup/cli/options.hpp"
+#include "pup/core/buf.hpp"
 #include "pup/core/function.hpp"
+#include "pup/core/print.hpp"
 
 #include <string_view>
 
@@ -34,5 +36,37 @@ auto for_each_variant(
     VariantHandler handler,
     std::string_view command_name = "Processing"
 ) -> int;
+
+/// Write one `[variant] `-prefixed line in a single write, so that variants built in parallel
+/// never interleave inside a line.
+template<typename... Args>
+auto write_variant_line(Stream stream, std::string_view variant_name, std::string_view pattern, Args const&... args) -> void
+{
+    auto line = Buf {};
+    line += '[';
+    line.append(variant_name);
+    line.append("] ");
+    if constexpr (sizeof...(Args) == 0) {
+        line.append(pattern);
+    } else {
+        FormatArg arg_array[] = { FormatArg(args)... };
+        format_to(line, pattern, arg_array, sizeof...(Args));
+    }
+    write_to(stream, line.view());
+}
+
+/// Print a `[variant] `-prefixed line to stdout.
+template<typename... Args>
+auto vprint(std::string_view variant_name, std::string_view pattern, Args const&... args) -> void
+{
+    write_variant_line(Stream::Out, variant_name, pattern, args...);
+}
+
+/// Print a `[variant] `-prefixed line to stderr.
+template<typename... Args>
+auto veprint(std::string_view variant_name, std::string_view pattern, Args const&... args) -> void
+{
+    write_variant_line(Stream::Err, variant_name, pattern, args...);
+}
 
 } // namespace pup::cli

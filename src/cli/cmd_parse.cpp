@@ -40,6 +40,7 @@ auto parse_single_variant(Options const& opts, std::string_view variant_name) ->
 
     auto ctx_opts = BuildContextOptions {
         .verbose = opts.verbose,
+        .variant_name = variant_name,
         .parse_scopes = compute_build_scopes(opts, *layout),
     };
 

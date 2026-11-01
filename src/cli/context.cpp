@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/cli/context.hpp"
+#include "pup/cli/multi_variant.hpp"
 #include "pup/cli/options.hpp"
 #include "pup/core/buf.hpp"
 #include "pup/core/clock.hpp"
@@ -427,6 +428,7 @@ struct ParseContext {
     std::string_view config_root;
     std::string_view output_root;
     pup::parser::VarDb const& base_vars;
+    std::string_view variant_name;
     bool verbose;
     bool root_config_only;
     VarAssignedCallback const* on_var_assigned;
@@ -510,7 +512,7 @@ auto parse_directory(std::string_view rel_dir, ParseContext& ctx) -> pup::Result
     if (ctx.verbose) {
         auto tp = Buf {};
         tp.append(tupfile_path_sv);
-        print("Parsing: {}\n", tp.c_str());
+        vprint(ctx.variant_name, "Parsing: {}\n", tp.c_str());
     }
 
     auto source = read_file(tupfile_path_sv);
@@ -643,7 +645,7 @@ auto parse_directory(std::string_view rel_dir, ParseContext& ctx) -> pup::Result
     return result;
 }
 
-auto try_auto_init(ProjectLayout const& layout, bool dry_run) -> void
+auto try_auto_init(ProjectLayout const& layout, std::string_view variant_name, bool dry_run) -> void
 {
     auto& pool = global_pool();
     auto pup_dir_sv = pool.get(layout.pup_dir());
@@ -655,11 +657,11 @@ auto try_auto_init(ProjectLayout const& layout, bool dry_run) -> void
     }
     // A dry run creates nothing, so it must not create the project either (#261).
     if (dry_run) {
-        print("Would initialize pup in \"{}\"\n", pup_dir_sv);
+        vprint(variant_name, "Would initialize pup in \"{}\"\n", pup_dir_sv);
         return;
     }
     (void)pup::platform::create_directories(pup_dir_sv);
-    print("Initialized pup in \"{}\"\n", pup_dir_sv);
+    vprint(variant_name, "Initialized pup in \"{}\"\n", pup_dir_sv);
 }
 
 struct IndexLoadResult {
@@ -667,7 +669,7 @@ struct IndexLoadResult {
     Vec<std::pair<StringId, StringId>> cached_env_vars;
 };
 
-auto load_old_index(std::string_view output_root, bool verbose) -> IndexLoadResult
+auto load_old_index(std::string_view output_root, std::string_view variant_name, bool verbose) -> IndexLoadResult
 {
     auto& pool = pup::global_pool();
     auto result = IndexLoadResult {};
@@ -727,7 +729,7 @@ auto load_old_index(std::string_view output_root, bool verbose) -> IndexLoadResu
     std::ranges::sort(result.cached_env_vars, {}, [&pool](auto const& p) { return pool.get(p.first); });
 
     if (verbose && !result.cached_env_vars.empty()) {
-        print("Loaded {} cached env vars from index\n", result.cached_env_vars.size());
+        vprint(variant_name, "Loaded {} cached env vars from index\n", result.cached_env_vars.size());
     }
 
     return result;
@@ -896,7 +898,7 @@ auto build_context(
 
     // 2. Auto-init if needed
     if (ctx_opts.auto_init) {
-        try_auto_init(ctx.impl_->layout, ctx_opts.dry_run);
+        try_auto_init(ctx.impl_->layout, ctx_opts.variant_name, ctx_opts.dry_run);
     }
 
     // 3. Discover Tupfiles
@@ -913,7 +915,7 @@ auto build_context(
     }
 
     if (ctx_opts.verbose) {
-        print("Found {} directories with Tupfiles\n", ctx.impl_->state.available.size());
+        vprint(ctx_opts.variant_name, "Found {} directories with Tupfiles\n", ctx.impl_->state.available.size());
     }
 
     // 4. Load config (seeds the per-file parse cache for find_config_for_dir)
@@ -925,7 +927,7 @@ auto build_context(
             if (ctx_opts.verbose) {
                 auto cpbuf = Buf {};
                 cpbuf.append(config_path_sv);
-                print("Loaded {} config variables from {}\n", ctx.impl_->config_vars.names().size(), cpbuf.c_str());
+                vprint(ctx_opts.variant_name, "Loaded {} config variables from {}\n", ctx.impl_->config_vars.names().size(), cpbuf.c_str());
             }
         }
     }
@@ -940,7 +942,7 @@ auto build_context(
         cbuf.append(name_sv);
         ctx.impl_->config_vars.set(cbuf.view(), value_sv);
         if (ctx_opts.verbose) {
-            print("-D {}={}\n", name_sv, value_sv);
+            vprint(ctx_opts.variant_name, "-D {}={}\n", name_sv, value_sv);
         }
     }
 
@@ -950,7 +952,7 @@ auto build_context(
     }
 
     // 5. Load index
-    auto [old_index, cached_env_vars] = load_old_index(pool.get(ctx.impl_->layout.output_root), ctx_opts.verbose);
+    auto [old_index, cached_env_vars] = load_old_index(pool.get(ctx.impl_->layout.output_root), ctx_opts.variant_name, ctx_opts.verbose);
     ctx.impl_->old_index = std::move(old_index);
 
     // 6. Parse Tupfiles.
@@ -1010,6 +1012,7 @@ auto build_context(
             .config_root = pool.get(ctx.impl_->layout.config_root),
             .output_root = pool.get(ctx.impl_->layout.output_root),
             .base_vars = ctx.impl_->vars,
+            .variant_name = ctx_opts.variant_name,
             .verbose = ctx_opts.verbose,
             .root_config_only = ctx_opts.root_config_only,
             .on_var_assigned = &ctx_opts.on_var_assigned,
@@ -1105,7 +1108,7 @@ auto build_context(
     }
 
     if (ctx_opts.verbose) {
-        print("Parsed {} Tupfiles\n", ctx.impl_->state.parsed.size());
+        vprint(ctx_opts.variant_name, "Parsed {} Tupfiles\n", ctx.impl_->state.parsed.size());
     }
 
     return ctx;

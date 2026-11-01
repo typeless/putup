@@ -154,20 +154,6 @@ auto strip_build_root_prefix(std::string_view path, std::string_view build_root_
     return path;
 }
 
-template<typename... Args>
-auto vprint(std::string_view variant_name, std::string_view pattern, Args const&... args) -> void
-{
-    print("[{}] ", variant_name);
-    print(pattern, args...);
-}
-
-template<typename... Args>
-auto veprint(std::string_view variant_name, std::string_view pattern, Args const&... args) -> void
-{
-    eprint("[{}] ", variant_name);
-    eprint(pattern, args...);
-}
-
 auto report_refused_dirs(std::string_view variant_name, Vec<StringId> const& refused) -> void
 {
     auto& pool = global_pool();
@@ -2105,6 +2091,7 @@ auto build_single_variant(
         .dry_run = opts.dry_run,
         .root_config_only = false,
         .require_config = true,
+        .variant_name = variant_name,
         .parse_scopes = parse_scopes,
         .excludes = excludes,
         .scanner_registry = scanner_ptr,

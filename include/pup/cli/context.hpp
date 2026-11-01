@@ -55,6 +55,7 @@ struct BuildContextOptions {
     bool dry_run = false;
     bool root_config_only = false;
     bool require_config = false;
+    std::string_view variant_name = {};
     Vec<StringId> parse_scopes = {};
     parser::IgnoreList excludes = {};
     graph::DepScannerRegistry* scanner_registry = nullptr;

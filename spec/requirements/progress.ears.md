@@ -23,3 +23,14 @@ of a compile. See `README.md` for the format and the rules that apply to every a
 - discharge: test "Scenario: A configure whose output is not a terminal prints no progress counter"
 
 While its standard output is not a terminal, putup shall report no progress counter.
+
+## Group: parallel-variants
+
+### REQ-PROG-VARIANT-LINE-WHOLE
+
+- conformance: putup-only
+- discharge: test "Scenario: Variants built in parallel write each prefixed line whole"
+
+When putup builds more than one variant at once, putup shall write each line a variant emits, its
+`[variant] ` prefix included, in one write, so that no line carries another variant's prefix or
+loses its own.

@@ -106,6 +106,7 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
     auto ctx_opts = BuildContextOptions {
         .verbose = opts.verbose,
         .require_config = true,
+        .variant_name = variant_name,
         .excludes = make_exclude_list(opts),
         .scanner_registry = scanner_registry ? &*scanner_registry : nullptr,
     };
@@ -222,6 +223,7 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
     auto ctx_opts = BuildContextOptions {
         .verbose = opts.verbose,
         .require_config = true,
+        .variant_name = variant_name,
         .excludes = make_exclude_list(opts),
         .scanner_registry = scanner_registry ? &*scanner_registry : nullptr,
     };
@@ -347,6 +349,7 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
     auto ctx_opts = BuildContextOptions {
         .verbose = opts.verbose,
         .require_config = true,
+        .variant_name = variant_name,
         .excludes = make_exclude_list(opts),
         .scanner_registry = scanner_registry ? &*scanner_registry : nullptr,
     };
@@ -546,6 +549,7 @@ auto cmd_export_var(Options const& opts, std::string_view variant_name) -> int
     auto ctx_opts = BuildContextOptions {
         .verbose = opts.verbose,
         .require_config = true,
+        .variant_name = variant_name,
         .scanner_registry = scanner_registry ? &*scanner_registry : nullptr,
         .on_var_assigned = on_var_assigned,
     };
@@ -573,6 +577,7 @@ auto cmd_export_instructions(Options const& opts, std::string_view variant_name)
     auto ctx_opts = BuildContextOptions {
         .verbose = opts.verbose,
         .require_config = true,
+        .variant_name = variant_name,
         .scanner_registry = scanner_registry ? &*scanner_registry : nullptr,
     };
 

@@ -6051,6 +6051,55 @@ SCENARIO("Multi-variant glob selection builds all matching variants", "[e2e][mul
     }
 }
 
+SCENARIO("Variants built in parallel write each prefixed line whole", "[e2e][multi-variant]")
+{
+    GIVEN("two variants of a project with many quick commands")
+    {
+        auto f = E2EFixture { "multi_variant" };
+        auto tupfile = std::string {};
+        for (auto i = 0; i < 1500; ++i) {
+            tupfile += ": |> true > %o |> o" + std::to_string(i) + ".txt\n";
+        }
+        f.write_file("Tupfile", tupfile);
+        f.mkdir("build-a");
+        f.mkdir("build-b");
+        f.write_file("build-a/tup.config", "");
+        f.write_file("build-b/tup.config", "");
+
+        WHEN("both are built verbosely at once")
+        {
+            auto result = f.pup({ "-v", "build-a", "build-b" });
+            REQUIRE(result.success());
+
+            THEN("every line a variant prints carries exactly its own prefix")
+            {
+                auto out = std::istringstream { result.stdout_output };
+                auto command_lines = 0;
+                auto variant_lines = 0;
+                auto line = std::string {};
+                while (std::getline(out, line)) {
+                    if (line == "Building 2 variants in parallel:" || line == "  build-a" || line == "  build-b") {
+                        continue;
+                    }
+                    ++variant_lines;
+                    INFO("line: " << line);
+                    auto const own = line.starts_with("[build-a] ") ? std::string_view { "build-a" }
+                        : line.starts_with("[build-b] ")            ? std::string_view { "build-b" }
+                                                                    : std::string_view {};
+                    CHECK_FALSE(own.empty());
+                    CHECK(line.find("] [") == std::string::npos);
+                    if (line.find("true > ") != std::string::npos) {
+                        ++command_lines;
+                        CHECK(line.find(std::string { "true > " } + std::string { own } + "/") != std::string::npos);
+                    }
+                }
+                CHECK(command_lines == 3000);
+                CHECK(variant_lines > command_lines);
+            }
+        }
+    }
+}
+
 SCENARIO("Ambiguous build directories require explicit selection", "[e2e][multi-variant][ambiguous]")
 {
     GIVEN("a project with two variant directories")

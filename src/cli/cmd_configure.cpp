@@ -94,6 +94,7 @@ auto configure_single_variant(
         .keep_going = opts.keep_going,
         .auto_init = false,       // Configure pass should not create .pup
         .root_config_only = true, // Configure uses only root tup.config
+        .variant_name = variant_name,
         .parse_scopes = scopes,
         .scanner_registry = nullptr,
     };

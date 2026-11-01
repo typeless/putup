@@ -19,7 +19,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string_view>
-#include <utility>
 
 namespace pup::cli {
 
@@ -28,20 +27,6 @@ namespace {
 auto pool_get(StringId id) -> std::string_view
 {
     return global_pool().get(id);
-}
-
-template<typename... Args>
-auto vprint(std::string_view variant_name, char const* fmt, Args&&... args) -> void
-{
-    print("[{}] ", variant_name);
-    print(fmt, std::forward<Args>(args)...);
-}
-
-template<typename... Args>
-auto veprint(std::string_view variant_name, char const* fmt, Args&&... args) -> void
-{
-    eprint("[{}] ", variant_name);
-    eprint(fmt, std::forward<Args>(args)...);
 }
 
 auto remove_indexed_outputs(
