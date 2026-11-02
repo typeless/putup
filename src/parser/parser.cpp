@@ -917,14 +917,22 @@ auto parse_path_pattern(ParserState& s, bool stop_at_angle) -> Result<PathPatter
         return pattern;
     }
 
-    // Parse path expression (until whitespace or delimiter)
-    // stop_at_gap=true ensures we stop at whitespace boundaries between paths
-    // For outputs (stop_at_angle=true), also stop at < for path/<group> syntax
-    auto path = parse_expression_until(s, [stop_at_angle](Token const& t) {
+    auto ends_path = [stop_at_angle](Token const& t) {
         if (stop_at_angle && t.is(TokenType::OpenAngle)) {
             return true;
         }
-        return t.is_one_of(TokenType::Whitespace, TokenType::Pipe, TokenType::PipeArrow, TokenType::OpenBrace, TokenType::Newline, TokenType::Eof); }, true);
+        return t.is_one_of(TokenType::Whitespace, TokenType::Pipe, TokenType::PipeArrow, TokenType::OpenBrace, TokenType::Newline, TokenType::Eof);
+    };
+    if (ends_path(s.current)) {
+        auto err = Buf {};
+        err.fmt("Expected a path, got {}", token_type_name(s.current.type));
+        return pup::make_error<PathPattern>(ErrorCode::ParseError, err.view());
+    }
+
+    // Parse path expression (until whitespace or delimiter)
+    // stop_at_gap=true ensures we stop at whitespace boundaries between paths
+    // For outputs (stop_at_angle=true), also stop at < for path/<group> syntax
+    auto path = parse_expression_until(s, ends_path, true);
     if (!path) {
         return pup::unexpected<Error>(path.error());
     }

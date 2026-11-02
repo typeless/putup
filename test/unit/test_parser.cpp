@@ -731,3 +731,20 @@ TEST_CASE("Parser reports an error at the end of a line on that line", "[parser]
     CHECK(result.errors[0].location.line == 2);
     CHECK(result.errors[0].location.column == 9);
 }
+
+TEST_CASE("Parser rejects a token that ends a path where a path should start", "[parser][path-list]")
+{
+    auto const* source = GENERATE(
+        ": |> cmd |> out |>\n",
+        ": a | b | c |> cmd |> out\n",
+        "!m = | b | c |> cmd |> out\n",
+        ": ! |> cmd |> out\n",
+        ": |> cmd |> out ^\n"
+    );
+    CAPTURE(source);
+
+    auto result = parse_tupfile(source, "test.tup");
+
+    REQUIRE(result.errors.size() == 1);
+    CHECK(global_pool().get(result.errors[0].message).starts_with("Expected a path, got "));
+}
