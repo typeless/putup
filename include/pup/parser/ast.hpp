@@ -80,11 +80,13 @@ struct Expression final : AstNode {
 /// Input/output path pattern (may include globs, groups, exclusions)
 struct PathPattern final : AstNode {
     Expression path;
-    bool is_foreach = false;               ///< Part of foreach expansion
-    bool is_exclusion = false;             ///< Starts with ! for input exclusion
-    bool is_output_exclusion = false;      ///< Starts with ^ for output exclusion (regex pattern)
-    bool is_group = false;                 ///< References a bin {binname} (tup calls these "bins")
-    bool is_order_only_group = false;      ///< References an order-only group <groupname>
+    bool is_foreach = false; ///< Part of foreach expansion
+    enum class Kind { Path,
+                      InputExclusion,
+                      OutputExclusion,
+                      Bin,
+                      OrderOnlyGroup };
+    Kind kind = Kind::Path;
     StringId group_name = StringId::Empty; ///< Group or bin name
 };
 

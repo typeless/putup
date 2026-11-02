@@ -927,7 +927,7 @@ TEST_CASE("Evaluator group resolution", "[eval]")
         };
 
         auto pattern = PathPattern {};
-        pattern.is_group = true;
+        pattern.kind = PathPattern::Kind::Bin;
         pattern.group_name = intern("objs");
 
         auto result = expand_path(ctx,pattern);
@@ -947,7 +947,7 @@ TEST_CASE("Evaluator group resolution", "[eval]")
         };
 
         auto pattern = PathPattern {};
-        pattern.is_order_only_group = true;
+        pattern.kind = PathPattern::Kind::OrderOnlyGroup;
         pattern.group_name = intern("gen-headers");
 
         auto result = expand_path(ctx,pattern);
@@ -960,7 +960,7 @@ TEST_CASE("Evaluator group resolution", "[eval]")
     SECTION("unresolved group returns empty")
     {
         auto pattern = PathPattern {};
-        pattern.is_order_only_group = true;
+        pattern.kind = PathPattern::Kind::OrderOnlyGroup;
         pattern.group_name = intern("nonexistent");
 
         auto result = expand_path(ctx,pattern);

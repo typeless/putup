@@ -887,14 +887,17 @@ auto parse_path_pattern(ParserState& s, bool stop_at_angle) -> Result<PathPatter
 
     // Check for exclusion prefix (! for inputs, ^ for outputs)
     if (match(s, TokenType::Bang)) {
-        pattern.is_exclusion = true;
+        pattern.kind = PathPattern::Kind::InputExclusion;
     } else if (match(s, TokenType::Caret)) {
-        pattern.is_output_exclusion = true;
+        pattern.kind = PathPattern::Kind::OutputExclusion;
+    }
+    if (pattern.kind != PathPattern::Kind::Path && (check(s, TokenType::OpenBrace) || check(s, TokenType::OpenAngle))) {
+        return pup::make_error<PathPattern>(ErrorCode::ParseError, "An exclusion names a path, not a bin or group");
     }
 
     // Check for group reference: {name} or <name>
     if (match(s, TokenType::OpenBrace)) {
-        pattern.is_group = true;
+        pattern.kind = PathPattern::Kind::Bin;
         if (check(s, TokenType::Identifier) || check(s, TokenType::Text)) {
             pattern.group_name = global_pool().intern(s.current.text);
             advance(s);
@@ -906,7 +909,7 @@ auto parse_path_pattern(ParserState& s, bool stop_at_angle) -> Result<PathPatter
     }
 
     if (match(s, TokenType::OpenAngle)) {
-        pattern.is_order_only_group = true;
+        pattern.kind = PathPattern::Kind::OrderOnlyGroup;
         if (check(s, TokenType::Identifier) || check(s, TokenType::Text)) {
             pattern.group_name = global_pool().intern(s.current.text);
             advance(s);

@@ -884,7 +884,7 @@ auto apply_exclusions(
 {
     auto& pool = global_pool();
     for (auto const& pattern : patterns) {
-        if (!pattern.is_exclusion && !pattern.is_output_exclusion) {
+        if (pattern.kind != parser::PathPattern::Kind::InputExclusion && pattern.kind != parser::PathPattern::Kind::OutputExclusion) {
             continue;
         }
 
@@ -1092,10 +1092,10 @@ auto expand_outputs(
 
     for (auto const& pattern : patterns) {
         ++result.token_count;
-        if (pattern.is_group) {
+        if (pattern.kind == parser::PathPattern::Kind::Bin) {
             continue;
         }
-        if (pattern.is_output_exclusion) {
+        if (pattern.kind == parser::PathPattern::Kind::OutputExclusion) {
             continue;
         }
 
@@ -1166,11 +1166,11 @@ auto expand_inputs(
     for (auto const& pattern : patterns) {
         close_token();
         ++token;
-        if (pattern.is_exclusion || pattern.is_output_exclusion) {
+        if (pattern.kind == parser::PathPattern::Kind::InputExclusion || pattern.kind == parser::PathPattern::Kind::OutputExclusion) {
             continue;
         }
 
-        if (pattern.is_group) {
+        if (pattern.kind == parser::PathPattern::Kind::Bin) {
             auto gkey = to_underlying(intern(str(pattern.group_name)));
             auto const* members = ctx.groups.find(gkey);
             if (!members) {
@@ -1187,7 +1187,7 @@ auto expand_inputs(
             continue;
         }
 
-        if (pattern.is_order_only_group) {
+        if (pattern.kind == parser::PathPattern::Kind::OrderOnlyGroup) {
             auto group_dir = StringId::Empty;
 
             if (!pattern.path.empty()) {
@@ -2170,7 +2170,7 @@ auto expand_rule(
     all_inputs.insert(all_inputs.end(), all_order_only.begin(), all_order_only.end());
 
     for (auto const& pattern : all_inputs) {
-        if (pattern.is_order_only_group) {
+        if (pattern.kind == parser::PathPattern::Kind::OrderOnlyGroup) {
             auto group_dir = StringId::Empty;
             if (!pattern.path.empty()) {
                 auto expanded = parser::expand(*ctx.eval, pattern.path);

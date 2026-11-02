@@ -44,7 +44,7 @@ auto make_path_pattern(std::string_view path) -> PathPattern
 auto make_group_pattern(std::string_view name) -> PathPattern
 {
     auto pattern = PathPattern {};
-    pattern.is_group = true;
+    pattern.kind = PathPattern::Kind::Bin;
     pattern.group_name = intern(name);
     return pattern;
 }
@@ -53,7 +53,7 @@ auto make_group_pattern(std::string_view name) -> PathPattern
 auto make_order_only_group_pattern(std::string_view name, std::string_view path = "") -> PathPattern
 {
     auto pattern = PathPattern {};
-    pattern.is_order_only_group = true;
+    pattern.kind = PathPattern::Kind::OrderOnlyGroup;
     pattern.group_name = intern(name);
     if (!path.empty()) {
         pattern.path.parts.push_back(Expression::Literal { intern(path) });
@@ -65,7 +65,7 @@ auto make_order_only_group_pattern(std::string_view name, std::string_view path 
 auto make_order_only_group_var_pattern(std::string_view name, std::string_view var_name, std::string_view suffix = "") -> PathPattern
 {
     auto pattern = PathPattern {};
-    pattern.is_order_only_group = true;
+    pattern.kind = PathPattern::Kind::OrderOnlyGroup;
     pattern.group_name = intern(name);
     pattern.path.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Regular, intern(var_name), {} } });
     if (!suffix.empty()) {
@@ -136,7 +136,7 @@ private:
 
 TEST_CASE("GraphBuilder order-only group - case 1: empty pattern.path", "[e2e][builder][group][critical]")
 {
-    // Case 1: is_order_only_group with empty pattern.path
+    // Case 1: OrderOnlyGroup with empty pattern.path
     // Should use current_dir directly, NOT normalize_group_dir("")
     // This is the case that was broken by the refactoring
 
@@ -194,7 +194,7 @@ TEST_CASE("GraphBuilder order-only group - case 1: empty pattern.path", "[e2e][b
 
 TEST_CASE("GraphBuilder order-only group - case 2: non-empty pattern.path with variable", "[e2e][builder][group][critical]")
 {
-    // Case 2: is_order_only_group with non-empty pattern.path
+    // Case 2: OrderOnlyGroup with non-empty pattern.path
     // Should use normalize_group_dir(expanded_path, current_dir, source_root)
 
     auto fixture = BuilderTestFixture {};
@@ -297,7 +297,7 @@ TEST_CASE("GraphBuilder order-only group - case 3: path/<group> pattern", "[e2e]
     auto rule2 = Rule {};
     rule2.command.parts.push_back(Expression::Literal { intern("compile") });
 
-    // This is a literal path pattern - the <gen-headers> is NOT parsed as is_order_only_group
+    // This is a literal path pattern - the <gen-headers> is NOT parsed as OrderOnlyGroup
     // It gets expanded and then matched by the rfind('<') logic
     auto input = make_path_pattern("../../include/generated/<gen-headers>");
     rule2.order_only_inputs.push_back(input);
@@ -561,7 +561,7 @@ TEST_CASE("GraphBuilder exclusion patterns - explicit file", "[e2e][builder][exc
 
     // Exclusion pattern - explicit filename
     auto excl = make_path_pattern("baz.c");
-    excl.is_exclusion = true;
+    excl.kind = PathPattern::Kind::InputExclusion;
     rule.inputs.push_back(excl);
 
     auto output = PathPattern {};
@@ -624,7 +624,7 @@ TEST_CASE("GraphBuilder exclusion patterns - glob pattern", "[e2e][builder][excl
 
     // Exclusion pattern - glob to exclude test files
     auto excl = make_path_pattern("test_*.c");
-    excl.is_exclusion = true;
+    excl.kind = PathPattern::Kind::InputExclusion;
     rule.inputs.push_back(excl);
 
     auto output = PathPattern {};
@@ -692,7 +692,7 @@ TEST_CASE("GraphBuilder caret exclusion patterns for foreach", "[e2e][builder][e
 
     // Caret exclusion pattern - exclude helper_impl.c (like tup's foreach ^pattern)
     auto excl = make_path_pattern("helper_impl.c");
-    excl.is_output_exclusion = true; // ^ prefix sets is_output_exclusion
+    excl.kind = PathPattern::Kind::OutputExclusion; // ^ prefix sets OutputExclusion
     rule.inputs.push_back(excl);
 
     auto output = PathPattern {};

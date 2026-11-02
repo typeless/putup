@@ -87,3 +87,16 @@ every operand it was meant to supply and the rule ran without them (#472).
 
 If a rule's inputs or order-only inputs name a bin that no earlier rule in the same Tupfile declares
 after its outputs, then putup shall reject the Tupfile and name the bin.
+
+## Group: exclusion
+
+What `!` or `^` in front of a bin or group reference means.
+
+### REQ-GROUPREF-NOT-EXCLUDED
+
+- conformance: deliberate-deviation
+- reference: upstream has no `!` input exclusion (its `!` is a bang macro), and reads `^` in a path list as the start of a PCRE2 regex: `new_pl` (`src/tup/parser.c`) compiles the text after `^` with `pcre2_compile` and takes the bin branch only when the entry begins with `{`, so `^{b}` and `^<g>` are regexes that match the literal text `{b}` and `<g>`. putup refuses both spellings instead: a regex that can only match a path containing a brace or an angle bracket is a misspelt exclusion, and before the refusal putup read the entry as an exclusion and a bin at once and dropped the reference without notice
+- discharge: test "Parser rejects an exclusion of a bin or group"
+
+If a rule's inputs, order-only inputs or outputs write `!` or `^` immediately before a `{bin}` or
+`<group>` reference, then putup shall reject the Tupfile rather than exclude or reference it.

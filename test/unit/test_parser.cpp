@@ -377,7 +377,7 @@ TEST_CASE("Parser rule with group input", "[parser]")
     REQUIRE(result.success());
     auto const* rule = result.tupfile.statements[0]->as<Rule>();
     REQUIRE(rule->inputs.size() == 1);
-    REQUIRE(rule->inputs[0].is_group);
+    REQUIRE(rule->inputs[0].kind == PathPattern::Kind::Bin);
     REQUIRE(sv(rule->inputs[0].group_name) == "objs");
 }
 
@@ -389,7 +389,7 @@ TEST_CASE("Parser order-only group input", "[parser]")
     auto const* rule = result.tupfile.statements[0]->as<Rule>();
     REQUIRE(rule->inputs.size() == 1);
     REQUIRE(rule->order_only_inputs.size() == 1);
-    REQUIRE(rule->order_only_inputs[0].is_order_only_group);
+    REQUIRE(rule->order_only_inputs[0].kind == PathPattern::Kind::OrderOnlyGroup);
     REQUIRE(sv(rule->order_only_inputs[0].group_name) == "gen-headers");
 }
 
@@ -747,4 +747,21 @@ TEST_CASE("Parser rejects a token that ends a path where a path should start", "
 
     REQUIRE(result.errors.size() == 1);
     CHECK(global_pool().get(result.errors[0].message).starts_with("Expected a path, got "));
+}
+
+TEST_CASE("Parser rejects an exclusion of a bin or group", "[parser][path-list]")
+{
+    auto const* source = GENERATE(
+        ": !{b} |> cmd |> out\n",
+        ": !<g> |> cmd |> out\n",
+        ": a |> cmd |> out ^{b}\n",
+        ": a |> cmd |> out ^<g>\n",
+        "!m = | !<g> |> cmd |> out\n"
+    );
+    CAPTURE(source);
+
+    auto result = parse_tupfile(source, "test.tup");
+
+    REQUIRE(result.errors.size() == 1);
+    CHECK(global_pool().get(result.errors[0].message).starts_with("An exclusion names a path"));
 }

@@ -698,7 +698,7 @@ auto expand_path(
     auto& pool = global_pool();
     auto result = Vec<StringId> {};
 
-    if (pattern.is_order_only_group) {
+    if (pattern.kind == PathPattern::Kind::OrderOnlyGroup) {
         if (ctx.resolve_order_only_group) {
             auto paths = ctx.resolve_order_only_group(pool.get(pattern.group_name));
             for (auto id : paths) {
@@ -708,7 +708,7 @@ auto expand_path(
         return result;
     }
 
-    if (pattern.is_group) {
+    if (pattern.kind == PathPattern::Kind::Bin) {
         if (ctx.resolve_group) {
             auto paths = ctx.resolve_group(pool.get(pattern.group_name));
             for (auto id : paths) {
