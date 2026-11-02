@@ -9013,6 +9013,37 @@ SCENARIO("A glob exclusion matches a hidden file the same as any other", "[e2e][
     }
 }
 
+SCENARIO("An exclusion removes only the inputs written before it", "[e2e][glob][exclusion]")
+{
+    auto const [inputs, operands] = GENERATE(table<char const*, char const*>({
+        { "bar.c other.txt !other.txt", "F=[bar.c]" },
+        { "!other.txt bar.c other.txt", "F=[bar.c other.txt]" },
+        { "bar.c !*.txt other.txt", "F=[bar.c other.txt]" },
+        { "other.txt !other.txt other.txt", "F=[other.txt]" },
+        { "$(EXCL) bar.c other.txt", "F=[bar.c other.txt]" },
+    }));
+    CAPTURE(inputs);
+
+    GIVEN("a rule whose inputs place an exclusion among them")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", std::string { "EXCL = !other.txt\n: " } + inputs + " |> echo F=[%f] > %o |> out.txt\n");
+        f.write_file("bar.c", "b\n");
+        f.write_file("other.txt", "o\n");
+        REQUIRE(f.init().success());
+
+        WHEN("built")
+        {
+            REQUIRE(f.build().success());
+
+            THEN("the operands are the inputs no earlier exclusion removed")
+            {
+                REQUIRE(f.read_file("out.txt") == std::string { operands } + "\n");
+            }
+        }
+    }
+}
+
 SCENARIO("An exclusion a variable expands to excludes like a written one", "[e2e][glob][exclusion]")
 {
     auto const* exclusion = GENERATE("!other.txt", "^other.txt", "!*.txt", "!sub/../other.txt");

@@ -275,6 +275,15 @@ it as if it had been named without that prefix.
 
 putup shall apply a glob exclusion to a hidden file on the same terms as to any other file.
 
+### REQ-GLOB-EXCL-IN-ORDER
+
+- conformance: tup-conformant
+- reference: upstream `get_name_list` (`src/tup/parser.c`) walks a rule's input words in written order and `nl_rm_exclusion` removes only the entries already in the name list when an exclusion is reached, so an exclusion written before an input leaves that input in place; putup's `!` exclusion has no upstream counterpart and follows the same order
+- discharge: test "Scenario: An exclusion removes only the inputs written before it"
+
+When a rule's inputs name an exclusion, putup shall remove only the matching inputs written before
+it.
+
 ### REQ-GLOB-EXCL-EXPANDED
 
 - conformance: tup-conformant
