@@ -2,6 +2,8 @@
 // Enables recursive lambdas without std::function overhead
 #pragma once
 
+#include <utility>
+
 namespace pup {
 
 template<typename F>

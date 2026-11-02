@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2024 Putup authors
 
-#include "catch_amalgamated.hpp"
-
 #ifdef _WIN32
+
+#include "catch_amalgamated.hpp"
 
 #include <cstdint>
 #include <new>

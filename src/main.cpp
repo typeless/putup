@@ -7,7 +7,6 @@
 #include "pup/core/print.hpp"
 #include "pup/core/string_pool.hpp"
 
-#include <cstdio>
 #include <cstdlib>
 
 namespace pup::cli {

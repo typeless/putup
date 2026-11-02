@@ -47,6 +47,8 @@ putup -B build             # Build
 
 Build artifacts go to `build/`.
 
+`make iwyu` checks the sources this host compiles (from `compile_commands.json`) and every header, and fails on any file `clang-include-cleaner` cannot analyze. It runs `clang-include-cleaner-18` by default; elsewhere set the tool and its flags, e.g. on macOS `make iwyu CLANG_INCLUDE_CLEANER=$(brew --prefix llvm)/bin/clang-include-cleaner IWYU_FLAGS=--extra-arg=-isysroot$(xcrun --show-sdk-path)`.
+
 `CONFIG=<name>` selects `configs/<name>.config` at configure time (default `$(TUP_PLATFORM)`), e.g. `CONFIG=debug putup configure -B build`. The Windows binary is cross-compiled from Linux with clang-cl + lld-link against an xwin-splatted MSVC CRT + Windows SDK (`CONFIG=xwin`, requires the `XWIN_SPLAT` env var); CI runs its test binary natively on a `windows-latest` runner with the `~[e2e]~[shell]` tag filter (Wine runs the same binary locally, but is not what CI gates on). See `configs/xwin.config` and `.github/workflows/ci.yml`.
 
 ## Testing

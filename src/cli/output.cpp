@@ -12,7 +12,6 @@
 #include "pup/platform/file_io.hpp"
 
 #include <algorithm>
-#include <cstdio>
 #include <functional>
 #include <string_view>
 

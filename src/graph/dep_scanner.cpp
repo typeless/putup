@@ -10,7 +10,6 @@
 #include "pup/core/string_utils.hpp"
 #include "pup/core/vec.hpp"
 #include "pup/graph/rule_pattern.hpp"
-#include "pup/graph/scanners/dep_words.hpp"
 #include <cstddef>
 #include <memory>
 #include <span>

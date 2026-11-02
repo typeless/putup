@@ -18,7 +18,6 @@
 #include "pup/parser/ast.hpp"
 #include "pup/platform/file_io.hpp"
 
-#include <cstdio>
 #include <cstdlib>
 #include <string_view>
 #include <utility>

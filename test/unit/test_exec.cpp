@@ -16,7 +16,6 @@
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
-#include <thread>
 
 using namespace pup;
 using namespace pup::exec;

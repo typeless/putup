@@ -4,7 +4,6 @@
 #pragma once
 
 #include "pup/core/buf.hpp"
-#include "pup/core/vec.hpp"
 
 #include <span>
 #include <string_view>

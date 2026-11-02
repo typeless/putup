@@ -3,7 +3,6 @@
 
 #include "catch_amalgamated.hpp"
 #include "pup/core/global_pool.hpp"
-#include "instruction_support.hpp"
 #include "pup/core/instruction.hpp"
 #include "pup/core/string_pool.hpp"
 

@@ -6,10 +6,7 @@
 #include "pup/core/path_utils.hpp"
 #include "pup/core/string_pool.hpp"
 
-#include <filesystem>
 #include <optional>
-
-namespace fs = std::filesystem;
 
 using pup::StringId;
 using pup::global_pool;

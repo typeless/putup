@@ -40,7 +40,7 @@ GCOVR_FLAGS := --root . --filter 'src/' --filter 'include/pup/' \
 	--exclude-throw-branches --exclude-unreachable-branches \
 	--gcov-executable '$(GCOV)'
 
-.PHONY: all build configure test coverage install compdb tidy tidy-fix format format-check spec-check check clean distclean bootstrap bootstrap-scripts
+.PHONY: all build configure test coverage install compdb tidy tidy-fix iwyu format format-check spec-check check clean distclean bootstrap bootstrap-scripts
 
 # putup parallelizes internally; make -j here only races targets sharing $(BUILD_DIR).
 .NOTPARALLEL:
@@ -129,16 +129,27 @@ format-check:
 	@echo "Checking format..."
 	@find src include -name '*.cpp' -o -name '*.hpp' | xargs clang-format --dry-run --Werror
 
+CLANG_INCLUDE_CLEANER ?= clang-include-cleaner-18
+
 iwyu: compdb
 	@echo "Checking includes..."
-	@fail=0; \
-	for f in $$(find src include/pup -name '*.cpp' -o -name '*.hpp' | grep -v third_party | sort); do \
-		changes=$$(clang-include-cleaner-18 -p . --print=changes "$$f" 2>/dev/null | grep "^- "); \
+	@entries=$$(python3 -c 'import json, os; print("\n".join(os.path.relpath(os.path.join(e["directory"], e["file"])) for e in json.load(open("$(COMPDB)"))))') || { echo "Cannot read $(COMPDB)."; exit 1; }; \
+	compiled=$$(printf '%s\n' "$$entries" | grep -E '^(src|test/unit)/' | sort -u); \
+	if [ -z "$$compiled" ]; then echo "$(COMPDB) lists no sources under src/ or test/unit/."; exit 1; fi; \
+	sources=$$(find src test/unit -name '*.cpp' | sort); \
+	uncompiled=$$(printf '%s\n' "$$sources" | grep -vxF "$$compiled"); \
+	if [ -n "$$uncompiled" ]; then echo "Not compiled on this host, so not checked:"; printf '  %s\n' $$uncompiled; fi; \
+	fail=0; \
+	for f in $$compiled $$(find include/pup test/unit -name '*.hpp' | sort); do \
+		if ! out=$$($(CLANG_INCLUDE_CLEANER) -p . $(IWYU_FLAGS) --print=changes "$$f" 2>&1); then \
+			echo "$$f: $(CLANG_INCLUDE_CLEANER) could not analyze it:"; echo "$$out"; fail=1; continue; \
+		fi; \
+		changes=$$(printf '%s\n' "$$out" | grep "^- "); \
 		if [ -n "$$changes" ]; then \
 			echo "$$f:"; echo "$$changes"; fail=1; \
 		fi; \
 	done; \
-	if [ "$$fail" -eq 1 ]; then echo "Dead includes found."; exit 1; fi; \
+	if [ "$$fail" -eq 1 ]; then echo "Dead includes found, or files left unanalyzed."; exit 1; fi; \
 	echo "No dead includes found."
 
 spec-check: build

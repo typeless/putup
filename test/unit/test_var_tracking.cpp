@@ -6,8 +6,6 @@
 #include "pup/core/string_pool.hpp"
 #include "pup/parser/var_tracking.hpp"
 
-#include <algorithm>
-
 using namespace pup::parser;
 
 namespace {
