@@ -8978,6 +8978,51 @@ SCENARIO("A glob exclusion matches a hidden file the same as any other", "[e2e][
     }
 }
 
+SCENARIO("An exclusion a variable expands to excludes like a written one", "[e2e][glob][exclusion]")
+{
+    auto const* exclusion = GENERATE("!other.txt", "^other.txt", "!*.txt", "!sub/../other.txt");
+    CAPTURE(exclusion);
+
+    GIVEN("a rule whose inputs end in a variable holding an exclusion")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", std::string { "EXCL = " } + exclusion + "\n: bar.c other.txt $(EXCL) |> echo F=[%f] > %o |> out.txt\n");
+        f.write_file("bar.c", "b\n");
+        f.write_file("other.txt", "o\n");
+        REQUIRE(f.init().success());
+
+        WHEN("built")
+        {
+            REQUIRE(f.build().success());
+
+            THEN("the input the exclusion names is not an operand")
+            {
+                REQUIRE(f.read_file("out.txt") == "F=[bar.c]\n");
+            }
+        }
+    }
+}
+
+SCENARIO("An output exclusion a variable expands to declares no output", "[e2e][exclusion]")
+{
+    GIVEN("a rule whose outputs end in a variable holding an output exclusion")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", "OX = ^\\.d\n: |> echo %o > %o |> out.txt $(OX)\n");
+        REQUIRE(f.init().success());
+
+        WHEN("built")
+        {
+            REQUIRE(f.build().success());
+
+            THEN("the command's outputs are the declared file alone")
+            {
+                REQUIRE(f.read_file("out.txt") == "out.txt\n");
+            }
+        }
+    }
+}
+
 SCENARIO("An exclusion matches an input spelled with the build-directory prefix", "[e2e][glob][pathspace][exclusion]")
 {
     GIVEN("a generated input named build-prefixed alongside an exclusion that covers it")

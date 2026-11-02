@@ -878,41 +878,30 @@ auto expand_glob_pattern(
 /// Handles both glob and non-glob exclusions.
 auto apply_exclusions(
     BuilderContext& ctx,
-    Vec<parser::PathPattern> const& patterns,
+    Vec<StringId> const& exclusions,
     Vec<RuleInput>& result
 ) -> void
 {
     auto& pool = global_pool();
-    for (auto const& pattern : patterns) {
-        if (pattern.kind != parser::PathPattern::Kind::InputExclusion && pattern.kind != parser::PathPattern::Kind::OutputExclusion) {
-            continue;
-        }
-
-        auto paths = parser::expand_path(*ctx.eval, pattern);
-        if (!paths) {
-            continue;
-        }
-
-        for (auto excl_id : *paths) {
-            auto excl = pool.get(excl_id);
-            if (ctx.options.expand_globs && parser::has_glob_chars(excl)) {
-                auto pattern_id = is_empty(ctx.current_dir) ? pup::path::normalize(excl) : pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), excl)));
-                auto glob = parser::Glob { pool.get(pattern_id) };
-                for (auto it = result.begin(); it != result.end();) {
-                    if (it->kind == RuleInput::Kind::File && glob.matches(pool.get(it->value))) {
-                        it = result.erase(it);
-                    } else {
-                        ++it;
-                    }
+    for (auto excl_id : exclusions) {
+        auto excl = pool.get(excl_id);
+        if (ctx.options.expand_globs && parser::has_glob_chars(excl)) {
+            auto pattern_id = is_empty(ctx.current_dir) ? pup::path::normalize(excl) : pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), excl)));
+            auto glob = parser::Glob { pool.get(pattern_id) };
+            for (auto it = result.begin(); it != result.end();) {
+                if (it->kind == RuleInput::Kind::File && glob.matches(pool.get(it->value))) {
+                    it = result.erase(it);
+                } else {
+                    ++it;
                 }
-            } else {
-                auto normalized_excl = file_input(ctx, is_empty(ctx.current_dir) ? excl : pool.get(pup::path::join(str(ctx.current_dir), excl)));
-                for (auto it = result.begin(); it != result.end();) {
-                    if (it->kind == RuleInput::Kind::File && it->value == normalized_excl.value) {
-                        it = result.erase(it);
-                    } else {
-                        ++it;
-                    }
+            }
+        } else {
+            auto normalized_excl = file_input(ctx, is_empty(ctx.current_dir) ? excl : pool.get(pup::path::join(str(ctx.current_dir), excl)));
+            for (auto it = result.begin(); it != result.end();) {
+                if (it->kind == RuleInput::Kind::File && it->value == normalized_excl.value) {
+                    it = result.erase(it);
+                } else {
+                    ++it;
                 }
             }
         }
@@ -1105,6 +1094,9 @@ auto expand_outputs(
         }
 
         for (auto path_id : *paths) {
+            if (pool.get(path_id).starts_with('^')) {
+                continue;
+            }
             auto expanded = parser::expand_pattern(*ctx.eval, pool.get(path_id), section_flags);
             if (!expanded) {
                 auto error = Error { ErrorCode::ParseError, expanded.error().message };
@@ -1163,10 +1155,15 @@ auto expand_inputs(
         token_start = result.size();
     };
 
+    auto exclusions = Vec<StringId> {};
+
     for (auto const& pattern : patterns) {
         close_token();
         ++token;
         if (pattern.kind == parser::PathPattern::Kind::InputExclusion || pattern.kind == parser::PathPattern::Kind::OutputExclusion) {
+            if (auto paths = parser::expand_path(*ctx.eval, pattern)) {
+                exclusions.insert(exclusions.end(), paths->begin(), paths->end());
+            }
             continue;
         }
 
@@ -1235,6 +1232,10 @@ auto expand_inputs(
 
         for (auto path_id : words) {
             auto path_sv = pool.get(path_id);
+            if (path_sv.starts_with('!') || path_sv.starts_with('^')) {
+                exclusions.push_back(pool.intern(path_sv.substr(1)));
+                continue;
+            }
             auto group_ref = parse_group_reference(path_sv, str(ctx.current_dir), str(ctx.options.source_root));
             if (group_ref) {
                 request_demand_driven_parse(*ctx.eval, str(group_ref->group_dir));
@@ -1266,7 +1267,7 @@ auto expand_inputs(
     }
 
     close_token();
-    apply_exclusions(ctx, patterns, result);
+    apply_exclusions(ctx, exclusions, result);
 
     return TokenizedInputs { std::move(result), token };
 }

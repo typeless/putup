@@ -240,3 +240,12 @@ reject the Tupfile and name both groups.
 
 If anything follows a rule's output bin on the rule's line, then putup shall reject the Tupfile with
 "bin must be at the end of the output list".
+
+### REQ-OUTPUT-LIST-EXCLUSION-EXPANDED
+
+- conformance: tup-conformant
+- reference: upstream `eval_path_list` (`src/tup/parser.c`) re-splits an output word whose variables expanded and passes each new word to `new_pl`, which reads a leading `^` as an exclusion rather than an output, so `OX = ^\.d` followed by `$(OX)` in the outputs declares no output named `^\.d`
+- discharge: test "Scenario: An output exclusion a variable expands to declares no output"
+
+Where a word of a rule's outputs expands to a word beginning with `^`, putup shall not declare
+that word as an output.

@@ -275,6 +275,15 @@ it as if it had been named without that prefix.
 
 putup shall apply a glob exclusion to a hidden file on the same terms as to any other file.
 
+### REQ-GLOB-EXCL-EXPANDED
+
+- conformance: tup-conformant
+- reference: upstream `eval_path_list` (`src/tup/parser.c`) re-splits a word whose variables expanded to something else and passes each new word to `new_pl`, which reads a leading `^` as an exclusion, so a `^` exclusion held in a variable excludes like a written one; putup's `!` exclusion has no upstream counterpart and is read after expansion on the same terms, so a file whose name begins with `!` is no more reachable through a variable than written. The word is classified before it is normalized, so `!sub/../x` excludes `x` rather than becoming the input `x`
+- discharge: test "Scenario: An exclusion a variable expands to excludes like a written one"
+
+Where a word of a rule's inputs expands to a word beginning with `!` or `^`, putup shall read
+that word as an exclusion rather than as an input path.
+
 ---
 
 ## Group: match-extraction
