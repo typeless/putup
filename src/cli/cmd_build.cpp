@@ -56,26 +56,21 @@ auto PathIdMap::find(StringId path) const -> std::optional<NodeId>
     return pos->second;
 }
 
-auto PathIdMap::insert(StringId path, NodeId id) -> void
+auto PathIdMap::insert(StringId path, NodeId id) -> bool
 {
     auto pos = std::lower_bound(entries.begin(), entries.end(), path, [](auto const& p, StringId k) { return handle_less(p.first, k); });
     if (pos != entries.end() && pos->first == path) {
-        pos->second = id;
-    } else {
-        entries.insert(pos, std::pair<StringId, NodeId> { path, id });
+        return false;
     }
+    entries.insert(pos, std::pair<StringId, NodeId> { path, id });
+    return true;
 }
 
 auto record_file_entry(index::Index& index, PathIdMap& path_to_id, index::FileEntry entry) -> void
 {
-    auto const path = entry.path;
-    auto const id = entry.id;
-    if (!is_empty(path)) {
-        if (path_to_id.find(path)) {
-            eprint("fatal: index entry for '{}' recorded twice\n", global_pool().get(path));
-            std::abort();
-        }
-        path_to_id.insert(path, id);
+    if (!is_empty(entry.path) && !path_to_id.insert(entry.path, entry.id)) {
+        eprint("fatal: index entry for '{}' recorded twice\n", global_pool().get(entry.path));
+        std::abort();
     }
     index.add_file(std::move(entry));
 }

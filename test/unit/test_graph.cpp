@@ -1828,6 +1828,24 @@ TEST_CASE("An in-tree output lands in the source directory it names rather than 
     REQUIRE(ensure_file_node(graph, pup::PathId::BuildRoot, NodeType::Directory) == pup::SOURCE_ROOT_ID);
 }
 
+TEST_CASE("The build root resolves to one node whether looked up by path or ensured", "[graph]")
+{
+    auto bs = make_build_graph();
+    auto& graph = bs.graph;
+    auto const by_path = [&] { return pup::NodeId { *graph.path_to_node.find(pup::to_underlying(pup::PathId::BuildRoot)) }; };
+
+    REQUIRE(by_path() == pup::SOURCE_ROOT_ID);
+    REQUIRE(ensure_file_node(graph, pup::PathId::BuildRoot, NodeType::Directory) == by_path());
+
+    set_build_root_name(graph, "build");
+    REQUIRE(by_path() == pup::BUILD_ROOT_ID);
+    REQUIRE(ensure_file_node(graph, pup::PathId::BuildRoot, NodeType::Directory) == by_path());
+
+    set_build_root_name(graph, "");
+    REQUIRE(by_path() == pup::SOURCE_ROOT_ID);
+    REQUIRE(ensure_file_node(graph, pup::PathId::BuildRoot, NodeType::Directory) == by_path());
+}
+
 TEST_CASE("ensure_file_node creates nodes from PathId", "[graph]")
 {
     auto bs = make_build_graph();

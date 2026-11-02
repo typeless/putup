@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "e2e_fixture.hpp"
 #include "instruction_support.hpp"
 #include "temp_root.hpp"
 
@@ -2323,7 +2324,7 @@ TEST_CASE("Keying the index under construction by path answers the same however 
 
         auto map = pup::cli::PathIdMap {};
         for (auto i = std::size_t { 0 }; i < paths.size(); ++i) {
-            map.insert(paths[i], NodeId { static_cast<std::uint32_t>(i + 1) });
+            REQUIRE(map.insert(paths[i], NodeId { static_cast<std::uint32_t>(i + 1) }));
         }
 
         for (auto i = std::size_t { 0 }; i < paths.size(); ++i) {
@@ -2338,8 +2339,8 @@ TEST_CASE("Keying the index under construction by path answers the same however 
         REQUIRE(std::is_sorted(map.entries.begin(), map.entries.end(), [](auto const& a, auto const& b) { return pup::handle_less(a.first, b.first); }));
         REQUIRE(map.entries.size() == paths.size());
 
-        map.insert(paths[3], NodeId { 999 });
-        REQUIRE(map.find(paths[3]) == NodeId { 999 });
+        REQUIRE_FALSE(map.insert(paths[3], NodeId { 999 }));
+        REQUIRE(map.find(paths[3]) == NodeId { 4 });
         REQUIRE(map.entries.size() == paths.size());
     }
 }
@@ -2363,6 +2364,27 @@ TEST_CASE("Recording an index entry registers its path exactly when it has one",
     REQUIRE(map.find(dir) == NodeId { 1 });
     REQUIRE(map.find(file) == NodeId { 3 });
     REQUIRE_FALSE(map.find(StringId::Empty).has_value());
+}
+
+TEST_CASE("Recording a second index entry at one path", "[.][index-abort]")
+{
+    auto index = Index {};
+    auto map = pup::cli::PathIdMap {};
+    auto const twin = intern("funnel/twin");
+
+    pup::cli::record_file_entry(index, map, FileEntry { .id = NodeId { 1 }, .type = NodeType::Directory, .path = twin });
+    pup::cli::record_file_entry(index, map, FileEntry { .id = NodeId { 2 }, .type = NodeType::Directory, .path = twin });
+}
+
+TEST_CASE("Recording a second index entry at one path stops the process and names the path", "[index][e2e]")
+{
+    auto f = pup::test::E2EFixture { "glob_mixed_space" };
+
+    auto result = f.run(pup::test::test_executable(), { "[index-abort]" });
+
+    INFO("stderr: " << result.stderr_output);
+    REQUIRE(result.exit_code != 0);
+    REQUIRE(result.stderr_output.find("fatal: index entry for 'funnel/twin' recorded twice") != std::string::npos);
 }
 
 SCENARIO("A recorded command and a graph command expand a template the same way", "[index][instruction][property]")

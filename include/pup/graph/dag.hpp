@@ -118,7 +118,7 @@ struct Graph {
     Vec<SortedPairVec> dir_children; ///< Per-directory name→NodeId index (indexed by parent dir)
 
     mutable PathPool paths;     ///< Interning trie of (parent PathId, basename StringId) entries
-    SortedPairVec path_to_node; ///< Resolve: PathId → NodeId (reverse of FileNode::path_id)
+    SortedPairVec path_to_node; ///< Resolve: PathId → NodeId; in-tree, a build-root path resolves to its source twin's node
 
     NodeId next_file_id = 2;                               ///< Next file node ID (starts at 2, BUILD_ROOT is 1)
     NodeId next_command_id = node_id::make_command(1);     ///< Next command node ID
