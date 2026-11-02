@@ -5,6 +5,7 @@
 #include "temp_root.hpp"
 
 #include "pup/cli/strict_checks.hpp"
+#include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/string_pool.hpp"
 
@@ -157,4 +158,29 @@ TEST_CASE("check_component_dirs: empty list — no diagnostic", "[strict]")
     auto dirs = pup::Vec<std::string_view> {};
     auto diags = check_component_dirs(dirs);
     REQUIRE(diags.empty());
+}
+
+TEST_CASE("append_diagnostic: file then line then severity then message", "[strict]")
+{
+    auto& pool = global_pool();
+    auto const warning = Diagnostic {
+        .file = pool.intern("sub/Tupfile"),
+        .line = 7,
+        .severity = Diagnostic::Warning,
+        .message = pool.intern("no dependency scan for 'a.o'"),
+    };
+    auto const error = Diagnostic {
+        .file = pool.intern("Tuprules.tup"),
+        .line = 0,
+        .severity = Diagnostic::Error,
+        .message = pool.intern("missing Tupfile.ini"),
+    };
+
+    auto warning_line = pup::Buf {};
+    append_diagnostic(warning_line, warning);
+    auto error_line = pup::Buf {};
+    append_diagnostic(error_line, error);
+
+    REQUIRE(warning_line.view() == "sub/Tupfile:7: warning: no dependency scan for 'a.o'");
+    REQUIRE(error_line.view() == "Tuprules.tup:0: error: missing Tupfile.ini");
 }

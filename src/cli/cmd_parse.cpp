@@ -6,6 +6,7 @@
 #include "pup/cli/multi_variant.hpp"
 #include "pup/cli/options.hpp"
 #include "pup/cli/strict_checks.hpp"
+#include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/layout.hpp"
 #include "pup/core/path.hpp"
@@ -132,8 +133,9 @@ auto parse_single_variant(Options const& opts, std::string_view variant_name) ->
 
         auto has_errors = false;
         for (auto const& d : diagnostics) {
-            auto severity_str = d.severity == Diagnostic::Error ? "error" : "warning";
-            eprint("{}:{}: {}: {}\n", pool.get(d.file), d.line, severity_str, pool.get(d.message));
+            auto line = Buf {};
+            append_diagnostic(line, d);
+            eprint("{}\n", line.view());
             if (d.severity == Diagnostic::Error) {
                 has_errors = true;
             }

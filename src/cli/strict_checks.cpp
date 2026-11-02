@@ -76,6 +76,18 @@ auto contains_var(parser::Expression const& expr, std::string_view var_name) -> 
 
 } // namespace
 
+auto append_diagnostic(Buf& out, Diagnostic const& diagnostic) -> void
+{
+    auto const& pool = global_pool();
+    out.fmt(
+        "{}:{}: {}: {}",
+        pool.get(diagnostic.file),
+        diagnostic.line,
+        diagnostic.severity == Diagnostic::Error ? "error" : "warning",
+        pool.get(diagnostic.message)
+    );
+}
+
 auto check_assignment(
     parser::Assignment const& stmt,
     std::string_view file,

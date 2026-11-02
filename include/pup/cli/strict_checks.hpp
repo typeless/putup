@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "pup/core/buf.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/vec.hpp"
 #include "pup/graph/dag.hpp"
@@ -20,6 +21,9 @@ struct Diagnostic {
         = Warning;
     StringId message = StringId::Empty;
 };
+
+/// Append a diagnostic as `file:line: severity: message`, the one form every command prints.
+auto append_diagnostic(Buf& out, Diagnostic const& diagnostic) -> void;
 
 /// Check an assignment statement for convention violations.
 /// Only produces diagnostics for component Tuprules.tup files (not root).

@@ -2167,10 +2167,10 @@ auto build_single_variant(
             unscanned.size() == 1 ? " has" : "s have"
         );
         if (opts.verbose) {
-            auto const& pool = pup::global_pool();
             for (auto const& d : unscanned) {
-                auto severity_str = d.severity == Diagnostic::Error ? "error" : "warning";
-                vprint(variant_name, "{}:{}: {}: {}\n", pool.get(d.file), d.line, severity_str, pool.get(d.message));
+                auto line = Buf {};
+                append_diagnostic(line, d);
+                vprint(variant_name, "{}\n", line.view());
             }
         }
     }

@@ -12460,7 +12460,7 @@ SCENARIO("A compile-shaped rule with no dependency scan is reported", "[e2e][str
                 INFO("stderr: " << result.stderr_output);
                 REQUIRE(result.success());
                 REQUIRE(result.stderr_output.find("no dependency scan") != std::string::npos);
-                REQUIRE(result.stderr_output.find("hidden.o") != std::string::npos);
+                REQUIRE(result.stderr_output.find("./Tupfile:0: warning: no dependency scan for 'hidden.o'") != std::string::npos);
                 REQUIRE(result.stderr_output.find("plain.o") == std::string::npos);
                 REQUIRE(result.stderr_output.find("shown.o") == std::string::npos);
                 REQUIRE(result.stderr_output.find("owndep.o") == std::string::npos);
