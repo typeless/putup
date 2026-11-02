@@ -32,8 +32,10 @@ struct PathIdMap {
     [[nodiscard]]
     auto find(StringId path) const -> std::optional<NodeId>;
 
-    /// Record `id` at `path`, replacing any id already there.
-    auto insert(StringId path, NodeId id) -> void;
+    /// Record `id` at `path`, or return false and leave the map unchanged when `path` is
+    /// already recorded.
+    [[nodiscard]]
+    auto insert(StringId path, NodeId id) -> bool;
 };
 
 /// Add `entry` to the index being built and register its path, if it has one. The writer's only

@@ -2323,7 +2323,7 @@ TEST_CASE("Keying the index under construction by path answers the same however 
 
         auto map = pup::cli::PathIdMap {};
         for (auto i = std::size_t { 0 }; i < paths.size(); ++i) {
-            map.insert(paths[i], NodeId { static_cast<std::uint32_t>(i + 1) });
+            REQUIRE(map.insert(paths[i], NodeId { static_cast<std::uint32_t>(i + 1) }));
         }
 
         for (auto i = std::size_t { 0 }; i < paths.size(); ++i) {
@@ -2338,8 +2338,8 @@ TEST_CASE("Keying the index under construction by path answers the same however 
         REQUIRE(std::is_sorted(map.entries.begin(), map.entries.end(), [](auto const& a, auto const& b) { return pup::handle_less(a.first, b.first); }));
         REQUIRE(map.entries.size() == paths.size());
 
-        map.insert(paths[3], NodeId { 999 });
-        REQUIRE(map.find(paths[3]) == NodeId { 999 });
+        REQUIRE_FALSE(map.insert(paths[3], NodeId { 999 }));
+        REQUIRE(map.find(paths[3]) == NodeId { 4 });
         REQUIRE(map.entries.size() == paths.size());
     }
 }
