@@ -660,7 +660,7 @@ struct Graph {
 
     // Node lookup indices
     Vec<SortedPairVec> dir_children;  // Per-directory name -> NodeId (indexed by parent dir)
-    SortedPairVec path_to_node;      // PathId -> NodeId (reverse of FileNode::path_id)
+    SortedPairVec path_to_node;      // PathId -> NodeId; in-tree, a build-root path resolves to its source twin's node
     StringPool command_strings;               // Interned expanded command strings
     SortedPairVec command_index;              // StringId(command) -> NodeId
 

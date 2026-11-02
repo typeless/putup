@@ -47,7 +47,7 @@ auto make_graph() -> Graph
         .path_id = PathId::BuildRoot,
     };
     graph.path_to_node.insert(to_underlying(PathId::SourceRoot), SOURCE_ROOT_ID);
-    graph.path_to_node.insert(to_underlying(PathId::BuildRoot), BUILD_ROOT_ID);
+    graph.path_to_node.insert(to_underlying(PathId::BuildRoot), SOURCE_ROOT_ID);
     graph.next_file_id = 2;
 
     return graph;
@@ -154,7 +154,8 @@ auto add_file_node(Graph& graph, FileNode node) -> Result<NodeId>
 auto ensure_file_node(Graph& graph, PathId path_id, NodeType type) -> Result<NodeId>
 {
     if (is_root(path_id)) {
-        return path_id == PathId::BuildRoot && !get_build_root_name(graph).empty() ? BUILD_ROOT_ID : SOURCE_ROOT_ID;
+        auto const* root = graph.path_to_node.find(to_underlying(path_id));
+        return root ? NodeId { *root } : SOURCE_ROOT_ID;
     }
 
     auto const* existing = graph.path_to_node.find(to_underlying(path_id));
@@ -807,6 +808,7 @@ auto set_build_root_name(Graph& graph, std::string_view name) -> void
     if (!is_empty(name_id)) {
         graph.dir_children[0].insert(to_underlying(name_id), BUILD_ROOT_ID);
     }
+    graph.path_to_node.insert(to_underlying(PathId::BuildRoot), is_empty(name_id) ? SOURCE_ROOT_ID : BUILD_ROOT_ID);
 }
 
 auto get_build_root_name(Graph const& graph) -> std::string_view
