@@ -1594,7 +1594,7 @@ TEST_CASE("GraphBuilder error directive fails with file and line", "[builder][er
     REQUIRE_FALSE(result.has_value());
     auto msg = result.error().msg();
     CHECK(msg.find("boom") != std::string_view::npos);
-    CHECK(msg.find("Tupfile:1") != std::string_view::npos);
+    CHECK(result.error().location == SourcePosition { .file = intern(fixture.tupfile_path("")), .line = 1 });
 }
 
 TEST_CASE("GraphBuilder error directive in inactive branch is skipped", "[builder][error-directive]")
@@ -1622,7 +1622,7 @@ TEST_CASE("GraphBuilder error directive in active branch fails with expanded mes
     REQUIRE_FALSE(result.has_value());
     auto msg = result.error().msg();
     CHECK(msg.find("hello world arm") != std::string_view::npos);
-    CHECK(msg.find("Tupfile:3") != std::string_view::npos);
+    CHECK(result.error().location == SourcePosition { .file = intern(fixture.tupfile_path("")), .line = 3 });
 }
 
 TEST_CASE("GraphBuilder error directive in active branch nested inside inactive branch is skipped", "[builder][error-directive]")
@@ -1657,7 +1657,7 @@ TEST_CASE("GraphBuilder error directive expanding to empty keeps the empty messa
     REQUIRE_FALSE(result.has_value());
     auto msg = result.error().msg();
     CHECK(msg.find("Empty error directive") == std::string_view::npos);
-    CHECK(msg.find("Tupfile:1") != std::string_view::npos);
+    CHECK(result.error().location == SourcePosition { .file = intern(fixture.tupfile_path("")), .line = 1 });
 }
 
 TEST_CASE("GraphBuilder rejects command expanding to empty and names the config vars read", "[builder][empty-command]")
@@ -1668,7 +1668,7 @@ TEST_CASE("GraphBuilder rejects command expanding to empty and names the config 
 
     REQUIRE_FALSE(result.has_value());
     auto msg = result.error().msg();
-    CHECK(msg.find("Tupfile:1") != std::string_view::npos);
+    CHECK(result.error().location == SourcePosition { .file = intern(fixture.tupfile_path("")), .line = 1 });
     CHECK(msg.find("empty") != std::string_view::npos);
     CHECK(msg.find("@(CC)") != std::string_view::npos);
 }
@@ -1681,7 +1681,7 @@ TEST_CASE("GraphBuilder rejects command expanding to whitespace only", "[builder
 
     REQUIRE_FALSE(result.has_value());
     auto msg = result.error().msg();
-    CHECK(msg.find("Tupfile:1") != std::string_view::npos);
+    CHECK(result.error().location == SourcePosition { .file = intern(fixture.tupfile_path("")), .line = 1 });
     CHECK(msg.find("@(CC)") != std::string_view::npos);
     CHECK(msg.find("@(CFLAGS)") != std::string_view::npos);
 }
@@ -1694,7 +1694,7 @@ TEST_CASE("GraphBuilder rejects empty command without config hint when no config
 
     REQUIRE_FALSE(result.has_value());
     auto msg = result.error().msg();
-    CHECK(msg.find("Tupfile:1") != std::string_view::npos);
+    CHECK(result.error().location == SourcePosition { .file = intern(fixture.tupfile_path("")), .line = 1 });
     CHECK(msg.find("empty") != std::string_view::npos);
     CHECK(msg.find("tup.config") == std::string_view::npos);
 }
@@ -1725,7 +1725,7 @@ TEST_CASE("GraphBuilder rejects empty-rendered command in active config branch",
 
     REQUIRE_FALSE(result.has_value());
     auto msg = result.error().msg();
-    CHECK(msg.find("Tupfile:2") != std::string_view::npos);
+    CHECK(result.error().location == SourcePosition { .file = intern(fixture.tupfile_path("")), .line = 2 });
     CHECK(msg.find("@(CC)") != std::string_view::npos);
 }
 
@@ -2051,7 +2051,7 @@ TEST_CASE("GraphBuilder rejects an output above the build root", "[builder][hier
     CHECK(msg.find("outside") != std::string_view::npos);
     CHECK(msg.find("hierarchy") != std::string_view::npos);
     CHECK(msg.find("../escape.txt") != std::string_view::npos);
-    CHECK(msg.find("Tupfile") != std::string_view::npos);
+    CHECK(result.error().location == SourcePosition { .file = intern(fixture.tupfile_path("")), .line = 1 });
 }
 
 /// Unlike `error` and the empty-command check, this one does not wait for the branch to be
@@ -2250,14 +2250,14 @@ TEST_CASE("GraphBuilder records each command at the line of the rule that declar
     auto rule_lines = std::vector<std::uint32_t> {};
     auto scans = 0;
     for (auto id : nodes_of_type(bs.graph, NodeType::Command)) {
-        auto const location = get<RuleLocation>(bs.graph, id);
+        auto const location = get<SourcePosition>(bs.graph, id);
         CHECK(sv(location.file) == tupfile);
         auto const parent = get_parent_command(bs.graph, id);
         if (parent == INVALID_NODE_ID) {
             rule_lines.push_back(location.line);
         } else {
             ++scans;
-            CHECK(location == get<RuleLocation>(bs.graph, parent));
+            CHECK(location == get<SourcePosition>(bs.graph, parent));
         }
     }
     std::ranges::sort(rule_lines);

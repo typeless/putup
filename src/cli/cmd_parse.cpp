@@ -134,9 +134,9 @@ auto parse_single_variant(Options const& opts, std::string_view variant_name) ->
         auto has_errors = false;
         for (auto const& d : diagnostics) {
             auto line = Buf {};
-            append_diagnostic(line, d);
+            append_message_line(line, d.location, d.severity, pool.get(d.message));
             eprint("{}\n", line.view());
-            if (d.severity == Diagnostic::Error) {
+            if (d.severity == Severity::Error) {
                 has_errors = true;
             }
         }

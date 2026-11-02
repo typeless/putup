@@ -27,18 +27,15 @@ auto is_tuprules(std::string_view file) -> bool
 }
 
 auto make_diag(
-    std::string_view file,
-    std::size_t line,
-    Diagnostic::Severity severity,
+    std::optional<SourcePosition> location,
+    Severity severity,
     std::string_view msg
 ) -> Diagnostic
 {
-    auto& pool = global_pool();
     return Diagnostic {
-        .file = pool.intern(file),
-        .line = line,
+        .location = location,
         .severity = severity,
-        .message = pool.intern(msg),
+        .message = global_pool().intern(msg),
     };
 }
 
@@ -76,18 +73,6 @@ auto contains_var(parser::Expression const& expr, std::string_view var_name) -> 
 
 } // namespace
 
-auto append_diagnostic(Buf& out, Diagnostic const& diagnostic) -> void
-{
-    auto const& pool = global_pool();
-    out.fmt(
-        "{}:{}: {}: {}",
-        pool.get(diagnostic.file),
-        diagnostic.line,
-        diagnostic.severity == Diagnostic::Error ? "error" : "warning",
-        pool.get(diagnostic.message)
-    );
-}
-
 auto check_assignment(
     parser::Assignment const& stmt,
     std::string_view file,
@@ -110,11 +95,11 @@ auto check_assignment(
             auto buf = Buf {};
             buf.fmt("'S' must use '?=' in component Tuprules.tup (found '='). "
                     "Using '=' overwrites the parent project's root anchor.");
-            result.push_back(make_diag(file, stmt.location.line, Diagnostic::Error, buf.view()));
+            result.push_back(make_diag(SourcePosition { .file = global_pool().intern(file), .line = stmt.location.line }, Severity::Error, buf.view()));
         } else if (!is_single_var(stmt.value, "TUP_CWD")) {
             auto buf = Buf {};
             buf.fmt("'S' should be set to '$(TUP_CWD)' in component Tuprules.tup.");
-            result.push_back(make_diag(file, stmt.location.line, Diagnostic::Warning, buf.view()));
+            result.push_back(make_diag(SourcePosition { .file = global_pool().intern(file), .line = stmt.location.line }, Severity::Warning, buf.view()));
         }
         return result;
     }
@@ -124,11 +109,11 @@ auto check_assignment(
             auto buf = Buf {};
             buf.fmt("'B' must use '?=' in component Tuprules.tup (found '='). "
                     "Using '=' overwrites the parent project's build anchor.");
-            result.push_back(make_diag(file, stmt.location.line, Diagnostic::Error, buf.view()));
+            result.push_back(make_diag(SourcePosition { .file = global_pool().intern(file), .line = stmt.location.line }, Severity::Error, buf.view()));
         } else if (!contains_var(stmt.value, "S")) {
             auto buf = Buf {};
             buf.fmt("'B' should reference '$(S)' in its value.");
-            result.push_back(make_diag(file, stmt.location.line, Diagnostic::Warning, buf.view()));
+            result.push_back(make_diag(SourcePosition { .file = global_pool().intern(file), .line = stmt.location.line }, Severity::Warning, buf.view()));
         }
         return result;
     }
@@ -138,7 +123,7 @@ auto check_assignment(
         buf.fmt("'{}' should use '?=' in component Tuprules.tup. "
                 "Using '=' overrides the parent project's toolchain choice.",
                 name_sv);
-        result.push_back(make_diag(file, stmt.location.line, Diagnostic::Warning, buf.view()));
+        result.push_back(make_diag(SourcePosition { .file = global_pool().intern(file), .line = stmt.location.line }, Severity::Warning, buf.view()));
     }
 
     return result;
@@ -218,8 +203,8 @@ auto check_unscanned_compiles(
                     "preprocesses none — an assembler, a copy, a partial link.",
                     pool.get(object),
                     pool.get(object));
-            auto const rule_location = graph::get<graph::RuleLocation>(graph, id);
-            result.push_back(make_diag(pool.get(rule_location.file), rule_location.line, Diagnostic::Warning, buf.view()));
+            auto const rule_location = graph::get<SourcePosition>(graph, id);
+            result.push_back(make_diag(rule_location, Severity::Warning, buf.view()));
         }
     }
 
@@ -238,7 +223,7 @@ auto check_component_dirs(
         if (!pup::platform::exists(ini_path)) {
             auto buf = Buf {};
             buf.fmt("Component directory '{}' has no Tupfile.ini — cannot be built standalone.", dir);
-            result.push_back(make_diag(dir, 0, Diagnostic::Warning, buf.view()));
+            result.push_back(make_diag(std::nullopt, Severity::Warning, buf.view()));
         }
     }
 

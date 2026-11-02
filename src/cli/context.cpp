@@ -529,10 +529,12 @@ auto parse_directory(std::string_view rel_dir, ParseContext& ctx) -> pup::Result
         sorted_erase(ctx.state.parsing, normalized_dir);
         sorted_insert(ctx.state.failed, normalized_dir);
         sorted_insert(ctx.state.refused, normalized_dir);
-        auto tp = Buf {};
-        tp.append(tupfile_path_sv);
+        auto const tupfile_path = global_pool().intern(tupfile_path_sv);
         for (auto const& err : parse_result.errors) {
-            eprint("{}:{}:{}: error: {}\n", tp.c_str(), err.location.line, err.location.column, global_pool().get(err.message));
+            auto const position = pup::SourcePosition { .file = tupfile_path, .line = err.location.line, .column = err.location.column };
+            auto line = Buf {};
+            pup::append_message_line(line, position, pup::Severity::Error, global_pool().get(err.message));
+            eprint("{}\n", line.view());
         }
         return pup::make_error<void>(pup::ErrorCode::ParseError, "Parse failed");
     }
@@ -622,16 +624,18 @@ auto parse_directory(std::string_view rel_dir, ParseContext& ctx) -> pup::Result
 
     if (!result) {
         for (auto i = ctx.state.errors_printed; i < ctx.builder_state.errors.size(); ++i) {
-            auto message = global_pool().get(ctx.builder_state.errors[i]);
+            auto const& error = ctx.builder_state.errors[i];
+            auto line = Buf {};
+            pup::append_message_line(line, error.location, pup::Severity::Error, error.msg());
             auto key = Buf {};
             key.append(normalized_dir);
             key.append('\0');
-            key.append(message);
+            key.append(line.view());
             if (sorted_contains(ctx.state.errors_reported, key.view())) {
                 continue;
             }
             sorted_insert(ctx.state.errors_reported, key.view());
-            eprint("error: {}\n", message);
+            eprint("{}\n", line.view());
         }
         ctx.state.errors_printed = ctx.builder_state.errors.size();
         sorted_insert(ctx.state.failed, normalized_dir);
@@ -1103,7 +1107,9 @@ auto build_context(
     }
 
     for (auto warning_id : builder_state.warnings) {
-        eprint("warning: {}\n", pool.get(warning_id));
+        auto line = Buf {};
+        append_message_line(line, std::nullopt, Severity::Warning, pool.get(warning_id));
+        eprint("{}\n", line.view());
     }
 
     if (ctx_opts.verbose) {

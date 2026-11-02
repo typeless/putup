@@ -3,27 +3,22 @@
 
 #pragma once
 
-#include "pup/core/buf.hpp"
+#include "pup/core/result.hpp"
+#include "pup/core/source_location.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/vec.hpp"
 #include "pup/graph/dag.hpp"
 #include "pup/parser/ast.hpp"
 
-#include <cstddef>
+#include <optional>
 
 namespace pup::cli {
 
 struct Diagnostic {
-    StringId file = StringId::Empty;
-    std::size_t line = 0;
-    enum Severity { Warning,
-                    Error } severity
-        = Warning;
+    std::optional<SourcePosition> location = {};
+    Severity severity = Severity::Warning;
     StringId message = StringId::Empty;
 };
-
-/// Append a diagnostic as `file:line: severity: message`, the one form every command prints.
-auto append_diagnostic(Buf& out, Diagnostic const& diagnostic) -> void;
 
 /// Check an assignment statement for convention violations.
 /// Only produces diagnostics for component Tuprules.tup files (not root).

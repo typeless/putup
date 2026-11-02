@@ -2170,7 +2170,7 @@ auto build_single_variant(
         if (opts.verbose) {
             for (auto const& d : unscanned) {
                 auto line = Buf {};
-                append_diagnostic(line, d);
+                append_message_line(line, d.location, d.severity, pup::global_pool().get(d.message));
                 vprint(variant_name, "{}\n", line.view());
             }
         }

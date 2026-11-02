@@ -4,6 +4,10 @@
 #include "catch_amalgamated.hpp"
 #include "pup/core/buf.hpp"
 #include "pup/core/format_to.hpp"
+#include "pup/core/global_pool.hpp"
+#include "pup/core/result.hpp"
+#include "pup/core/source_location.hpp"
+#include "pup/core/string_pool.hpp"
 
 #include <array>
 #include <cmath>
@@ -11,6 +15,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <limits>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -151,4 +156,22 @@ TEST_CASE("Fixed matches snprintf on dyadic values off exact ties", "[format]")
             REQUIRE(fmt("{}", Fixed { v, p }) == ref_fixed(v, p));
         }
     }
+}
+
+TEST_CASE("A located message renders as file then line then column then severity then text", "[format]")
+{
+    auto& pool = pup::global_pool();
+    auto with_column = pup::SourcePosition { .file = pool.intern("src/Tupfile"), .line = 3, .column = 7 };
+    auto without_column = pup::SourcePosition { .file = pool.intern("Tupfile"), .line = 2 };
+
+    auto parse_error = Buf {};
+    pup::append_message_line(parse_error, with_column, pup::Severity::Error, "bad token");
+    auto warning = Buf {};
+    pup::append_message_line(warning, without_column, pup::Severity::Warning, "no scan");
+    auto unlocated = Buf {};
+    pup::append_message_line(unlocated, std::nullopt, pup::Severity::Error, "no build directory");
+
+    REQUIRE(parse_error.view() == "src/Tupfile:3:7: error: bad token");
+    REQUIRE(warning.view() == "Tupfile:2: warning: no scan");
+    REQUIRE(unlocated.view() == "error: no build directory");
 }

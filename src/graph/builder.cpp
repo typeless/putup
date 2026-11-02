@@ -534,7 +534,7 @@ auto append_tool_stat(Buf& out, std::string_view name, std::string_view source_r
 auto create_command_node(
     BuilderContext& ctx,
     Builder& state,
-    RuleLocation rule_location,
+    SourcePosition rule_location,
     Instruction instruction,
     std::string_view display
 ) -> Result<NodeId>
@@ -1097,14 +1097,9 @@ auto expand_outputs(
         for (auto path_id : *paths) {
             auto expanded = parser::expand_pattern(*ctx.eval, pool.get(path_id), section_flags);
             if (!expanded) {
-                auto msg = Buf {};
-                msg.fmt(
-                    "{}:{}: {}",
-                    str(ctx.current_file),
-                    pattern.location.line,
-                    str(expanded.error().message)
-                );
-                return make_error<ExpandedOutputs>(ErrorCode::ParseError, msg.view());
+                auto error = Error { ErrorCode::ParseError, expanded.error().message };
+                error.location = SourcePosition { .file = ctx.current_file, .line = pattern.location.line };
+                return pup::unexpected<Error>(error);
             }
             auto output_path_sv = pool.get(*expanded);
 
@@ -1115,13 +1110,13 @@ auto expand_outputs(
                 auto msg = Buf {};
                 msg.fmt(
                     absolute
-                        ? "{}:{}: Unable to write to an absolute path, outside the build hierarchy: {} (an output is named relative to its Tupfile)"
-                        : "{}:{}: Unable to write to a file outside of the build hierarchy: {}",
-                    str(ctx.current_file),
-                    pattern.location.line,
+                        ? "Unable to write to an absolute path, outside the build hierarchy: {} (an output is named relative to its Tupfile)"
+                        : "Unable to write to a file outside of the build hierarchy: {}",
                     output_path_sv
                 );
-                return make_error<ExpandedOutputs>(ErrorCode::ParseError, msg.view());
+                auto error = Error { ErrorCode::ParseError, msg.view() };
+                error.location = SourcePosition { .file = ctx.current_file, .line = pattern.location.line };
+                return pup::unexpected<Error>(error);
             }
 
             result.declared.push_back(*expanded);
@@ -1215,9 +1210,9 @@ auto expand_inputs(
             }
             auto expanded = parser::expand_pattern(*ctx.eval, pool.get(path_id), *percent_flags);
             if (!expanded) {
-                auto msg = Buf {};
-                msg.fmt("{}:{}: {}", str(ctx.current_file), pattern.location.line, str(expanded.error().message));
-                return make_error<TokenizedInputs>(ErrorCode::ParseError, msg.view());
+                auto error = Error { ErrorCode::ParseError, expanded.error().message };
+                error.location = SourcePosition { .file = ctx.current_file, .line = pattern.location.line };
+                return pup::unexpected<Error>(error);
             }
             auto text = pool.get(*expanded);
             auto start = text.find_first_not_of(" \t");
@@ -1369,9 +1364,12 @@ auto include_single_file(
 
     auto parse_result = parser::parse_tupfile(source.view(), include_path);
     if (!parse_result.success()) {
+        auto const include_file = intern(include_path);
         for (auto const& err : parse_result.errors) {
-            auto err_msg = str(err.message);
-            eprint("{}:{}:{}: error: {}\n", include_path, err.location.line, err.location.column, err_msg);
+            auto const position = SourcePosition { .file = include_file, .line = err.location.line, .column = err.location.column };
+            auto line = Buf {};
+            append_message_line(line, position, Severity::Error, str(err.message));
+            eprint("{}\n", line.view());
         }
         auto err = Buf {};
         err.fmt("Parse error in include file: {}", include_path);
@@ -1647,9 +1645,9 @@ auto process_error(
         message_sv = "Empty error directive";
     }
 
-    auto msg = Buf {};
-    msg.fmt("{}:{}: {}", str(ctx.current_file), err.location.line, message_sv);
-    return make_error<void>(ErrorCode::ParseError, msg.view());
+    auto error = Error { ErrorCode::ParseError, message_sv };
+    error.location = SourcePosition { .file = ctx.current_file, .line = err.location.line };
+    return pup::unexpected<Error>(error);
 }
 
 auto process_assignment(
@@ -1999,7 +1997,7 @@ auto process_generated_rules(
         auto gen_cmd_id = create_command_node(
             ctx,
             state,
-            get<RuleLocation>(ctx.state->graph, parent_cmd_id),
+            get<SourcePosition>(ctx.state->graph, parent_cmd_id),
             atoms_from_generated_text(pool.get(gen_rule.command)),
             pool.get(gen_rule.display)
         );
@@ -2270,7 +2268,7 @@ auto expand_rule(
     if (ctx.options.reject_empty_commands && is_context_active(ctx)
         && str(cmd_text).find_first_not_of(" \t") == std::string_view::npos) {
         auto msg = Buf {};
-        msg.fmt("{}:{}: command expands to empty string", str(ctx.current_file), rule.location.line);
+        msg += "command expands to empty string";
         if (!ctx.used_config_vars.empty()) {
             msg += "; check tup.config for unset config variables (";
             auto first = true;
@@ -2283,7 +2281,9 @@ auto expand_rule(
             }
             msg += ")";
         }
-        return make_error<void>(ErrorCode::ParseError, msg.view());
+        auto error = Error { ErrorCode::ParseError, msg.view() };
+        error.location = SourcePosition { .file = ctx.current_file, .line = rule.location.line };
+        return pup::unexpected<Error>(error);
     }
 
     if (eff_display) {
@@ -2313,7 +2313,7 @@ auto expand_rule(
     }
     order_only_paths.insert(order_only_paths.end(), macro_order_only_paths.begin(), macro_order_only_paths.end());
 
-    auto rule_location = RuleLocation { .file = ctx.current_file, .line = rule.location.line };
+    auto rule_location = SourcePosition { .file = ctx.current_file, .line = rule.location.line };
     auto cmd_id = create_command_node(ctx, state, rule_location, std::move(instruction_pattern), str(display));
     if (!cmd_id) {
         return pup::unexpected<Error>(cmd_id.error());
@@ -2850,7 +2850,7 @@ auto add_tupfile(
     for (auto const& stmt : tupfile.statements) {
         auto result = process_statement(ctx, state, *stmt);
         if (!result) {
-            state.errors.push_back(result.error().message);
+            state.errors.push_back(result.error());
             if (!state.options.verbose) {
                 return pup::unexpected<Error>(result.error());
             }
@@ -2861,13 +2861,6 @@ auto add_tupfile(
     }
 
     apply_pending_weak_assignments(ctx, state);
-
-    for (auto& err : ctx.errors) {
-        state.errors.push_back(std::move(err));
-    }
-    for (auto& warn : ctx.warnings) {
-        state.warnings.push_back(std::move(warn));
-    }
 
     if (first_error) {
         return pup::unexpected<Error>(*first_error);

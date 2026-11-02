@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/core/result.hpp"
+#include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/string_pool.hpp"
 #include <string_view>
@@ -17,6 +18,23 @@ Error::Error(ErrorCode c, std::string_view msg)
 auto Error::msg() const -> std::string_view
 {
     return global_pool().get(message);
+}
+
+auto append_message_line(
+    Buf& out,
+    std::optional<SourcePosition> const& location,
+    Severity severity,
+    std::string_view text
+) -> void
+{
+    if (location) {
+        out.fmt("{}:{}", global_pool().get(location->file), location->line);
+        if (location->column) {
+            out.fmt(":{}", *location->column);
+        }
+        out.append(": ");
+    }
+    out.fmt("{}: {}", severity == Severity::Error ? "error" : "warning", text);
 }
 
 auto make_err_msg(ErrorCode code, std::string_view msg) -> Error

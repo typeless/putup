@@ -7084,7 +7084,7 @@ SCENARIO("Empty-rendered commands are rejected at graph-build time", "[e2e][conf
             {
                 REQUIRE_FALSE(result.success());
                 auto combined = result.stderr_output + result.stdout_output;
-                REQUIRE(combined.find("Tupfile:1") != std::string::npos);
+                REQUIRE(combined.find("/Tupfile:1: error: command expands to empty string") != std::string::npos);
                 REQUIRE(combined.find("@(CC_CMD)") != std::string::npos);
             }
         }
@@ -11647,7 +11647,7 @@ SCENARIO("Error directive aborts the build only when its branch is active", "[e2
             {
                 REQUIRE_FALSE(result.success());
                 REQUIRE(result.stderr_output.find("broken config: set TOOLCHAIN") != std::string::npos);
-                REQUIRE(result.stderr_output.find("Tupfile:3") != std::string::npos);
+                REQUIRE(result.stderr_output.find("/Tupfile:3: error: broken config: set TOOLCHAIN") != std::string::npos);
             }
         }
     }

@@ -123,9 +123,6 @@ struct BuilderContext {
     /// Env variable StringIds used during current command expansion (cleared per command)
     SortedIdVec used_env_vars = {};
 
-    Vec<StringId> errors = {};
-    Vec<StringId> warnings = {};
-
     /// Pending weak (??=) assignments - applied before rules, last wins
     Vec<PendingWeakAssignment> pending_weak_assignments = {};
 
@@ -225,7 +222,7 @@ struct InputInAbsentDir {
 /// Per-session state that persists across multiple Tupfiles
 struct Builder {
     BuilderOptions options;
-    Vec<StringId> errors;
+    Vec<Error> errors;
     Vec<StringId> warnings;
 
     /// Group node lookup: interned "directory/name" StringId → NodeId

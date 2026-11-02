@@ -405,9 +405,9 @@ auto get<OutputAction>(Graph const& graph, NodeId id) -> OutputAction
 }
 
 template<>
-auto get<RuleLocation>(Graph const& graph, NodeId id) -> RuleLocation
+auto get<SourcePosition>(Graph const& graph, NodeId id) -> SourcePosition
 {
-    return read_command_field(graph, id, &CommandNode::rule_location, RuleLocation {});
+    return read_command_field(graph, id, &CommandNode::rule_location, SourcePosition {});
 }
 
 template<>

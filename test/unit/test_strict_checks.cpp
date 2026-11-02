@@ -5,7 +5,6 @@
 #include "temp_root.hpp"
 
 #include "pup/cli/strict_checks.hpp"
-#include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/string_pool.hpp"
 
@@ -61,7 +60,7 @@ TEST_CASE("check_assignment: S anchor variable", "[strict]")
         auto stmt = make_assignment("S", Assignment::Op::Set, make_var_expr("TUP_CWD"));
         auto diags = check_assignment(stmt, "libfoo/Tuprules.tup", true);
         REQUIRE(diags.size() == 1);
-        REQUIRE(diags[0].severity == Diagnostic::Error);
+        REQUIRE(diags[0].severity == pup::Severity::Error);
         REQUIRE(sv(diags[0].message).find("must use '?='") != std::string_view::npos);
     }
 
@@ -77,7 +76,7 @@ TEST_CASE("check_assignment: S anchor variable", "[strict]")
         auto stmt = make_assignment("S", Assignment::Op::SoftSet, make_literal_expr(".."));
         auto diags = check_assignment(stmt, "libfoo/Tuprules.tup", true);
         REQUIRE(diags.size() == 1);
-        REQUIRE(diags[0].severity == Diagnostic::Warning);
+        REQUIRE(diags[0].severity == pup::Severity::Warning);
     }
 }
 
@@ -100,7 +99,7 @@ TEST_CASE("check_assignment: B anchor variable", "[strict]")
         auto stmt = make_assignment("B", Assignment::Op::Set, make_literal_expr("build"));
         auto diags = check_assignment(stmt, "libfoo/Tuprules.tup", true);
         REQUIRE(diags.size() == 1);
-        REQUIRE(diags[0].severity == Diagnostic::Error);
+        REQUIRE(diags[0].severity == pup::Severity::Error);
     }
 }
 
@@ -118,7 +117,7 @@ TEST_CASE("check_assignment: toolchain variables", "[strict]")
         auto stmt = make_assignment("CC", Assignment::Op::Set, make_literal_expr("gcc"));
         auto diags = check_assignment(stmt, "libfoo/Tuprules.tup", true);
         REQUIRE(diags.size() == 1);
-        REQUIRE(diags[0].severity == Diagnostic::Warning);
+        REQUIRE(diags[0].severity == pup::Severity::Warning);
     }
 
     SECTION("CC = gcc in root — no diagnostic")
@@ -149,7 +148,7 @@ TEST_CASE("check_component_dirs: missing Tupfile.ini — warning", "[strict]")
     auto dirs = pup::Vec<std::string_view> { missing };
     auto diags = check_component_dirs(dirs);
     REQUIRE(diags.size() == 1);
-    REQUIRE(diags[0].severity == Diagnostic::Warning);
+    REQUIRE(diags[0].severity == pup::Severity::Warning);
     REQUIRE(sv(diags[0].message).find("no Tupfile.ini") != std::string_view::npos);
 }
 
@@ -158,29 +157,4 @@ TEST_CASE("check_component_dirs: empty list — no diagnostic", "[strict]")
     auto dirs = pup::Vec<std::string_view> {};
     auto diags = check_component_dirs(dirs);
     REQUIRE(diags.empty());
-}
-
-TEST_CASE("append_diagnostic: file then line then severity then message", "[strict]")
-{
-    auto& pool = global_pool();
-    auto const warning = Diagnostic {
-        .file = pool.intern("sub/Tupfile"),
-        .line = 7,
-        .severity = Diagnostic::Warning,
-        .message = pool.intern("no dependency scan for 'a.o'"),
-    };
-    auto const error = Diagnostic {
-        .file = pool.intern("Tuprules.tup"),
-        .line = 0,
-        .severity = Diagnostic::Error,
-        .message = pool.intern("missing Tupfile.ini"),
-    };
-
-    auto warning_line = pup::Buf {};
-    append_diagnostic(warning_line, warning);
-    auto error_line = pup::Buf {};
-    append_diagnostic(error_line, error);
-
-    REQUIRE(warning_line.view() == "sub/Tupfile:7: warning: no dependency scan for 'a.o'");
-    REQUIRE(error_line.view() == "Tuprules.tup:0: error: missing Tupfile.ini");
 }

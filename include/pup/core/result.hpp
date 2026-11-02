@@ -4,8 +4,10 @@
 #pragma once
 
 #include "expected.hpp"
+#include "pup/core/source_location.hpp"
 #include "pup/core/string_id.hpp"
 
+#include <optional>
 #include <string_view>
 
 namespace pup {
@@ -56,6 +58,7 @@ enum class ErrorCode {
 struct Error {
     ErrorCode code = ErrorCode::None;
     StringId message = StringId::Empty;
+    std::optional<SourcePosition> location = {};
 
     Error() = default;
     Error(ErrorCode c, StringId msg)
@@ -90,6 +93,23 @@ struct Error {
         return Error { c, msg };
     }
 };
+
+/// How serious a printed message is
+enum class Severity {
+    Warning,
+    Error,
+};
+
+class Buf;
+
+/// Append a message as `file:line[:column]: severity: text`, or `severity: text` without a location:
+/// the one form every message about a Tupfile is printed in.
+auto append_message_line(
+    Buf& out,
+    std::optional<SourcePosition> const& location,
+    Severity severity,
+    std::string_view text
+) -> void;
 
 /// Result type alias for operations that may fail
 template<typename T>
