@@ -175,32 +175,24 @@ auto parse_statement_body(ParserState& s, Predicate is_terminator)
 struct VarRefSpec {
     TokenType prefix_token;
     VarRef::Kind kind;
-    char prefix_char;
     std::string_view unterminated_msg;
 };
 
 constexpr auto kVarRefSpecs = std::array {
-    VarRefSpec { TokenType::Dollar, VarRef::Kind::Regular, '$', "Unterminated variable reference" },
-    VarRefSpec { TokenType::At, VarRef::Kind::Config, '@', "Unterminated config variable reference" },
-    VarRefSpec { TokenType::Ampersand, VarRef::Kind::Node, '&', "Unterminated node variable reference" },
+    VarRefSpec { TokenType::Dollar, VarRef::Kind::Regular, "Unterminated variable reference" },
+    VarRefSpec { TokenType::At, VarRef::Kind::Config, "Unterminated config variable reference" },
+    VarRefSpec { TokenType::Ampersand, VarRef::Kind::Node, "Unterminated node variable reference" },
 };
 
 auto try_parse_variable_ref(ParserState& s, VarRefSpec const& spec)
     -> std::optional<Result<VarRef>>
 {
-    if (!check(s, spec.prefix_token)) {
+    advance(s);
+    auto const sigil_end = s.previous.location.offset + static_cast<std::uint32_t>(s.previous.text.size());
+    if (!check(s, TokenType::OpenParen) || s.current.location.offset != sigil_end) {
         return std::nullopt;
     }
-
     advance(s);
-    if (!match(s, TokenType::OpenParen)) {
-        auto err = Buf {};
-        err.fmt("Expected '(' after '{}'", std::string_view { &spec.prefix_char, 1 });
-        return pup::make_error<VarRef>(
-            ErrorCode::ParseError,
-            err.view()
-        );
-    }
 
     auto name = Buf {};
     while (!check(s, TokenType::CloseParen)
@@ -856,15 +848,17 @@ auto parse_expression_until(
             }
         }
         if (matched_spec) {
-            flush_text();
             auto result = try_parse_variable_ref(s, *matched_spec);
             if (!result) {
-                return pup::make_error<Expression>(ErrorCode::ParseError, "Internal parser error");
+                current_text += s.previous.text;
+                last_end_offset = s.previous.location.offset + static_cast<std::uint32_t>(s.previous.text.size());
+                continue;
             }
             if (!*result) {
                 return pup::unexpected<Error>(result->error());
             }
 
+            flush_text();
             expr.parts.emplace_back(Expression::Variable { std::move(**result) });
             last_end_offset = s.previous.location.offset + static_cast<std::uint32_t>(s.previous.text.size());
             continue;

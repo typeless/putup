@@ -53,6 +53,20 @@ What an assignment operator does to a variable that is already defined.
 Where a Tupfile assigns a variable with `?=` and that variable is already defined, putup shall
 keep the defined value rather than replace it with the assignment's own value.
 
+## Group: variable references
+
+What `$`, `@` and `&` mean when no variable reference follows them.
+
+### REQ-EVAL-SIGIL-LITERAL
+
+- conformance: tup-conformant
+- reference: upstream `eval` (`src/tup/parser.c`) expands `$(`, `@(` and `&(` only when the sigil is immediately followed by `(`; any other `$`, `@` or `&` is appended to the result unchanged, which is what lets an output exclusion such as `^\.d$` end in a regex anchor. The parse keeps `$$` as two literal characters; evaluation then rewrites `$$` to `$`, a deviation of its own that upstream does not make, pinned by "Dollar-dollar escapes to literal dollar in shell commands"
+- discharge: test "A variable sigil not followed by an open paren is literal text"
+- discharge: test "An output exclusion regex may end in a dollar anchor"
+
+Where a `$`, `@` or `&` in a Tupfile is not immediately followed by `(`, putup shall read it as
+a literal character rather than reject the Tupfile.
+
 ## Group: macros
 
 What defining a bang macro in terms of another one binds.

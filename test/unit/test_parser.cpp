@@ -121,6 +121,36 @@ TEST_CASE("Parser variable references in assignment", "[parser]")
     REQUIRE(std::holds_alternative<Expression::Literal>(assign->value.parts[1]));
 }
 
+TEST_CASE("A variable sigil not followed by an open paren is literal text", "[parser]")
+{
+    auto const [source, value] = GENERATE(table<char const*, char const*>({
+        { "X = a$b", "a$b" },
+        { "X = a@b", "a@b" },
+        { "X = a&b", "a&b" },
+        { "X = cost$", "cost$" },
+        { "X = $ (Y)", "$ (Y)" },
+        { "X = $$f", "$$f" },
+    }));
+    CAPTURE(source);
+
+    auto result = parse_tupfile(source, "test.tup");
+
+    REQUIRE(result.success());
+    auto const* assign = result.tupfile.statements[0]->as<Assignment>();
+    CHECK(assign->value.as_literal() == value);
+}
+
+TEST_CASE("An output exclusion regex may end in a dollar anchor", "[parser][path-list]")
+{
+    auto result = parse_tupfile(": a.c |> cc |> a.o ^\\.d$\n", "test.tup");
+
+    REQUIRE(result.success());
+    auto const* rule = result.tupfile.statements[0]->as<Rule>();
+    REQUIRE(rule->outputs.size() == 2);
+    CHECK(rule->outputs[1].kind == PathPattern::Kind::OutputExclusion);
+    CHECK(rule->outputs[1].path.as_literal() == "\\.d$");
+}
+
 TEST_CASE("Parser include directives", "[parser]")
 {
     SECTION("include_rules")
