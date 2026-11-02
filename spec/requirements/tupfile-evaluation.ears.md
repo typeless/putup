@@ -67,6 +67,21 @@ What `$`, `@` and `&` mean when no variable reference follows them.
 Where a `$`, `@` or `&` in a Tupfile is not immediately followed by `(`, putup shall read it as
 a literal character rather than reject the Tupfile.
 
+## Group: conditionals
+
+Where the two sides of an `ifeq` or `ifneq` begin and end.
+
+### REQ-EVAL-IFEQ-LAST-PAREN
+
+- conformance: tup-conformant
+- reference: upstream `eval_eq` (`src/tup/parser.c`) takes the left side from after the first `(` to the first `,`, and the right side from after that comma to the last `)` on the line, found by scanning back from the end of the line, so a `)` inside the right side is part of it. A `#` after the start of the line is not a comment there (upstream strips comments only at the start of a line), so it belongs to the side it falls in; a line with no `,` or no `)` is a syntax error on that line
+- discharge: test "An ifeq right-hand side runs to the last close paren on its line"
+- discharge: test "An ifeq missing its comma or close paren is refused on its own line"
+
+When a Tupfile writes `ifeq` or `ifneq`, putup shall end the right-hand side at the last `)` on
+that line, read a `#` on that line as text, and reject a line that has no `,` or no `)` with an
+error on that line.
+
 ## Group: macros
 
 What defining a bang macro in terms of another one binds.

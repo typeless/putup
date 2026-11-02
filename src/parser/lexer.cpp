@@ -175,7 +175,7 @@ auto Lexer::scan_token() -> Token
     }
 
     // Comment
-    if (c == '#') {
+    if (c == '#' && context_ != Context::Conditional) {
         skip_to_eol();
         return make_token(TokenType::Hash, start);
     }

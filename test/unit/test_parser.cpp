@@ -351,6 +351,42 @@ TEST_CASE("Parser conditionals", "[parser]")
     }
 }
 
+TEST_CASE("An ifeq right-hand side runs to the last close paren on its line", "[parser]")
+{
+    auto const [source, lhs, rhs] = GENERATE(table<char const*, char const*, char const*>({
+        { "ifeq (a,b)\nendif", "a", "b" },
+        { "ifeq (a,(b))\nendif", "a", "(b)" },
+        { "ifeq (a,b))\nendif", "a", "b)" },
+        { "ifeq ((a),b)\nendif", "(a)", "b" },
+        { "ifeq ($ (X),$ (X))\nendif", "$ (X)", "$ (X)" },
+        { "ifeq (a,a) # note (see x)\nendif", "a", "a) # note (see x" },
+    }));
+    CAPTURE(source);
+
+    auto result = parse_tupfile(source, "test.tup");
+
+    CHECK(result.errors.empty());
+    REQUIRE(result.tupfile.statements.size() == 1);
+    auto const* cond = result.tupfile.statements[0]->as<Conditional>();
+    REQUIRE(cond != nullptr);
+    CHECK(cond->lhs.as_literal() == lhs);
+    CHECK(cond->rhs.as_literal() == rhs);
+}
+
+TEST_CASE("An ifeq missing its comma or close paren is refused on its own line", "[parser]")
+{
+    auto const* source = GENERATE(
+        "ifeq (a,b\n: |> echo |>\nendif\n",
+        "ifeq (a\n: |> echo |>\nendif\n"
+    );
+    CAPTURE(source);
+
+    auto result = parse_tupfile(source, "test.tup");
+
+    REQUIRE_FALSE(result.errors.empty());
+    CHECK(result.errors[0].location.line == 1);
+}
+
 TEST_CASE("Parser simple rule", "[parser]")
 {
     auto result = parse_tupfile(": foo.c |> gcc -c %f -o %o |> foo.o", "test.tup");

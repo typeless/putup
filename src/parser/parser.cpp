@@ -696,7 +696,7 @@ auto parse_conditional(ParserState& s, Conditional::Kind kind) -> Result<Conditi
 
         // Parse LHS until comma
         auto lhs = parse_expression_until(s, [](Token const& t) {
-            return t.is(TokenType::Comma);
+            return t.is_one_of(TokenType::Comma, TokenType::Newline);
         });
         if (!lhs) {
             return pup::unexpected<Error>(lhs.error());
@@ -708,9 +708,16 @@ auto parse_conditional(ParserState& s, Conditional::Kind kind) -> Result<Conditi
             return pup::unexpected<Error>(comma.error());
         }
 
-        // Parse RHS until close paren
-        auto rhs = parse_expression_until(s, [](Token const& t) {
-            return t.is(TokenType::CloseParen);
+        auto const source = s.lexer.source();
+        auto rhs = parse_expression_until(s, [source](Token const& t) {
+            if (t.is(TokenType::Newline)) {
+                return true;
+            }
+            if (!t.is(TokenType::CloseParen)) {
+                return false;
+            }
+            auto const rest = source.substr(t.location.offset + 1);
+            return rest.substr(0, rest.find('\n')).find(')') == std::string_view::npos;
         });
         if (!rhs) {
             return pup::unexpected<Error>(rhs.error());
