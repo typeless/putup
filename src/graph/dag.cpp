@@ -405,6 +405,12 @@ auto get<OutputAction>(Graph const& graph, NodeId id) -> OutputAction
 }
 
 template<>
+auto get<RuleLocation>(Graph const& graph, NodeId id) -> RuleLocation
+{
+    return read_command_field(graph, id, &CommandNode::rule_location, RuleLocation {});
+}
+
+template<>
 auto get<Name>(Graph const& graph, NodeId id) -> StringId
 {
     return read_file_field(graph, id, &FileNode::name, StringId::Empty);

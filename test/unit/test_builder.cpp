@@ -2,8 +2,10 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "e2e_fixture.hpp"
 #include "temp_root.hpp"
 
+#include "pup/cli/context.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/graph/builder.hpp"
@@ -11,6 +13,7 @@
 #include "pup/parser/parser.hpp"
 
 #include <algorithm>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -2214,4 +2217,50 @@ TEST_CASE("GraphBuilder accepts identical text under complementary guards", "[bu
     );
 
     CHECK(result.has_value());
+}
+
+TEST_CASE("GraphBuilder records each command at the line of the rule that declares it", "[builder]")
+{
+    auto env = pup::test::EnvGuard { "PUP_IMPLICIT_DEPS", "1" };
+    auto registry = pup::cli::make_scanner_registry();
+    REQUIRE(registry.has_value());
+
+    auto fixture = BuilderTestFixture {};
+    fixture.create_file("a.c");
+    fixture.create_file("b.c");
+
+    auto bs = make_build_graph();
+    auto vars = VarDb {};
+    auto ctx = EvalContext { .vars = &vars };
+    auto builder_state = make_builder(BuilderOptions {
+        .source_root = intern(fixture.root_str()),
+        .config_root = intern(fixture.root_str()),
+        .output_root = pup::StringId::Empty,
+        .config_path = pup::StringId::Empty,
+        .expand_globs = false,
+        .validate_inputs = false,
+        .scanner_registry = &*registry,
+    });
+
+    auto const tupfile = fixture.tupfile_path("");
+    auto parse_result = parse_tupfile("# two compiles\n: a.c |> gcc -c a.c -o a.o |> a.o\n\n: b.c |> gcc -c b.c -o b.o |> b.o\n", tupfile);
+    REQUIRE(parse_result.success());
+    REQUIRE(add_tupfile(bs, parse_result.tupfile, ctx, builder_state).has_value());
+
+    auto rule_lines = std::vector<std::uint32_t> {};
+    auto scans = 0;
+    for (auto id : nodes_of_type(bs.graph, NodeType::Command)) {
+        auto const location = get<RuleLocation>(bs.graph, id);
+        CHECK(sv(location.file) == tupfile);
+        auto const parent = get_parent_command(bs.graph, id);
+        if (parent == INVALID_NODE_ID) {
+            rule_lines.push_back(location.line);
+        } else {
+            ++scans;
+            CHECK(location == get<RuleLocation>(bs.graph, parent));
+        }
+    }
+    std::ranges::sort(rule_lines);
+    REQUIRE(rule_lines == std::vector<std::uint32_t> { 2, 4 });
+    REQUIRE(scans == 2);
 }

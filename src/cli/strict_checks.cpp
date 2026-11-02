@@ -218,12 +218,8 @@ auto check_unscanned_compiles(
                     "preprocesses none — an assembler, a copy, a partial link.",
                     pool.get(object),
                     pool.get(object));
-            result.push_back(make_diag(
-                pool.get(pup::path::join(dir.empty() ? "." : dir, "Tupfile")),
-                0,
-                Diagnostic::Warning,
-                buf.view()
-            ));
+            auto const rule_location = graph::get<graph::RuleLocation>(graph, id);
+            result.push_back(make_diag(pool.get(rule_location.file), rule_location.line, Diagnostic::Warning, buf.view()));
         }
     }
 

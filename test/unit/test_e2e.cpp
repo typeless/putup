@@ -12460,7 +12460,7 @@ SCENARIO("A compile-shaped rule with no dependency scan is reported", "[e2e][str
                 INFO("stderr: " << result.stderr_output);
                 REQUIRE(result.success());
                 REQUIRE(result.stderr_output.find("no dependency scan") != std::string::npos);
-                REQUIRE(result.stderr_output.find("./Tupfile:0: warning: no dependency scan for 'hidden.o'") != std::string::npos);
+                REQUIRE(result.stderr_output.find("/Tupfile:6: warning: no dependency scan for 'hidden.o'") != std::string::npos);
                 REQUIRE(result.stderr_output.find("plain.o") == std::string::npos);
                 REQUIRE(result.stderr_output.find("shown.o") == std::string::npos);
                 REQUIRE(result.stderr_output.find("owndep.o") == std::string::npos);
@@ -12511,13 +12511,36 @@ SCENARIO("A compile-shaped rule with no dependency scan is reported", "[e2e][str
                 REQUIRE(result.success());
                 REQUIRE(result.stdout_output.find("1 object file has no dependency scan:\n") != std::string::npos);
                 REQUIRE(result.stdout_output.find("putup parse") == std::string::npos);
-                REQUIRE(
-                    result.stdout_output.find("] ./Tupfile:0: warning: no dependency scan for 'hidden.o'")
-                    != std::string::npos
-                );
+                auto const warning_at = result.stdout_output.find("/Tupfile:6: warning: no dependency scan for 'hidden.o'");
+                REQUIRE(warning_at != std::string::npos);
+                auto const line_start = result.stdout_output.rfind('\n', warning_at) + 1;
+                REQUIRE(result.stdout_output.compare(line_start, 4, "[.] ") == 0);
                 REQUIRE(result.stdout_output.find("'plain.o'") == std::string::npos);
                 REQUIRE(result.stdout_output.find("'shown.o'") == std::string::npos);
                 REQUIRE(result.stdout_output.find("'owndep.o'") == std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("An unscanned object is reported at the line of the rule that declares it", "[e2e][strict][depscan]")
+{
+    GIVEN("an unscanned compile declared on line 2 of an included file")
+    {
+        auto f = E2EFixture { "unscanned_compile" };
+        f.write_file("rules.tup", "# an unscanned compile\n: hidden.c |> cd . && gcc -c %f -o %o |> %B.o\n");
+        f.write_file("Tupfile", "include rules.tup\n");
+        REQUIRE(f.init().success());
+
+        WHEN("parse reports on it")
+        {
+            auto result = f.pup({ "parse" });
+
+            THEN("the diagnostic names the included file and the rule's line")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(result.stderr_output.find("/rules.tup:2: warning: no dependency scan for 'hidden.o'") != std::string::npos);
             }
         }
     }

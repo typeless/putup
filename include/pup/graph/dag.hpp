@@ -58,6 +58,14 @@ struct Guard {
     auto operator==(Guard const& other) const -> bool = default;
 };
 
+/// Where the rule that created a command is written
+struct RuleLocation {
+    StringId file = StringId::Empty; ///< The Tupfile or included file the rule is written in (interned)
+    std::uint32_t line = 0;          ///< The rule's line in that file
+
+    auto operator==(RuleLocation const& other) const -> bool = default;
+};
+
 /// Command node - represents build commands
 /// Note: Type is determined by node_id::is_command(), not a stored field.
 /// Command string is reconstructed on demand via expand_instruction() from
@@ -67,6 +75,7 @@ struct CommandNode {
 
     StringId display = StringId::Empty;    ///< Display text (from ^ ^ markers, interned)
     StringId source_dir = StringId::Empty; ///< Tupfile directory (relative to root, interned)
+    RuleLocation rule_location = {};       ///< The rule this command came from; a dependency scan carries its compile's
     Instruction instruction = {};          ///< Instruction atoms (e.g. "gcc -c %f -o %o")
 
     TokenList<NodeId> inputs = {};            ///< Operand file NodeIds for %f, %b and %B expansion, grouped by written token
@@ -144,10 +153,10 @@ auto add_command_node(Graph& graph, CommandNode node) -> Result<NodeId>;
 [[nodiscard]]
 auto add_edge(Graph& graph, NodeId from, NodeId to, LinkType type = LinkType::Normal) -> Result<void>;
 
-/// Role tags for scalar-property access via get<Tag>. The four tags that
-/// are also concrete types (NodeType, NodeFlags, Hash256, OutputAction)
-/// identify themselves by their return type. The four below are pure role
-/// tags whose storage type is StringId.
+/// Role tags for scalar-property access via get<Tag>. The five tags that
+/// are also concrete types (NodeType, NodeFlags, Hash256, OutputAction,
+/// RuleLocation) identify themselves by their return type. The four below
+/// are pure role tags whose storage type is StringId.
 struct Name { };
 struct Display { };
 struct SourceDir { };
@@ -172,6 +181,10 @@ struct get_storage<Hash256> {
 template<>
 struct get_storage<OutputAction> {
     using type = OutputAction;
+};
+template<>
+struct get_storage<RuleLocation> {
+    using type = RuleLocation;
 };
 template<>
 struct get_storage<Name> {

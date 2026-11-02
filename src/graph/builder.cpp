@@ -534,6 +534,7 @@ auto append_tool_stat(Buf& out, std::string_view name, std::string_view source_r
 auto create_command_node(
     BuilderContext& ctx,
     Builder& state,
+    RuleLocation rule_location,
     Instruction instruction,
     std::string_view display
 ) -> Result<NodeId>
@@ -544,6 +545,7 @@ auto create_command_node(
     auto node = CommandNode {
         .display = intern(display),
         .source_dir = ctx.current_dir,
+        .rule_location = rule_location,
         .instruction = std::move(instruction),
         .exported_vars = std::move(exported),
         .guards = ctx.condition_stack,
@@ -1994,7 +1996,13 @@ auto process_generated_rules(
 {
     auto& pool = global_pool();
     for (auto const& gen_rule : generated_rules) {
-        auto gen_cmd_id = create_command_node(ctx, state, atoms_from_generated_text(pool.get(gen_rule.command)), pool.get(gen_rule.display));
+        auto gen_cmd_id = create_command_node(
+            ctx,
+            state,
+            get<RuleLocation>(ctx.state->graph, parent_cmd_id),
+            atoms_from_generated_text(pool.get(gen_rule.command)),
+            pool.get(gen_rule.display)
+        );
         if (!gen_cmd_id) {
             continue;
         }
@@ -2305,7 +2313,8 @@ auto expand_rule(
     }
     order_only_paths.insert(order_only_paths.end(), macro_order_only_paths.begin(), macro_order_only_paths.end());
 
-    auto cmd_id = create_command_node(ctx, state, std::move(instruction_pattern), str(display));
+    auto rule_location = RuleLocation { .file = ctx.current_file, .line = rule.location.line };
+    auto cmd_id = create_command_node(ctx, state, rule_location, std::move(instruction_pattern), str(display));
     if (!cmd_id) {
         return pup::unexpected<Error>(cmd_id.error());
     }
