@@ -967,6 +967,15 @@ auto build_context(
     // is a function of the source tree alone — no command runs during parsing — and the
     // seed only grows, so this converges; two rounds is the usual worst case.
     auto constexpr max_parse_rounds = 8;
+    auto print_located = [](Error error) -> Error {
+        if (!error.location) {
+            return error;
+        }
+        auto line = Buf {};
+        append_message_line(line, error.location, Severity::Error, error.msg());
+        eprint("{}\n", line.view());
+        return Error { ErrorCode::ParseError, "Project check failed" };
+    };
     // Only what this parse will never look at: a build that parses a path's directory
     // re-derives the truth about it and is the only one entitled to (#369).
     auto parsed_prior_generated = Vec<StringId> {};
@@ -1065,13 +1074,13 @@ auto build_context(
                 if (ctx_opts.parse_scopes.empty()) {
                     auto provided = graph::check_input_dirs_provided(ctx.impl_->graph, builder_state);
                     if (!provided) {
-                        return unexpected<Error>(provided.error());
+                        return unexpected<Error>(print_located(provided.error()));
                     }
                 }
                 break;
             }
             if (round + 1 == max_parse_rounds) {
-                return unexpected<Error>(stable.error());
+                return unexpected<Error>(print_located(stable.error()));
             }
 
             generated_seed = graph::collect_generated_paths(ctx.impl_->graph);
@@ -1103,7 +1112,7 @@ auto build_context(
 
     auto finalized = graph::finalize_graph(ctx.impl_->graph, builder_state);
     if (!finalized) {
-        return unexpected<Error>(finalized.error());
+        return unexpected<Error>(print_located(finalized.error()));
     }
 
     for (auto warning_id : builder_state.warnings) {

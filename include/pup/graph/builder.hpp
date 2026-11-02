@@ -115,6 +115,7 @@ struct BuilderContext {
 
     StringId current_dir = StringId::Empty;
     StringId current_file = StringId::Empty;
+    std::uint32_t current_line = 0;
     Vec<NodeId> sticky_sources = {}; ///< Tupfile + included files for sticky edges
 
     /// Config variable StringIds used during current command expansion (cleared per command)
@@ -209,6 +210,7 @@ struct GlobResolution {
     StringId dir = StringId::Empty;     ///< Directory of the rule that wrote the pattern
     StringId pattern = StringId::Empty; ///< Project-relative pattern, as matched against
     Vec<StringId> matches;              ///< Generated matches visible when it resolved
+    SourcePosition location = {};       ///< Rule that wrote the pattern
 };
 
 /// An input path inside a directory the source and config trees lack, kept so the
@@ -217,6 +219,7 @@ struct InputInAbsentDir {
     StringId dir = StringId::Empty;       ///< Directory of the rule that wrote the input
     StringId written = StringId::Empty;   ///< Input path or glob as the Tupfile spells it
     StringId input_dir = StringId::Empty; ///< Project-relative directory the input names
+    SourcePosition location = {};         ///< Rule that wrote the input
 };
 
 /// Per-session state that persists across multiple Tupfiles

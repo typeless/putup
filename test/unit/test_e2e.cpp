@@ -7755,7 +7755,7 @@ SCENARIO("Duplicate command detection", "[e2e][duplicate][identity]")
                 INFO("stdout: " << result.stdout_output);
                 INFO("stderr: " << result.stderr_output);
                 REQUIRE_FALSE(result.success());
-                REQUIRE(result.stderr_output.find("Duplicate command") != std::string::npos);
+                REQUIRE(result.stderr_output.find("/Tupfile:2: error: Duplicate command") != std::string::npos);
                 REQUIRE(result.stderr_output.find("./check") != std::string::npos);
             }
         }
@@ -17591,6 +17591,33 @@ SCENARIO("A rule splicing a group it does not take as an input is refused", "[e2
     }
 }
 
+SCENARIO("A glob whose match set depends on parse order is refused at its rule", "[e2e][parse][glob]")
+{
+    GIVEN("two directories that each glob the other's outputs")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", "");
+        f.mkdir("a");
+        f.mkdir("b");
+        f.write_file("a/Tupfile", ": foreach ../b/*.gen |> cp %f %o |> %B.copy\n");
+        f.write_file("b/Tupfile", "\n: foreach ../a/*.copy |> cp %f %o |> %B.x.gen\n");
+        f.write_file("b/seed.gen", "");
+
+        WHEN("the project is parsed")
+        {
+            auto result = f.build();
+
+            THEN("the glob that missed a later output is named at the rule that wrote it")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("b/Tupfile:2: error: Glob 'a/*.copy' in 'b' missed") != std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("An input inside a directory nothing provides is refused", "[e2e][parse][glob]")
 {
     GIVEN("a project with one source file and no nodir directory")
@@ -17608,7 +17635,7 @@ SCENARIO("An input inside a directory nothing provides is refused", "[e2e][parse
                 INFO("stdout: " << result.stdout_output);
                 INFO("stderr: " << result.stderr_output);
                 REQUIRE_FALSE(result.success());
-                REQUIRE(result.stderr_output.find("Failed to find directory ID for dir 'nodir/*.c'") != std::string::npos);
+                REQUIRE(result.stderr_output.find("/Tupfile:1: error: Failed to find directory ID for dir 'nodir/*.c'") != std::string::npos);
                 REQUIRE_FALSE(f.exists("out.txt"));
             }
         }
@@ -17623,7 +17650,7 @@ SCENARIO("An input inside a directory nothing provides is refused", "[e2e][parse
                 INFO("stdout: " << result.stdout_output);
                 INFO("stderr: " << result.stderr_output);
                 REQUIRE_FALSE(result.success());
-                REQUIRE(result.stderr_output.find("Failed to find directory ID for dir 'nodir/a.c'") != std::string::npos);
+                REQUIRE(result.stderr_output.find("/Tupfile:1: error: Failed to find directory ID for dir 'nodir/a.c'") != std::string::npos);
                 REQUIRE_FALSE(f.exists("out.txt"));
             }
         }

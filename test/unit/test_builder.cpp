@@ -2041,6 +2041,42 @@ TEST_CASE("GraphBuilder rejects two output-less commands that share one key", "[
     CHECK(sv(result.error().message).find("./check") != std::string_view::npos);
 }
 
+TEST_CASE("GraphBuilder reports a duplicate command at the later of the two rules", "[builder][identity][error-location]")
+{
+    auto fixture = BuilderTestFixture {};
+
+    auto result = finalize_tupfile(fixture, ": |> ./check |>\n\n: |> ./check |>\n");
+
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error().location == SourcePosition { .file = intern(fixture.tupfile_path("")), .line = 3 });
+}
+
+TEST_CASE("GraphBuilder reports an unstable glob at the rule that wrote it", "[builder][glob][error-location]")
+{
+    auto fixture = BuilderTestFixture {};
+    auto bs = make_build_graph();
+    auto vars = VarDb {};
+    auto ctx = EvalContext { .vars = &vars };
+    auto builder_state = make_builder(BuilderOptions {
+        .source_root = intern(fixture.root_str()),
+        .config_root = intern(fixture.root_str()),
+        .output_root = pup::StringId::Empty,
+        .config_path = pup::StringId::Empty,
+        .expand_globs = false,
+        .validate_inputs = false,
+    });
+    auto parse_result = parse_tupfile(": |> echo > %o |> gen.q\n", fixture.tupfile_path(""));
+    REQUIRE(parse_result.success());
+    REQUIRE(add_tupfile(bs, parse_result.tupfile, ctx, builder_state).has_value());
+    auto const rule = SourcePosition { .file = intern("m/Tupfile"), .line = 4 };
+    builder_state.glob_resolutions.push_back(GlobResolution { .dir = intern("m"), .pattern = intern("*.q"), .matches = {}, .location = rule });
+
+    auto result = check_glob_stability(bs, builder_state);
+
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error().location == rule);
+}
+
 TEST_CASE("GraphBuilder accepts identical text when the outputs differ", "[builder][identity]")
 {
     auto fixture = BuilderTestFixture {};

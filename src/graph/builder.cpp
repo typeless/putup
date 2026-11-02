@@ -786,7 +786,12 @@ auto record_if_input_dir_absent(
             return;
         }
     }
-    ctx.builder->inputs_in_absent_dirs.push_back(InputInAbsentDir { ctx.current_dir, pool.intern(written), input_dir });
+    ctx.builder->inputs_in_absent_dirs.push_back(InputInAbsentDir {
+        .dir = ctx.current_dir,
+        .written = pool.intern(written),
+        .input_dir = input_dir,
+        .location = SourcePosition { .file = ctx.current_file, .line = ctx.current_line },
+    });
 }
 
 /// Expand a glob pattern against the filesystem and the graph's generated nodes.
@@ -856,7 +861,12 @@ auto expand_glob_pattern(
     }
 
     if (ctx.builder) {
-        auto resolution = GlobResolution { ctx.current_dir, pool.intern(pattern_path_sv), {} };
+        auto resolution = GlobResolution {
+            .dir = ctx.current_dir,
+            .pattern = pool.intern(pattern_path_sv),
+            .matches = {},
+            .location = SourcePosition { .file = ctx.current_file, .line = ctx.current_line },
+        };
         for (auto const& match : matches) {
             resolution.matches.push_back(match.value);
         }
@@ -2626,6 +2636,7 @@ auto process_statement(
         ctx.eval->on_statement(stmt, dir);
     }
 
+    ctx.current_line = stmt.location.line;
     auto result = [&]() -> Result<void> {
         if (auto const* rule = stmt.as<parser::Rule>()) {
             return process_rule(ctx, state, *rule);
@@ -2909,7 +2920,9 @@ auto reject_ambiguous_keys(BuildGraph& build_state) -> Result<void>
         dir_sv.empty() ? "." : dir_sv,
         str(expand_instruction(g, dup->second, build_state.path_cache))
     );
-    return make_error<void>(ErrorCode::DuplicateNode, err.view());
+    auto error = Error { ErrorCode::DuplicateNode, err.view() };
+    error.location = get<SourcePosition>(g, std::max(dup->second, std::next(dup)->second));
+    return pup::unexpected<Error>(error);
 }
 
 auto collect_generated_paths(BuildGraph& build_state) -> Vec<GeneratedPath>
@@ -2969,7 +2982,9 @@ auto check_glob_stability(
                 is_empty(resolved.dir) ? "." : pool.get(resolved.dir),
                 pool.get(candidate)
             );
-            return make_error<void>(ErrorCode::ParseError, err.view());
+            auto error = Error { ErrorCode::ParseError, err.view() };
+            error.location = resolved.location;
+            return pup::unexpected<Error>(error);
         }
     }
     return {};
@@ -2997,7 +3012,9 @@ auto check_input_dirs_provided(
             pool.get(absent.written),
             is_empty(absent.dir) ? "." : pool.get(absent.dir)
         );
-        return make_error<void>(ErrorCode::ParseError, err.view());
+        auto error = Error { ErrorCode::ParseError, err.view() };
+        error.location = absent.location;
+        return pup::unexpected<Error>(error);
     }
     return {};
 }

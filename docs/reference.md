@@ -2246,10 +2246,11 @@ Syntax errors, `parse` checks, and evaluation errors print as
 `file:line[:column]: severity: message`, where severity is `error` or `warning` and the
 column appears only for syntax errors. An evaluation error names the statement that failed;
 inside an included file, the included file's line. Editors and CI annotators that read
-compiler output can jump to the location. A message about no particular line, such as a
-component directory missing its `Tupfile.ini`, prints as `severity: message`. Checks that
-compare rules across the whole project (a duplicate command, a glob that misses a later
-directory's output, an input directory nothing provides) print as `[dir] Error: message`.
+compiler output can jump to the location. Checks that compare rules across the whole
+project (a duplicate command, a glob that misses a later directory's output, an input
+directory nothing provides) name the rule at fault, the later one for a duplicate. A
+message about no particular line, such as a component directory missing its
+`Tupfile.ini`, prints as `severity: message`.
 
 **"Not in a putup/tup project"**
 
