@@ -2344,6 +2344,27 @@ TEST_CASE("Keying the index under construction by path answers the same however 
     }
 }
 
+TEST_CASE("Recording an index entry registers its path exactly when it has one", "[index]")
+{
+    auto index = Index {};
+    auto map = pup::cli::PathIdMap {};
+    auto const dir = intern("funnel/dir");
+    auto const file = intern("funnel/dir/a.c");
+
+    pup::cli::record_file_entry(index, map, FileEntry { .id = NodeId { 1 }, .type = NodeType::Directory, .path = dir });
+    pup::cli::record_file_entry(index, map, FileEntry { .id = NodeId { 2 }, .type = NodeType::Variable, .path = StringId::Empty });
+    pup::cli::record_file_entry(index, map, FileEntry { .id = NodeId { 3 }, .type = NodeType::File, .path = file });
+
+    REQUIRE(index.files().size() == 3);
+    REQUIRE(index.files()[0].id == NodeId { 1 });
+    REQUIRE(index.files()[1].id == NodeId { 2 });
+    REQUIRE(index.files()[2].id == NodeId { 3 });
+    REQUIRE(map.entries.size() == 2);
+    REQUIRE(map.find(dir) == NodeId { 1 });
+    REQUIRE(map.find(file) == NodeId { 3 });
+    REQUIRE_FALSE(map.find(StringId::Empty).has_value());
+}
+
 SCENARIO("A recorded command and a graph command expand a template the same way", "[index][instruction][property]")
 {
     GIVEN("one command expressed both as a graph node and as an index record")

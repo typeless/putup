@@ -66,6 +66,20 @@ auto PathIdMap::insert(StringId path, NodeId id) -> void
     }
 }
 
+auto record_file_entry(index::Index& index, PathIdMap& path_to_id, index::FileEntry entry) -> void
+{
+    auto const path = entry.path;
+    auto const id = entry.id;
+    if (!is_empty(path)) {
+        if (path_to_id.find(path)) {
+            eprint("fatal: index entry for '{}' recorded twice\n", global_pool().get(path));
+            std::abort();
+        }
+        path_to_id.insert(path, id);
+    }
+    index.add_file(std::move(entry));
+}
+
 namespace {
 using DiscoveredDeps = Vec<std::pair<pup::NodeId, Vec<StringId>>>;
 
@@ -460,8 +474,7 @@ auto get_or_create_dir(
             .mtime_ns = 0,
             .content_hash = {},
         };
-        ctx.index.add_file(std::move(entry));
-        ctx.path_to_id.insert(path_id, dir_id);
+        record_file_entry(ctx.index, ctx.path_to_id, std::move(entry));
         return dir_id;
     }
 
@@ -481,8 +494,7 @@ auto get_or_create_dir(
         .mtime_ns = 0,
         .content_hash = {},
     };
-    ctx.index.add_file(std::move(entry));
-    ctx.path_to_id.insert(path_id, dir_id);
+    record_file_entry(ctx.index, ctx.path_to_id, std::move(entry));
     return dir_id;
 }
 
@@ -559,8 +571,7 @@ auto create_implicit_file(
         .mtime_ns = mtime_ns,
         .content_hash = content_hash,
     };
-    ctx.index.add_file(std::move(entry));
-    ctx.path_to_id.insert(rel_path, file_id);
+    record_file_entry(ctx.index, ctx.path_to_id, std::move(entry));
     return file_id;
 }
 
@@ -613,7 +624,7 @@ auto serialize_graph_nodes(
         case pup::NodeType::Generated: {
             auto node_path = pup::graph::get_full_path(g, id, state.path_cache);
             if (node_path.empty()) {
-                index.add_file(pup::index::FileEntry {
+                auto entry = pup::index::FileEntry {
                     .id = id,
                     .parent_id = pup::graph::get_parent_dir(g, id),
                     .src_id = 0,
@@ -624,7 +635,8 @@ auto serialize_graph_nodes(
                     .size = 0,
                     .mtime_ns = 0,
                     .content_hash = {},
-                });
+                };
+                record_file_entry(index, path_to_id, std::move(entry));
                 break;
             }
 
@@ -687,8 +699,7 @@ auto serialize_graph_nodes(
                 .mtime_ns = mtime_ns,
                 .content_hash = content_hash,
             };
-            index.add_file(std::move(entry));
-            path_to_id.insert(pool.intern(node_path), id);
+            record_file_entry(index, path_to_id, std::move(entry));
             break;
         }
         case pup::NodeType::Directory:
@@ -708,10 +719,7 @@ auto serialize_graph_nodes(
                 .mtime_ns = 0,
                 .content_hash = {},
             };
-            index.add_file(std::move(entry));
-            if (!node_path.empty()) {
-                path_to_id.insert(pool.intern(node_path), id);
-            }
+            record_file_entry(index, path_to_id, std::move(entry));
             break;
         }
         case pup::NodeType::Ghost: {
@@ -742,7 +750,7 @@ auto serialize_graph_nodes(
                 }
             }
 
-            index.add_file(pup::index::FileEntry {
+            auto entry = pup::index::FileEntry {
                 .id = id,
                 .parent_id = pup::graph::get_parent_dir(g, id),
                 .src_id = 0,
@@ -753,10 +761,8 @@ auto serialize_graph_nodes(
                 .size = file_size,
                 .mtime_ns = mtime_ns,
                 .content_hash = content_hash,
-            });
-            if (!node_path.empty()) {
-                path_to_id.insert(pool.intern(node_path), id);
-            }
+            };
+            record_file_entry(index, path_to_id, std::move(entry));
             break;
         }
         case pup::NodeType::Variable:
@@ -773,7 +779,7 @@ auto serialize_graph_nodes(
                 .size = 0,
                 .content_hash = (type == pup::NodeType::Variable) ? pup::graph::get<pup::Hash256>(g, id) : pup::Hash256 {},
             };
-            index.add_file(std::move(entry));
+            record_file_entry(index, path_to_id, std::move(entry));
             break;
         }
         case pup::NodeType::Command:
@@ -1309,7 +1315,7 @@ auto merge_out_of_scope_commands(
         } else {
             auto parent_id = get_or_create_dir(ctx, pup::path::parent(path_sv));
             new_id = ctx.next_id++;
-            ctx.index.add_file(pup::index::FileEntry {
+            auto entry = pup::index::FileEntry {
                 .id = new_id,
                 .parent_id = parent_id,
                 .src_id = 0,
@@ -1320,8 +1326,8 @@ auto merge_out_of_scope_commands(
                 .size = old_file->size,
                 .mtime_ns = old_file->mtime_ns,
                 .content_hash = old_file->content_hash,
-            });
-            ctx.path_to_id.insert(old_file->path, new_id);
+            };
+            record_file_entry(ctx.index, ctx.path_to_id, std::move(entry));
         }
         old_to_new_file.set(old_id, new_id);
         return new_id;
