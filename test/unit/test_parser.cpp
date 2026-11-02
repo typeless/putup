@@ -722,3 +722,12 @@ TEST_CASE("Parser ignores whitespace at the end of a line", "[parser][continuati
     }
     REQUIRE(cases == static_cast<int>(bases.size() * runs.size()));
 }
+
+TEST_CASE("Parser reports an error at the end of a line on that line", "[parser][location]")
+{
+    auto result = parse_tupfile("X = 1\n: foo |>\n", "test.tup");
+
+    REQUIRE(result.errors.size() == 1);
+    CHECK(result.errors[0].location.line == 2);
+    CHECK(result.errors[0].location.column == 9);
+}

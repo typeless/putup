@@ -233,13 +233,16 @@ TEST_CASE("Lexer renders a continuation as spaces", "[lexer][continuation]")
         REQUIRE(tok.location.line == 3);
     }
 
-    SECTION("a token spanning a continuation reports a column on its own line")
+    SECTION("a token spanning a continuation reports the line and column it starts at")
     {
-        auto lexer = Lexer{"a \\\nbcd"};
+        auto lexer = Lexer{"x\n|> a \\\nbcd"};
+        REQUIRE(lexer.next().text == "x");
+        REQUIRE(lexer.next().is(TokenType::Newline));
+        REQUIRE(lexer.next().is(TokenType::PipeArrow));
         lexer.set_context(Lexer::Context::Command);
         auto tok = lexer.next();
         REQUIRE(tok.location.line == 2);
-        REQUIRE(tok.location.column == 1);
+        REQUIRE(tok.location.column == 3);
     }
 
     SECTION("a backslash ending the file is a continuation too")
@@ -318,6 +321,23 @@ TEST_CASE("Lexer source location", "[lexer]")
     auto tok3 = lexer.next();
     REQUIRE(tok3.location.line == 2);
     REQUIRE(tok3.location.column == 5);
+}
+
+TEST_CASE("Lexer places a newline token at the end of the line it ends", "[lexer]")
+{
+    auto lexer = Lexer{"ab\ncd\n"};
+    REQUIRE(lexer.next().text == "ab");
+
+    auto first = lexer.next();
+    REQUIRE(first.is(TokenType::Newline));
+    CHECK(first.location.line == 1);
+    CHECK(first.location.column == 3);
+
+    REQUIRE(lexer.next().text == "cd");
+    auto second = lexer.next();
+    REQUIRE(second.is(TokenType::Newline));
+    CHECK(second.location.line == 2);
+    CHECK(second.location.column == 3);
 }
 
 TEST_CASE("Lexer peek", "[lexer]")

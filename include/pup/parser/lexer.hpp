@@ -53,24 +53,6 @@ public:
     [[nodiscard]]
     auto at_end() const -> bool;
 
-    /// Get current source location
-    [[nodiscard]]
-    auto location() const -> SourceLocation;
-
-    /// Get current line number
-    [[nodiscard]]
-    auto line() const -> std::uint32_t
-    {
-        return line_;
-    }
-
-    /// Get current column number
-    [[nodiscard]]
-    auto column() const -> std::uint32_t
-    {
-        return column_;
-    }
-
     /// Set lexing context
     auto set_context(Context ctx) -> void { context_ = ctx; }
 
@@ -100,14 +82,10 @@ public:
 
 private:
     Vec<char> owned_source_;
-    Vec<std::uint32_t> folded_newlines_;
-    std::size_t next_folded_newline_ = 0;
+    Vec<std::uint32_t> line_starts_;
     std::string_view source_;
     StringId filename_id_ = StringId::Empty;
     std::size_t pos_ = 0;
-    std::size_t line_start_pos_ = 0;
-    std::uint32_t line_ = 1;
-    std::uint32_t column_ = 1;
     Context context_ = Context::LineStart;
     std::optional<Token> peeked_;
 
@@ -118,7 +96,6 @@ private:
     [[nodiscard]]
     auto match(std::string_view expected) -> bool;
     auto advance() -> char;
-    auto advance_line() -> void;
     auto putback() -> void;
 
     [[nodiscard]]

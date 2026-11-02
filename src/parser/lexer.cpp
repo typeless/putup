@@ -6,6 +6,7 @@
 #include "pup/core/string_pool.hpp"
 #include "pup/parser/token.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -17,8 +18,9 @@ Lexer::Lexer(std::string_view source, std::string_view filename)
     : filename_id_(global_pool().intern(filename))
 {
     owned_source_.reserve(source.size());
+    line_starts_.push_back(0);
 
-    // A space, not tup's trim: the rewrite must stay length-preserving (token offsets, folded_newlines_); a trailing space is inert in every context — pinned by the trailing-whitespace property test.
+    // A space, not tup's trim: the rewrite must stay length-preserving (token offsets, line_starts_); a trailing space is inert in every context — pinned by the trailing-whitespace property test.
     auto space_out_whitespace_ending_the_line = [this] {
         for (auto n = owned_source_.size(); n > 0; --n) {
             auto& c = owned_source_[n - 1];
@@ -40,18 +42,19 @@ Lexer::Lexer(std::string_view source, std::string_view filename)
         if (continuation == 0) {
             if (source[i] == '\n') {
                 space_out_whitespace_ending_the_line();
+                line_starts_.push_back(static_cast<std::uint32_t>(i + 1));
             }
             owned_source_.push_back(source[i]);
             continue;
         }
 
-        // Each byte becomes a space, as in tup (parse_tupfile); the newline's own offset is
+        // Each byte becomes a space, as in tup (parse_tupfile); the next physical line's start is
         // kept so diagnostics below a continuation still name their physical line, as tup's do.
         for (auto n = std::size_t { 0 }; n < continuation; ++n) {
             owned_source_.push_back(' ');
         }
         if (rest[continuation - 1] == '\n') {
-            folded_newlines_.push_back(static_cast<std::uint32_t>(i + continuation - 1));
+            line_starts_.push_back(static_cast<std::uint32_t>(i + continuation));
         }
         i += continuation - 1;
     }
@@ -86,16 +89,6 @@ auto Lexer::peek() -> Token
 auto Lexer::at_end() const -> bool
 {
     return pos_ >= source_.size();
-}
-
-auto Lexer::location() const -> SourceLocation
-{
-    return SourceLocation {
-        .filename = global_pool().get(filename_id_),
-        .line = line_,
-        .column = column_,
-        .offset = static_cast<std::uint32_t>(pos_),
-    };
 }
 
 auto Lexer::skip_to_eol() -> void
@@ -148,38 +141,17 @@ auto Lexer::advance() -> char
     if (at_end()) {
         return '\0';
     }
-    auto const idx = pos_;
     auto const c = source_[pos_++];
     if (c == '\n') {
-        advance_line();
-    } else {
-        ++column_;
-    }
-
-    // A folded newline ends a physical line without ending the logical one, so the line
-    // advances and the context does not.
-    if (next_folded_newline_ < folded_newlines_.size() && folded_newlines_[next_folded_newline_] == idx) {
-        ++line_;
-        column_ = 1;
-        line_start_pos_ = pos_;
-        ++next_folded_newline_;
+        context_ = Context::LineStart;
     }
     return c;
-}
-
-auto Lexer::advance_line() -> void
-{
-    ++line_;
-    column_ = 1;
-    line_start_pos_ = pos_;
-    context_ = Context::LineStart;
 }
 
 auto Lexer::putback() -> void
 {
     if (pos_ > 0) {
         --pos_;
-        --column_;
     }
 }
 
@@ -452,15 +424,14 @@ auto Lexer::scan_command_text() -> Token
 
 auto Lexer::make_token(TokenType type, std::size_t start) const -> Token
 {
+    auto const* line_start = std::upper_bound(line_starts_.begin(), line_starts_.end(), start) - 1;
     return Token {
         .type = type,
         .text = source_.substr(start, pos_ - start),
         .location = SourceLocation {
             .filename = global_pool().get(filename_id_),
-            .line = line_,
-            // A token may start on an earlier line than it ends on, and then it starts where
-            // this line does.
-            .column = static_cast<std::uint32_t>(start > line_start_pos_ ? start - line_start_pos_ + 1 : 1),
+            .line = static_cast<std::uint32_t>(line_start - line_starts_.begin() + 1),
+            .column = static_cast<std::uint32_t>(start - *line_start + 1),
             .offset = static_cast<std::uint32_t>(start),
         },
     };
