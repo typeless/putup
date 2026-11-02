@@ -2161,61 +2161,29 @@ auto expand_rule(
     auto deferred_group_ids = NodeIdMap32 {};
     auto deferred_group_vec = Vec<NodeId> {};
 
-    auto all_order_only = rule.order_only_inputs;
+    auto macro_order_only = TokenizedInputs {};
     if (macro_ptr && !macro_ptr->order_only_inputs.empty()) {
-        all_order_only.insert(all_order_only.end(), macro_ptr->order_only_inputs.begin(), macro_ptr->order_only_inputs.end());
+        auto expanded = expand_inputs(ctx, macro_ptr->order_only_inputs, &order_only_flags);
+        if (!expanded) {
+            return pup::unexpected<Error>(expanded.error());
+        }
+        macro_order_only = std::move(*expanded);
     }
 
-    auto all_inputs = Vec<parser::PathPattern> {};
-    all_inputs.insert(all_inputs.end(), rule.inputs.begin(), rule.inputs.end());
-    all_inputs.insert(all_inputs.end(), all_order_only.begin(), all_order_only.end());
-
-    for (auto const& pattern : all_inputs) {
-        if (pattern.kind == parser::PathPattern::Kind::OrderOnlyGroup) {
-            auto group_dir = StringId::Empty;
-            if (!pattern.path.empty()) {
-                auto expanded = parser::expand(*ctx.eval, pattern.path);
-                if (expanded) {
-                    group_dir = normalize_group_dir(str(*expanded), str(ctx.current_dir), str(ctx.options.source_root));
-                }
-            } else {
-                group_dir = is_empty(ctx.current_dir) ? intern(".") : ctx.current_dir;
-            }
-
-            request_demand_driven_parse(*ctx.eval, str(group_dir));
-
-            auto group_name_sv = str(pattern.group_name);
-            auto group_id_result = get_or_create_group_node(ctx, state, str(group_dir), group_name_sv);
-            if (!group_id_result) {
+    for (auto const* operand_list : std::array<Vec<RuleInput> const*, 3> { &inputs, &rule_order_only->operands, &macro_order_only.operands }) {
+        for (auto const& inp : *operand_list) {
+            if (inp.kind != RuleInput::Kind::GroupRef) {
                 continue;
             }
-            auto group_id = *group_id_result;
-
-            rule_order_only_group_names.insert(to_underlying(intern(group_name_sv)));
-            if (!deferred_group_ids.contains(group_id)) {
-                deferred_group_ids.set(group_id, 1);
-                deferred_group_vec.push_back(group_id);
+            auto group_id = resolve_group_operand_node(ctx, state, str(inp.value));
+            if (!group_id) {
+                return pup::unexpected<Error>(group_id.error());
             }
-        } else if (!pattern.path.empty()) {
-            auto expanded = parser::expand(*ctx.eval, pattern.path);
-            if (!expanded) {
-                continue;
-            }
-            auto group_ref = parse_group_reference(str(*expanded), str(ctx.current_dir), str(ctx.options.source_root));
-            if (group_ref) {
-                request_demand_driven_parse(*ctx.eval, str(group_ref->group_dir));
-
-                auto group_id_result = get_or_create_group_node(ctx, state, str(group_ref->group_dir), group_ref->group_name);
-                if (!group_id_result) {
-                    continue;
-                }
-                auto group_id = *group_id_result;
-
-                rule_order_only_group_names.insert(to_underlying(intern(group_ref->group_name)));
-                if (!deferred_group_ids.contains(group_id)) {
-                    deferred_group_ids.set(group_id, 1);
-                    deferred_group_vec.push_back(group_id);
-                }
+            auto group_basename = str(get_file_node(ctx.state->graph, *group_id)->name);
+            rule_order_only_group_names.insert(to_underlying(intern(group_basename.substr(1, group_basename.size() - 2))));
+            if (!deferred_group_ids.contains(*group_id)) {
+                deferred_group_ids.set(*group_id, 1);
+                deferred_group_vec.push_back(*group_id);
             }
         }
     }
@@ -2311,13 +2279,7 @@ auto expand_rule(
         }
     };
     collect_order_only_paths(order_only_paths, *rule_order_only);
-    if (macro_ptr && !macro_ptr->order_only_inputs.empty()) {
-        auto macro_order_only = expand_inputs(ctx, macro_ptr->order_only_inputs, &order_only_flags);
-        if (!macro_order_only) {
-            return pup::unexpected<Error>(macro_order_only.error());
-        }
-        collect_order_only_paths(macro_order_only_paths, *macro_order_only);
-    }
+    collect_order_only_paths(macro_order_only_paths, macro_order_only);
     order_only_paths.insert(order_only_paths.end(), macro_order_only_paths.begin(), macro_order_only_paths.end());
 
     auto rule_location = SourcePosition { .file = ctx.current_file, .line = rule.location.line };

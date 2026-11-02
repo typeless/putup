@@ -59,6 +59,16 @@ When a rule names a group in its inputs section rather than after the order-only
 putup shall resolve the bracketed name to that group and expand `%<name>` to the group's
 members rather than read the name as a file to be found on disk.
 
+### REQ-GROUPREF-EXPANDED-WORDS
+
+- conformance: tup-conformant
+- reference: upstream's `eval_path_list` (`src/tup/parser.c`) evaluates each input and order-only word and re-splits the result through `new_pl`, so every word a variable expands to is classified on its own: `<a>` and `<b>` are two groups, and `!`/`^` words are exclusions rather than references. putup's order-only group pre-scan in `expand_rule` re-read each written pattern as one string instead, so `G = <a> <b>` became one group `<a> /<b>` with `%<b>` unresolved, and `E = !<b>` became a group in a directory named `!`; it now takes its groups from the operands `expand_inputs` produced, the list the rule's edges are built from
+- discharge: test "Scenario: Order-only groups a variable names are the words it expands to"
+
+When a variable in a rule's inputs or order-only inputs expands to several words, putup shall
+resolve each word that is a group reference as its own group, and shall not read an exclusion
+word as a group.
+
 ### REQ-GROUPREF-NAME-NOT-A-FILE
 
 - conformance: deliberate-deviation

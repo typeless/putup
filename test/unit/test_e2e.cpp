@@ -791,6 +791,41 @@ SCENARIO("Cross-directory order-only groups work in-tree", "[e2e][build][groups]
     }
 }
 
+SCENARIO("Order-only groups a variable names are the words it expands to", "[e2e][build][groups]")
+{
+    auto const [order_only, command, expected] = GENERATE(table<char const*, char const*, char const*>({
+        { "<a> <b>", "%<a> %<b>", "x z" },
+        { "$(G)", "%<a> %<b>", "x z" },
+        { "<a> $(E)", "%<a>", "x" },
+    }));
+    CAPTURE(order_only);
+
+    GIVEN("a rule whose order-only inputs name groups")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file(
+            "Tupfile",
+            std::string { "G = <a> <b>\nE = !<b>\n" }
+                + ": |> echo x > %o |> x <a>\n"
+                + ": |> echo z > %o |> z <b>\n"
+                + ": | " + order_only + " |> echo " + command + " > %o |> y\n"
+        );
+        REQUIRE(f.init().success());
+
+        WHEN("built")
+        {
+            auto result = f.build({ "-j1" });
+
+            THEN("each group word resolves and no other word becomes a group")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("y") == std::string { expected } + "\n");
+                REQUIRE(result.stderr_output.find("has no members") == std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("Bang macro order-only groups trigger demand-driven parsing", "[e2e][build][groups][bang]")
 {
     GIVEN("a project with a bang macro that references an order-only group in another directory")
