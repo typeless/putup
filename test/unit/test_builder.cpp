@@ -1597,6 +1597,49 @@ TEST_CASE("GraphBuilder error directive fails with file and line", "[builder][er
     CHECK(result.error().location == SourcePosition { .file = intern(fixture.tupfile_path("")), .line = 1 });
 }
 
+TEST_CASE("GraphBuilder unknown bang macro fails at the line of the rule that names it", "[builder][error-location]")
+{
+    auto fixture = BuilderTestFixture {};
+
+    auto result = add_tupfile_from_source(fixture, "X = 1\n: |> !nope |> out\n");
+
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error().msg().find("Unknown bang macro") != std::string_view::npos);
+    CHECK(result.error().location == SourcePosition { .file = intern(fixture.tupfile_path("")), .line = 2 });
+}
+
+TEST_CASE("GraphBuilder duplicate output fails at the line of the second rule", "[builder][error-location]")
+{
+    auto fixture = BuilderTestFixture {};
+
+    auto result = add_tupfile_from_source(fixture, ": |> echo 1 > %o |> out\n\n: |> echo 2 > %o |> out\n");
+
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error().msg().find("already owned by command") != std::string_view::npos);
+    CHECK(result.error().location == SourcePosition { .file = intern(fixture.tupfile_path("")), .line = 3 });
+}
+
+TEST_CASE("GraphBuilder missing include fails at the line of the include", "[builder][error-location]")
+{
+    auto fixture = BuilderTestFixture {};
+
+    auto result = add_tupfile_from_source(fixture, "X = 1\ninclude nothere.tup\n");
+
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error().msg().find("Include file not found") != std::string_view::npos);
+    CHECK(result.error().location == SourcePosition { .file = intern(fixture.tupfile_path("")), .line = 2 });
+}
+
+TEST_CASE("GraphBuilder error inside a conditional body fails at the inner line", "[builder][error-location]")
+{
+    auto fixture = BuilderTestFixture {};
+
+    auto result = add_tupfile_from_source(fixture, "ifeq (a,a)\n\n: |> !nope |> out\nendif\n");
+
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error().location == SourcePosition { .file = intern(fixture.tupfile_path("")), .line = 3 });
+}
+
 TEST_CASE("GraphBuilder error directive in inactive branch is skipped", "[builder][error-directive]")
 {
     auto fixture = BuilderTestFixture {};

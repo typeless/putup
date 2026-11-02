@@ -1645,9 +1645,7 @@ auto process_error(
         message_sv = "Empty error directive";
     }
 
-    auto error = Error { ErrorCode::ParseError, message_sv };
-    error.location = SourcePosition { .file = ctx.current_file, .line = err.location.line };
-    return pup::unexpected<Error>(error);
+    return make_error<void>(ErrorCode::ParseError, message_sv);
 }
 
 auto process_assignment(
@@ -2281,9 +2279,7 @@ auto expand_rule(
             }
             msg += ")";
         }
-        auto error = Error { ErrorCode::ParseError, msg.view() };
-        error.location = SourcePosition { .file = ctx.current_file, .line = rule.location.line };
-        return pup::unexpected<Error>(error);
+        return make_error<void>(ErrorCode::ParseError, msg.view());
     }
 
     if (eff_display) {
@@ -2630,43 +2626,49 @@ auto process_statement(
         ctx.eval->on_statement(stmt, dir);
     }
 
-    if (auto const* rule = stmt.as<parser::Rule>()) {
-        return process_rule(ctx, state, *rule);
-    }
+    auto result = [&]() -> Result<void> {
+        if (auto const* rule = stmt.as<parser::Rule>()) {
+            return process_rule(ctx, state, *rule);
+        }
 
-    if (auto const* macro = stmt.as<parser::BangMacro>()) {
-        return process_bang_macro(ctx, *macro);
-    }
+        if (auto const* macro = stmt.as<parser::BangMacro>()) {
+            return process_bang_macro(ctx, *macro);
+        }
 
-    if (auto const* alias = stmt.as<parser::BangMacroAlias>()) {
-        return process_bang_macro_alias(ctx, *alias);
-    }
+        if (auto const* alias = stmt.as<parser::BangMacroAlias>()) {
+            return process_bang_macro_alias(ctx, *alias);
+        }
 
-    if (auto const* assign = stmt.as<parser::Assignment>()) {
-        return process_assignment(ctx, state, *assign);
-    }
+        if (auto const* assign = stmt.as<parser::Assignment>()) {
+            return process_assignment(ctx, state, *assign);
+        }
 
-    if (auto const* cond = stmt.as<parser::Conditional>()) {
-        return process_conditional(ctx, state, *cond);
-    }
+        if (auto const* cond = stmt.as<parser::Conditional>()) {
+            return process_conditional(ctx, state, *cond);
+        }
 
-    if (auto const* inc = stmt.as<parser::Include>()) {
-        return process_include(ctx, state, *inc);
-    }
+        if (auto const* inc = stmt.as<parser::Include>()) {
+            return process_include(ctx, state, *inc);
+        }
 
-    if (auto const* imp = stmt.as<parser::Import>()) {
-        return process_import(ctx, state, *imp);
-    }
+        if (auto const* imp = stmt.as<parser::Import>()) {
+            return process_import(ctx, state, *imp);
+        }
 
-    if (auto const* exp = stmt.as<parser::Export>()) {
-        return process_export(ctx, state, *exp);
-    }
+        if (auto const* exp = stmt.as<parser::Export>()) {
+            return process_export(ctx, state, *exp);
+        }
 
-    if (auto const* err = stmt.as<parser::ErrorDirective>()) {
-        return process_error(ctx, *err);
-    }
+        if (auto const* err = stmt.as<parser::ErrorDirective>()) {
+            return process_error(ctx, *err);
+        }
 
-    return {};
+        return {};
+    }();
+    if (!result && !result.error().location) {
+        result.error().location = SourcePosition { .file = ctx.current_file, .line = stmt.location.line };
+    }
+    return result;
 }
 
 }
