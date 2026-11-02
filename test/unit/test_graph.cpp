@@ -1811,6 +1811,23 @@ TEST_CASE("ensure_file_node returns the source node an in-tree build path aliase
     REQUIRE(*graph.path_to_node.find(pup::to_underlying(build_twin)) == *file_id);
 }
 
+TEST_CASE("An in-tree output lands in the source directory it names rather than a second one", "[graph]")
+{
+    auto bs = make_build_graph();
+    auto& graph = bs.graph;
+    auto& pool = pup::global_pool();
+
+    auto source_dir = ensure_file_node(graph, graph.paths.intern_path("d", pool, pup::PathId::SourceRoot), NodeType::Directory);
+    REQUIRE(source_dir.has_value());
+
+    auto output = ensure_file_node(graph, graph.paths.intern_path("d/out.o", pool, pup::PathId::BuildRoot), NodeType::Generated);
+    REQUIRE(output.has_value());
+
+    REQUIRE(get_parent_dir(graph, *output) == *source_dir);
+    REQUIRE(ensure_file_node(graph, graph.paths.intern_path("d", pool, pup::PathId::BuildRoot), NodeType::Directory) == *source_dir);
+    REQUIRE(ensure_file_node(graph, pup::PathId::BuildRoot, NodeType::Directory) == pup::SOURCE_ROOT_ID);
+}
+
 TEST_CASE("ensure_file_node creates nodes from PathId", "[graph]")
 {
     auto bs = make_build_graph();
