@@ -177,8 +177,8 @@ speaks about the object it names, not about the command that declares it.
 
 When a rule declares an object file that no generated scan covers — every object it declares,
 where no scan at all is generated — and no invocation a scan would have been built from carries a
-depfile flag, putup shall name that object and the rule's Tupfile under `parse`, and report how
-many such objects exist under a build.
+depfile flag, putup shall name that object and the rule's Tupfile under `parse` and under a
+verbose build, and report how many such objects exist under any build.
 
 ## Group: scan-results
 

@@ -117,7 +117,7 @@ The default command. Executes the build by parsing Tupfiles, computing the depen
 - `-j N` - Run N jobs in parallel (default: number of CPUs)
 - `-k` - Continue building after failures
 - `-n` - Dry-run: print commands without executing
-- `-v` - Verbose output (show parsed files, change detection)
+- `-v` - Verbose output (show parsed files, change detection, objects with no dependency scan)
 - `-B DIR` - Build directory (can specify multiple times for parallel builds)
 - `-A` - Build all files (ignore cwd scoping)
 - `--stat` - Print build statistics after completion
@@ -2036,6 +2036,8 @@ stops at the first invocation putup cannot reproduce from the rule's directory â
 directory change, an environment assignment, a link, any other program â€” because past
 it the scan would preprocess in a state the compile never had; that invocation and
 every one after it go unscanned, and `parse` names each object they leave uncovered.
+A build prints how many such objects exist; `-v` names each one in `parse`'s form, on the
+build's stdout rather than stderr.
 A redirection (`> log`, `2>&1`) divides no invocation, though the scan carries no flag
 from beyond it.
 

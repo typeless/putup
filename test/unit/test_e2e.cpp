@@ -12500,6 +12500,25 @@ SCENARIO("A compile-shaped rule with no dependency scan is reported", "[e2e][str
                 REQUIRE(listed.stderr_output.find("hidden.o") != std::string::npos);
             }
         }
+
+        WHEN("the project is built verbosely")
+        {
+            auto result = f.build({ "-v" });
+
+            THEN("the build names the unscanned object as parse does, and only that one")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output.find("1 object file has no dependency scan") != std::string::npos);
+                REQUIRE(
+                    result.stdout_output.find("] ./Tupfile:0: warning: no dependency scan for 'hidden.o'")
+                    != std::string::npos
+                );
+                REQUIRE(result.stdout_output.find("'plain.o'") == std::string::npos);
+                REQUIRE(result.stdout_output.find("'shown.o'") == std::string::npos);
+                REQUIRE(result.stdout_output.find("'owndep.o'") == std::string::npos);
+            }
+        }
     }
 }
 
