@@ -89,17 +89,18 @@ auto check_assignment(
     if (name_sv.empty()) {
         return result;
     }
+    auto const location = SourcePosition { .file = global_pool().intern(file), .line = stmt.location.line };
 
     if (name_sv == "S") {
         if (stmt.op != parser::Assignment::Op::SoftSet) {
             auto buf = Buf {};
             buf.fmt("'S' must use '?=' in component Tuprules.tup (found '='). "
                     "Using '=' overwrites the parent project's root anchor.");
-            result.push_back(make_diag(SourcePosition { .file = global_pool().intern(file), .line = stmt.location.line }, Severity::Error, buf.view()));
+            result.push_back(make_diag(location, Severity::Error, buf.view()));
         } else if (!is_single_var(stmt.value, "TUP_CWD")) {
             auto buf = Buf {};
             buf.fmt("'S' should be set to '$(TUP_CWD)' in component Tuprules.tup.");
-            result.push_back(make_diag(SourcePosition { .file = global_pool().intern(file), .line = stmt.location.line }, Severity::Warning, buf.view()));
+            result.push_back(make_diag(location, Severity::Warning, buf.view()));
         }
         return result;
     }
@@ -109,11 +110,11 @@ auto check_assignment(
             auto buf = Buf {};
             buf.fmt("'B' must use '?=' in component Tuprules.tup (found '='). "
                     "Using '=' overwrites the parent project's build anchor.");
-            result.push_back(make_diag(SourcePosition { .file = global_pool().intern(file), .line = stmt.location.line }, Severity::Error, buf.view()));
+            result.push_back(make_diag(location, Severity::Error, buf.view()));
         } else if (!contains_var(stmt.value, "S")) {
             auto buf = Buf {};
             buf.fmt("'B' should reference '$(S)' in its value.");
-            result.push_back(make_diag(SourcePosition { .file = global_pool().intern(file), .line = stmt.location.line }, Severity::Warning, buf.view()));
+            result.push_back(make_diag(location, Severity::Warning, buf.view()));
         }
         return result;
     }
@@ -123,7 +124,7 @@ auto check_assignment(
         buf.fmt("'{}' should use '?=' in component Tuprules.tup. "
                 "Using '=' overrides the parent project's toolchain choice.",
                 name_sv);
-        result.push_back(make_diag(SourcePosition { .file = global_pool().intern(file), .line = stmt.location.line }, Severity::Warning, buf.view()));
+        result.push_back(make_diag(location, Severity::Warning, buf.view()));
     }
 
     return result;

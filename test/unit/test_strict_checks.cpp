@@ -135,6 +135,24 @@ TEST_CASE("check_assignment: toolchain variables", "[strict]")
     }
 }
 
+TEST_CASE("check_assignment: every diagnostic names the file and line of the assignment", "[strict]")
+{
+    auto stmt = GENERATE(
+        make_assignment("S", Assignment::Op::Set, make_var_expr("TUP_CWD")),
+        make_assignment("S", Assignment::Op::SoftSet, make_literal_expr("..")),
+        make_assignment("B", Assignment::Op::Set, make_var_expr("S")),
+        make_assignment("B", Assignment::Op::SoftSet, make_literal_expr("build")),
+        make_assignment("CC", Assignment::Op::Set, make_literal_expr("gcc"))
+    );
+    CAPTURE(stmt.name.as_literal());
+    stmt.location.line = 7;
+
+    auto diags = check_assignment(stmt, "libfoo/Tuprules.tup", true);
+
+    REQUIRE(diags.size() == 1);
+    CHECK(diags[0].location == pup::SourcePosition { .file = intern("libfoo/Tuprules.tup"), .line = 7 });
+}
+
 TEST_CASE("check_assignment: non-Tuprules file — no diagnostic", "[strict]")
 {
     auto stmt = make_assignment("S", Assignment::Op::Set, make_var_expr("TUP_CWD"));
