@@ -12509,7 +12509,8 @@ SCENARIO("A compile-shaped rule with no dependency scan is reported", "[e2e][str
             {
                 INFO("stdout: " << result.stdout_output);
                 REQUIRE(result.success());
-                REQUIRE(result.stdout_output.find("1 object file has no dependency scan") != std::string::npos);
+                REQUIRE(result.stdout_output.find("1 object file has no dependency scan:\n") != std::string::npos);
+                REQUIRE(result.stdout_output.find("putup parse") == std::string::npos);
                 REQUIRE(
                     result.stdout_output.find("] ./Tupfile:0: warning: no dependency scan for 'hidden.o'")
                     != std::string::npos

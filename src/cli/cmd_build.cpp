@@ -2162,9 +2162,10 @@ auto build_single_variant(
     if (auto unscanned = check_unscanned_compiles(bs.graph, bs.path_cache); !unscanned.empty()) {
         vprint(
             variant_name,
-            "{} object file{} no dependency scan; run 'putup parse' for the list.\n",
+            "{} object file{} no dependency scan{}\n",
             unscanned.size(),
-            unscanned.size() == 1 ? " has" : "s have"
+            unscanned.size() == 1 ? " has" : "s have",
+            opts.verbose ? ":" : "; run 'putup parse' for the list."
         );
         if (opts.verbose) {
             for (auto const& d : unscanned) {
