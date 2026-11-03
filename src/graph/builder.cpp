@@ -354,6 +354,10 @@ auto resolve_input_node(
 
     auto& pool = global_pool();
 
+    if (auto source_path = ctx.state->graph.paths.find_path(normalized_path, pool, PathId::SourceRoot); source_path && is_root(*source_path)) {
+        return make_error<NodeId>(ErrorCode::ParseError, "An input cannot be the project root directory");
+    }
+
     if (auto build_path = ctx.state->graph.paths.find_path(normalized_path, pool, PathId::BuildRoot)) {
         if (auto const* hit = ctx.state->graph.path_to_node.find(to_underlying(*build_path));
             hit && (had_build_prefix || get_file_node(ctx.state->graph, NodeId { *hit })->type != NodeType::Directory)) {
@@ -2523,9 +2527,10 @@ auto expand_rule(
 
     for (auto oi : macro_order_only_paths) {
         auto oi_node = resolve_input_node(ctx, str(oi));
-        if (oi_node) {
-            (void)add_edge(ctx.state->graph, *oi_node, *cmd_id, LinkType::OrderOnly);
+        if (!oi_node) {
+            return pup::unexpected<Error>(oi_node.error());
         }
+        (void)add_edge(ctx.state->graph, *oi_node, *cmd_id, LinkType::OrderOnly);
     }
 
     add_deferred_group_edges(state, deferred_group_vec, *cmd_id);

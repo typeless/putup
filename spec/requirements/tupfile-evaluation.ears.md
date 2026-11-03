@@ -104,3 +104,12 @@ defined.
 
 When an output word a bang macro defines is refused, putup shall report the file and line of the
 macro's definition.
+
+### REQ-EVAL-INPUT-NOT-ROOT
+
+- conformance: tup-conformant
+- reference: upstream's `path_list_fill_dt_pel` (`src/tup/parser.c`) refuses an input whose path has no final element after resolution: `.` as "Not expecting '.' path here", and `./` or `sub/..` as "Final pel missing for path". putup crashed on such an input in an in-tree build, reading the node type of the source root, which had no node, and refused it in a variant build as "Invalid source node ID"
+- discharge: test "Scenario: An input naming the project root is refused"
+
+When a rule's input or order-only input names the project root directory, putup shall reject the
+Tupfile with an error on the rule's line.

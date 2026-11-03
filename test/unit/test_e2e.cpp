@@ -9203,6 +9203,44 @@ SCENARIO("A group spelled inside a longer path word is refused", "[e2e][parse][g
     }
 }
 
+SCENARIO("An input naming the project root is refused", "[e2e][parse]")
+{
+    auto const tupfile = GENERATE(as<std::string> {},
+        "\n: . |> echo hi > %o |> a.txt\n",
+        "\n: ./ |> echo hi > %o |> a.txt\n",
+        "\n: $(TUP_CWD) |> echo hi > %o |> a.txt\n",
+        "\n: sub/.. |> echo hi > %o |> a.txt\n",
+        "\n: | . |> echo hi > %o |> a.txt\n",
+        "!m = | . |> echo hi > %o |>\n: |> !m |> a.txt\n");
+    auto const variant = GENERATE(false, true);
+    CAPTURE(tupfile, variant);
+
+    GIVEN("a rule on line 2 whose input or order-only input, written or from a bang macro, is the project root")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.mkdir("sub");
+        auto const args = variant ? std::vector<std::string> { "-B", "build" } : std::vector<std::string> {};
+        if (variant) {
+            REQUIRE(f.pup({ "configure", "-B", "build" }).success());
+        }
+        f.write_file("Tupfile", tupfile);
+
+        WHEN("the project is parsed")
+        {
+            auto result = f.parse(args);
+
+            THEN("parsing fails on the rule's line and says the input names the project root")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("Tupfile:2") != std::string::npos);
+                REQUIRE(result.stderr_output.find("An input cannot be the project root directory") != std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("A refused output word from a bang macro is reported where the macro wrote it", "[e2e][parse][macro]")
 {
     auto const [word, message] = GENERATE(table<std::string, std::string>({
