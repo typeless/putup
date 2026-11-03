@@ -58,6 +58,7 @@ test-srcs-y += test_stable_vec.cpp
 test-srcs-y += test_parser.cpp
 test-srcs-y += test_path.cpp
 test-srcs-y += test_path_pool.cpp
+test-srcs-y += test_regex.cpp
 test-srcs-y += test_path_utils.cpp
 test-srcs-y += test_platform_file_io.cpp
 test-srcs-y += test_platform_process.cpp

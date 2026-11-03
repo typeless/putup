@@ -561,7 +561,7 @@ TEST_CASE("GraphBuilder exclusion patterns - explicit file", "[e2e][builder][exc
 
     // Exclusion pattern - explicit filename
     auto excl = make_path_pattern("baz.c");
-    excl.kind = PathPattern::Kind::InputExclusion;
+    excl.kind = PathPattern::Kind::GlobExclusion;
     rule.inputs.push_back(excl);
 
     auto output = PathPattern {};
@@ -624,7 +624,7 @@ TEST_CASE("GraphBuilder exclusion patterns - glob pattern", "[e2e][builder][excl
 
     // Exclusion pattern - glob to exclude test files
     auto excl = make_path_pattern("test_*.c");
-    excl.kind = PathPattern::Kind::InputExclusion;
+    excl.kind = PathPattern::Kind::GlobExclusion;
     rule.inputs.push_back(excl);
 
     auto output = PathPattern {};
@@ -692,7 +692,7 @@ TEST_CASE("GraphBuilder caret exclusion patterns for foreach", "[e2e][builder][e
 
     // Caret exclusion pattern - exclude helper_impl.c (like tup's foreach ^pattern)
     auto excl = make_path_pattern("helper_impl.c");
-    excl.kind = PathPattern::Kind::OutputExclusion; // ^ prefix sets OutputExclusion
+    excl.kind = PathPattern::Kind::RegexExclusion; // ^ prefix sets RegexExclusion
     rule.inputs.push_back(excl);
 
     auto output = PathPattern {};

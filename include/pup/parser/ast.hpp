@@ -82,8 +82,8 @@ struct PathPattern final : AstNode {
     Expression path;
     bool is_foreach = false; ///< Part of foreach expansion
     enum class Kind { Path,
-                      InputExclusion,
-                      OutputExclusion,
+                      GlobExclusion,
+                      RegexExclusion,
                       Bin,
                       OrderOnlyGroup };
     Kind kind = Kind::Path;

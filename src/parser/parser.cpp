@@ -886,11 +886,11 @@ auto parse_path_pattern(ParserState& s, bool stop_at_angle) -> Result<PathPatter
     auto pattern = PathPattern {};
     pattern.location = s.current.location;
 
-    // Check for exclusion prefix (! for inputs, ^ for outputs)
+    // Check for exclusion prefix (! for a glob, ^ for a regular expression)
     if (match(s, TokenType::Bang)) {
-        pattern.kind = PathPattern::Kind::InputExclusion;
+        pattern.kind = PathPattern::Kind::GlobExclusion;
     } else if (match(s, TokenType::Caret)) {
-        pattern.kind = PathPattern::Kind::OutputExclusion;
+        pattern.kind = PathPattern::Kind::RegexExclusion;
     }
     if (pattern.kind != PathPattern::Kind::Path && (check(s, TokenType::OpenBrace) || check(s, TokenType::OpenAngle))) {
         return pup::make_error<PathPattern>(ErrorCode::ParseError, "An exclusion names a path, not a bin or group");

@@ -738,7 +738,7 @@ auto expand_path(
         }
         if (end > start) {
             auto path_str = expanded.substr(start, end - start);
-            if (path_str.starts_with('!') || path_str.starts_with('^')) {
+            if (pattern.kind == PathPattern::Kind::RegexExclusion || path_str.starts_with('!') || path_str.starts_with('^')) {
                 result.push_back(pool.intern(path_str));
             } else {
                 result.push_back(pup::path::normalize(path_str));

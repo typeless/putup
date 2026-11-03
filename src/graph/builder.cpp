@@ -23,6 +23,7 @@
 #include "pup/parser/eval.hpp"
 #include "pup/parser/glob.hpp"
 #include "pup/parser/parser.hpp"
+#include "pup/parser/regex.hpp"
 #include "pup/platform/env.hpp"
 
 #include "pup/core/path.hpp"
@@ -874,16 +875,31 @@ auto expand_glob_pattern(
     }
 }
 
-/// Remove from the result every file input an exclusion matches, as a glob or as a path.
+/// Remove from the result every file input an exclusion matches: a `!` exclusion as a glob or as
+/// a path, a `^` exclusion as a regular expression searched in the input's `%f` spelling.
 auto apply_exclusion(
     BuilderContext& ctx,
+    parser::PathPattern::Kind kind,
     StringId exclusion,
     Vec<RuleInput>& result
-) -> void
+) -> Result<void>
 {
     auto& pool = global_pool();
     auto excl = pool.get(exclusion);
-    if (ctx.options.expand_globs && parser::has_glob_chars(excl)) {
+    if (kind == parser::PathPattern::Kind::RegexExclusion) {
+        auto regex = parser::Regex::compile(excl);
+        if (!regex) {
+            return pup::unexpected<Error>(regex.error());
+        }
+        auto const tc = make_transform_context(ctx);
+        for (auto it = result.begin(); it != result.end();) {
+            if (it->kind == RuleInput::Kind::File && regex->search(str(transform_input_path(*ctx.state, tc, str(it->value))))) {
+                it = result.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    } else if (ctx.options.expand_globs && parser::has_glob_chars(excl)) {
         auto pattern_id = is_empty(ctx.current_dir) ? pup::path::normalize(excl) : pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), excl)));
         auto glob = parser::Glob { pool.get(pattern_id) };
         for (auto it = result.begin(); it != result.end();) {
@@ -903,6 +919,7 @@ auto apply_exclusion(
             }
         }
     }
+    return {};
 }
 
 /// Generated command text is not a Tupfile template: every byte is literal except a
@@ -1081,7 +1098,7 @@ auto expand_outputs(
         if (pattern.kind == parser::PathPattern::Kind::Bin) {
             continue;
         }
-        if (pattern.kind == parser::PathPattern::Kind::OutputExclusion) {
+        if (pattern.kind == parser::PathPattern::Kind::RegexExclusion) {
             continue;
         }
 
@@ -1152,19 +1169,27 @@ auto expand_inputs(
         token_start = result.size();
     };
 
-    auto exclude = [&ctx, &result, &token_start, &close_token](StringId exclusion) {
+    auto exclude = [&ctx, &result, &token_start, &close_token](parser::PathPattern::Kind kind, StringId exclusion, parser::PathPattern const& pattern) -> Result<void> {
         close_token();
-        apply_exclusion(ctx, exclusion, result);
+        auto applied = apply_exclusion(ctx, kind, exclusion, result);
         token_start = result.size();
+        if (!applied) {
+            auto error = applied.error();
+            error.location = SourcePosition { .file = ctx.current_file, .line = pattern.location.line };
+            return pup::unexpected<Error>(error);
+        }
+        return {};
     };
 
     for (auto const& pattern : patterns) {
         close_token();
         ++token;
-        if (pattern.kind == parser::PathPattern::Kind::InputExclusion || pattern.kind == parser::PathPattern::Kind::OutputExclusion) {
+        if (pattern.kind == parser::PathPattern::Kind::GlobExclusion || pattern.kind == parser::PathPattern::Kind::RegexExclusion) {
             if (auto paths = parser::expand_path(*ctx.eval, pattern)) {
                 for (auto exclusion : *paths) {
-                    exclude(exclusion);
+                    if (auto excluded = exclude(pattern.kind, exclusion, pattern); !excluded) {
+                        return pup::unexpected<Error>(excluded.error());
+                    }
                 }
             }
             continue;
@@ -1236,7 +1261,10 @@ auto expand_inputs(
         for (auto path_id : words) {
             auto path_sv = pool.get(path_id);
             if (path_sv.starts_with('!') || path_sv.starts_with('^')) {
-                exclude(pool.intern(path_sv.substr(1)));
+                auto const kind = path_sv.starts_with('^') ? parser::PathPattern::Kind::RegexExclusion : parser::PathPattern::Kind::GlobExclusion;
+                if (auto excluded = exclude(kind, pool.intern(path_sv.substr(1)), pattern); !excluded) {
+                    return pup::unexpected<Error>(excluded.error());
+                }
                 continue;
             }
             auto group_ref = parse_group_reference(path_sv, str(ctx.current_dir), str(ctx.options.source_root));

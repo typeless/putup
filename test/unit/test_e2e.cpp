@@ -9044,6 +9044,93 @@ SCENARIO("An exclusion removes only the inputs written before it", "[e2e][glob][
     }
 }
 
+SCENARIO("A caret exclusion removes the earlier inputs its regular expression matches", "[e2e][glob][exclusion]")
+{
+    auto const [inputs, operands] = GENERATE(table<char const*, char const*>({
+        { "*.c bxc ^b.c", "F=[a.c]" },
+        { "*.c bxc ^b\\.c", "F=[a.c bxc]" },
+        { "*.c bxc ^^b", "F=[a.c]" },
+        { "*.c bxc ^\\.c$", "F=[bxc]" },
+        { "*.c bxc ^[ab]\\.c$", "F=[bxc]" },
+        { "*.c bxc $(R)", "F=[a.c bxc]" },
+        { "*.c sub/d.c ^^sub/", "F=[a.c b.c]" },
+        { "^a *.c", "F=[a.c b.c]" },
+    }));
+    CAPTURE(inputs);
+
+    GIVEN("a rule whose inputs end in a caret exclusion")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", std::string { "R = ^b\\.c\n: " } + inputs + " |> echo F=[%f] > %o |> out.txt\n");
+        f.write_file("a.c", "a\n");
+        f.write_file("b.c", "b\n");
+        f.write_file("bxc", "x\n");
+        f.write_file("sub/d.c", "d\n");
+        REQUIRE(f.init().success());
+
+        WHEN("built")
+        {
+            REQUIRE(f.build().success());
+
+            THEN("the operands are the inputs the expression did not match")
+            {
+                REQUIRE(f.read_file("out.txt") == std::string { operands } + "\n");
+            }
+        }
+    }
+}
+
+SCENARIO("A caret exclusion searches the text %f prints in a variant build", "[e2e][variant][glob][exclusion]")
+{
+    auto const [exclusion, operands] = GENERATE(table<char const*, char const*>({
+        { "^^gen", "H=[a.c build/gen.c]" },
+        { "^^build/", "H=[a.c]" },
+        { "^^a", "H=[build/gen.c]" },
+    }));
+    CAPTURE(exclusion);
+
+    GIVEN("a variant build whose rule names a source and a generated input before a caret exclusion")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", std::string { ": |> echo g > %o |> gen.c\n: a.c gen.c " } + exclusion + " |> echo H=[%f] > %o |> h.txt\n");
+        f.write_file("a.c", "a\n");
+        f.mkdir("build");
+        f.write_file("build/tup.config", "");
+
+        WHEN("built with -B build")
+        {
+            REQUIRE(f.build({ "-B", "build", "-j1" }).success());
+
+            THEN("the expression matched each input's %f spelling")
+            {
+                REQUIRE(f.read_file("build/h.txt") == std::string { operands } + "\n");
+            }
+        }
+    }
+}
+
+SCENARIO("A caret exclusion that does not compile fails the rule", "[e2e][glob][exclusion]")
+{
+    GIVEN("a rule whose caret exclusion uses a word-boundary escape")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": *.c ^a\\b |> echo %f > %o |> out.txt\n");
+        f.write_file("a.c", "a\n");
+
+        WHEN("the project is read")
+        {
+            auto result = f.init();
+
+            THEN("reading fails naming the Tupfile line, the expression and the offset")
+            {
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("Tupfile:1") != std::string::npos);
+                REQUIRE(result.stderr_output.find("Unable to compile regular expression 'a\\b' at offset 2") != std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("An exclusion a variable expands to excludes like a written one", "[e2e][glob][exclusion]")
 {
     auto const* exclusion = GENERATE("!other.txt", "^other.txt", "!*.txt", "!sub/../other.txt");

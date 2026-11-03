@@ -353,10 +353,14 @@ struct Expression {
 struct PathPattern {
     Expression path;
     bool is_foreach;
-    bool is_exclusion;          // !pattern for input exclusion
-    bool is_output_exclusion;   // ^pattern for output exclusion (regex)
-    bool is_group;              // {binname} - tup calls these "bins"
-    bool is_order_only_group;   // <groupname> for order-only groups
+    enum class Kind {
+        Path,
+        GlobExclusion,   // !pattern: a glob or a path
+        RegexExclusion,  // ^pattern: a regular expression (parser::Regex)
+        Bin,             // {binname} - tup calls these "bins"
+        OrderOnlyGroup,  // <groupname> for order-only groups
+    };
+    Kind kind;
     StringId group_name;
 };
 ```
@@ -515,6 +519,11 @@ auto glob_expand(pattern, base_dir, options) -> Result<Vec<StringId>>;
 ```
 
 Supported patterns: `*`, `?`, `[abc]`, `**`, `!pattern` (exclusion)
+
+An input exclusion removes only the inputs written before it. `!pattern` is matched as a glob or a
+path; `^pattern` is a regular expression (`parser::Regex`, a backtracking matcher for the PCRE subset
+of literals, `.`, bracket classes, `\d \w \s`, `* + ?`, `|`, groups and `^ $`) searched in the
+text `%f` prints for each input. Syntax outside that subset is a compile error.
 
 ---
 

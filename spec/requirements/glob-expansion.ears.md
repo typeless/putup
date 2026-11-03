@@ -211,12 +211,13 @@ putup shall order a glob's matches identically on every build of an unchanged pr
 
 ## Group: exclusions
 
-What `!pattern` removes from a match set.
+What an exclusion removes from a rule's inputs: `!` reads its pattern as a glob or a path, `^` as a
+regular expression.
 
 ### REQ-GLOB-EXCL-LITERAL
 
-- conformance: unclassified
-- reference: upstream mechanism not read
+- conformance: putup-only
+- reference: upstream has no `!` input exclusion (its `!` is a bang macro); its `^` exclusion is REQ-GLOB-EXCL-REGEX
 - discharge: test "Scenario: An exclusion applies to generated glob matches out-of-tree"
 
 When a rule names an exclusion that is a literal path, putup shall remove that path from the
@@ -224,8 +225,8 @@ match set whether the build is in-tree or out-of-tree.
 
 ### REQ-GLOB-EXCL-PATTERN
 
-- conformance: unclassified
-- reference: upstream mechanism not read
+- conformance: putup-only
+- reference: upstream has no `!` input exclusion (its `!` is a bang macro); its `^` exclusion is REQ-GLOB-EXCL-REGEX
 - discharge: test "Scenario: An exclusion that is itself a glob applies to generated matches out-of-tree"
 
 When a rule names an exclusion that is itself a glob, putup shall remove every path it
@@ -233,8 +234,8 @@ matches from the match set, generated files included.
 
 ### REQ-GLOB-EXCL-STABLE
 
-- conformance: unclassified
-- reference: upstream mechanism not read
+- conformance: putup-only
+- reference: upstream has no `!` input exclusion (its `!` is a bang macro); its `^` exclusion is REQ-GLOB-EXCL-REGEX
 - discharge: test "Scenario: A glob exclusion's match set does not depend on what exists on disk"
 
 putup shall remove the same paths for a glob exclusion whatever files exist on disk when the
@@ -242,8 +243,8 @@ rule is parsed.
 
 ### REQ-GLOB-EXCL-BIN
 
-- conformance: unclassified
-- reference: upstream mechanism not read
+- conformance: putup-only
+- reference: upstream has no `!` input exclusion (its `!` is a bang macro); its `^` exclusion is REQ-GLOB-EXCL-REGEX
 - discharge: test "Scenario: An exclusion applies to bin members out-of-tree"
 
 When a rule names an exclusion and consumes a bin, putup shall remove the matching members
@@ -251,8 +252,8 @@ from its inputs whether the build is in-tree or out-of-tree.
 
 ### REQ-GLOB-EXCL-SENTINEL
 
-- conformance: unclassified
-- reference: upstream mechanism not read
+- conformance: putup-only
+- reference: upstream has no `!` input exclusion (its `!` is a bang macro); its `^` exclusion is REQ-GLOB-EXCL-REGEX
 - discharge: test "Scenario: An exclusion does not erase a group reference or the pattern it filters"
 
 When a rule's input list holds a group reference or a pattern that has not been expanded,
@@ -260,8 +261,8 @@ putup shall leave that entry in place while applying an exclusion.
 
 ### REQ-GLOB-EXCL-SPELLING
 
-- conformance: unclassified
-- reference: upstream mechanism not read
+- conformance: putup-only
+- reference: upstream has no `!` input exclusion (its `!` is a bang macro); its `^` exclusion is REQ-GLOB-EXCL-REGEX
 - discharge: test "Scenario: An exclusion matches an input spelled with the build-directory prefix"
 
 When a rule names an input with the build directory's prefix, putup shall apply an exclusion to
@@ -269,8 +270,8 @@ it as if it had been named without that prefix.
 
 ### REQ-GLOB-EXCL-HIDDEN
 
-- conformance: unclassified
-- reference: upstream mechanism not read; a decided widening of filesystem-expansion semantics, not inherited from them
+- conformance: putup-only
+- reference: upstream has no `!` input exclusion (its `!` is a bang macro); a decided widening of filesystem-expansion semantics, not inherited from them
 - discharge: test "Scenario: A glob exclusion matches a hidden file the same as any other"
 
 putup shall apply a glob exclusion to a hidden file on the same terms as to any other file.
@@ -283,6 +284,31 @@ putup shall apply a glob exclusion to a hidden file on the same terms as to any 
 
 When a rule's inputs name an exclusion, putup shall remove only the matching inputs written before
 it.
+
+### REQ-GLOB-EXCL-REGEX
+
+- conformance: tup-conformant
+- reference: upstream `new_pl` (`src/tup/parser.c`) compiles the text after a leading `^` with `pcre2_compile`, and `nl_rm_exclusion` runs `pcre2_match`, unanchored, against `nle->path` of every entry already in the name list, the path from the Tupfile's directory to the file that `%f` prints for it, and deletes each entry it matches
+- discharge: test "Scenario: A caret exclusion removes the earlier inputs its regular expression matches"
+- discharge: test "Scenario: A caret exclusion searches the text %f prints in a variant build"
+- discharge: test "Regex searches the subject for the pattern's match"
+- discharge: test "Regex of an escaped string finds exactly the subjects containing that string"
+- discharge: test "Regex agrees with POSIX extended regexec on the subset both read alike"
+
+When a rule's inputs name an exclusion beginning with `^`, putup shall remove each file input
+before it whose `%f` spelling the regular expression after the `^` matches anywhere, a generated
+input in a variant build included, rather than read the text after the `^` as a glob or a path.
+
+### REQ-GLOB-EXCL-REGEX-SUBSET
+
+- conformance: deliberate-deviation
+- reference: upstream hands the text after `^` to PCRE2 and accepts all of its syntax, failing with "Unable to compile regular expression '%s' at offset %zi: %s" only when PCRE2 does; putup carries its own matcher for the subset of literals, `.`, bracket classes, `\d \w \s` and their negations, `* + ?`, `|`, groups and the anchors `^ $`, and refuses the rest in upstream's message shape rather than give a pattern such as `a{2}` or `\bx` a meaning PCRE2 does not
+- discharge: test "Regex refuses syntax outside its subset with the offset and the reason"
+- discharge: test "Scenario: A caret exclusion that does not compile fails the rule"
+
+If a rule's `^` exclusion uses regular-expression syntax outside literals, `.`, bracket classes,
+`\d \w \s` and their negations, `* + ?`, `|`, groups and the anchors `^ $`, then putup shall
+reject the Tupfile naming the expression, the offset and the reason.
 
 ### REQ-GLOB-EXCL-EXPANDED
 

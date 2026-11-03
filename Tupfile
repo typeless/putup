@@ -35,6 +35,7 @@ srcs-y += src/parser/glob.cpp
 srcs-y += src/parser/ignore.cpp
 srcs-y += src/parser/lexer.cpp
 srcs-y += src/parser/parser.cpp
+srcs-y += src/parser/regex.cpp
 srcs-y += src/parser/var_tracking.cpp
 
 # Graph

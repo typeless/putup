@@ -147,7 +147,7 @@ TEST_CASE("An output exclusion regex may end in a dollar anchor", "[parser][path
     REQUIRE(result.success());
     auto const* rule = result.tupfile.statements[0]->as<Rule>();
     REQUIRE(rule->outputs.size() == 2);
-    CHECK(rule->outputs[1].kind == PathPattern::Kind::OutputExclusion);
+    CHECK(rule->outputs[1].kind == PathPattern::Kind::RegexExclusion);
     CHECK(rule->outputs[1].path.as_literal() == "\\.d$");
 }
 
