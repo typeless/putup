@@ -54,7 +54,7 @@ constexpr auto make(Tag t, std::size_t idx) -> NodeId
 [[nodiscard]]
 constexpr auto is_file(NodeId id) -> bool
 {
-    return id != 0 && tag(id) == Tag::File;
+    return tag(id) == Tag::File;
 }
 
 /// Check if ID refers to a command node

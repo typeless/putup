@@ -39,6 +39,13 @@ auto make_graph() -> Graph
 
     graph.files.resize(2);
     graph.dir_children.resize(2);
+    graph.files[0] = FileNode {
+        .id = SOURCE_ROOT_ID,
+        .type = NodeType::Directory,
+        .name = StringId::Empty,
+        .parent_dir = SOURCE_ROOT_ID,
+        .path_id = PathId::SourceRoot,
+    };
     graph.files[1] = FileNode {
         .id = BUILD_ROOT_ID,
         .type = NodeType::Directory,
@@ -55,9 +62,6 @@ auto make_graph() -> Graph
 
 auto validate_node_id(Graph const& graph, NodeId id) -> bool
 {
-    if (id == 0) {
-        return false;
-    }
     if (node_id::is_command(id)) {
         auto idx = node_id::index(id);
         if (idx == 0 || idx >= graph.commands.size()) {
@@ -88,26 +92,23 @@ auto validate_node_id(Graph const& graph, NodeId id) -> bool
 
 auto add_file_node(Graph& graph, FileNode node) -> Result<NodeId>
 {
-    auto parent_path = PathId::SourceRoot;
-    if (node.parent_dir != 0) {
-        auto const* parent = get_file_node(std::as_const(graph), node.parent_dir);
-        if (!parent) {
-            return make_error<NodeId>(ErrorCode::InvalidNodeId, "Invalid parent directory node ID");
-        }
-        if (parent->type != NodeType::Directory && parent->type != NodeType::GeneratedDir) {
-            auto const parent_spelling = global_pool().get(materialize_path(graph, parent->path_id));
-            auto err = Buf {};
-            err.fmt(
-                "Unable to create '{}/{}' because the {} '{}' is not a directory",
-                parent_spelling,
-                global_pool().get(node.name),
-                node_type_name(parent->type),
-                parent_spelling
-            );
-            return make_error<NodeId>(ErrorCode::InvalidNodeId, err.view());
-        }
-        parent_path = parent->path_id;
+    auto const* parent = get_file_node(std::as_const(graph), node.parent_dir);
+    if (!parent) {
+        return make_error<NodeId>(ErrorCode::InvalidNodeId, "Invalid parent directory node ID");
     }
+    if (parent->type != NodeType::Directory && parent->type != NodeType::GeneratedDir) {
+        auto const parent_spelling = global_pool().get(materialize_path(graph, parent->path_id));
+        auto err = Buf {};
+        err.fmt(
+            "Unable to create '{}/{}' because the {} '{}' is not a directory",
+            parent_spelling,
+            global_pool().get(node.name),
+            node_type_name(parent->type),
+            parent_spelling
+        );
+        return make_error<NodeId>(ErrorCode::InvalidNodeId, err.view());
+    }
+    auto const parent_path = parent->path_id;
     auto const parent_idx = node_id::index(node.parent_dir);
     if (!is_empty(node.name)) {
         node.path_id = graph.paths.intern(parent_path, node.name);
@@ -281,7 +282,7 @@ auto get_file_node(Graph& graph, NodeId id) -> FileNode*
 
 auto get_file_node(Graph const& graph, NodeId id) -> FileNode const*
 {
-    if (id == 0 || node_id::is_command(id)) {
+    if (node_id::is_command(id)) {
         return nullptr;
     }
     auto const idx = node_id::index(id);
@@ -754,10 +755,6 @@ auto materialize_path(Graph const& graph, PathId path_id) -> StringId
 
 auto get_full_path(Graph const& graph, NodeId id, PathCache& cache) -> std::string_view
 {
-    if (id == 0 || node_id::is_command(id)) {
-        return "";
-    }
-
     auto const* node = get_file_node(graph, id);
     if (!node) {
         return "";
@@ -780,9 +777,6 @@ auto get_full_path(Graph const& graph, NodeId id, PathCache& cache) -> std::stri
 
 auto get_full_path(Graph const& graph, NodeId id) -> StringId
 {
-    if (id == 0 || node_id::is_command(id)) {
-        return StringId::Empty;
-    }
     auto const* node = get_file_node(graph, id);
     if (!node || is_root(node->path_id)) {
         return StringId::Empty;

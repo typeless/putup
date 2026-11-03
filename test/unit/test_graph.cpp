@@ -2064,7 +2064,26 @@ TEST_CASE("node_id encoding: 30-bit index roundtrips and kinds are mutually excl
         REQUIRE_FALSE(pup::node_id::is_condition(phi));
     }
 
-    REQUIRE_FALSE(pup::node_id::is_file(pup::INVALID_NODE_ID));
+    REQUIRE(pup::node_id::is_file(pup::SOURCE_ROOT_ID));
+}
+
+TEST_CASE("The source root is a live directory node that enumeration skips", "[graph]")
+{
+    auto bs = make_build_graph();
+    auto& g = bs.graph;
+    auto file = add_file_node(g, FileNode { .name = intern("main.c") });
+    REQUIRE(file.has_value());
+
+    auto const* root = get_file_node(g, pup::SOURCE_ROOT_ID);
+    REQUIRE(root != nullptr);
+    CHECK(root->type == NodeType::Directory);
+    CHECK(root->path_id == pup::PathId::SourceRoot);
+    CHECK(get_parent_dir(g, *file) == pup::SOURCE_ROOT_ID);
+    CHECK(sv(get_full_path(g, pup::SOURCE_ROOT_ID)).empty());
+    auto const nodes = all_nodes(g);
+    CHECK(std::ranges::find(nodes, pup::SOURCE_ROOT_ID) == nodes.end());
+    auto const directories = nodes_of_type(g, NodeType::Directory);
+    CHECK(std::ranges::find(directories, pup::SOURCE_ROOT_ID) == directories.end());
 }
 
 TEST_CASE("compute_command_key separates rules by directory", "[graph][identity]")
