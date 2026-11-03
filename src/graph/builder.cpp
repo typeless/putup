@@ -1118,14 +1118,14 @@ auto expand_outputs(
             auto expanded = parser::expand_pattern(*ctx.eval, pool.get(path_id), section_flags);
             if (!expanded) {
                 auto error = Error { ErrorCode::ParseError, expanded.error().message };
-                error.location = SourcePosition { .file = ctx.current_file, .line = pattern.location.line };
+                error.location = SourcePosition { .file = intern(pattern.location.filename), .line = pattern.location.line };
                 return pup::unexpected<Error>(error);
             }
             auto output_path_sv = pool.get(*expanded);
             auto group_ref = parse_group_reference(output_path_sv, str(ctx.current_dir), str(ctx.options.source_root));
             if (!group_ref) {
                 auto error = group_ref.error();
-                error.location = SourcePosition { .file = ctx.current_file, .line = pattern.location.line };
+                error.location = SourcePosition { .file = intern(pattern.location.filename), .line = pattern.location.line };
                 return pup::unexpected<Error>(error);
             }
             if (*group_ref) {
@@ -1145,7 +1145,7 @@ auto expand_outputs(
                     output_path_sv
                 );
                 auto error = Error { ErrorCode::ParseError, msg.view() };
-                error.location = SourcePosition { .file = ctx.current_file, .line = pattern.location.line };
+                error.location = SourcePosition { .file = intern(pattern.location.filename), .line = pattern.location.line };
                 return pup::unexpected<Error>(error);
             }
 
@@ -1189,7 +1189,7 @@ auto expand_inputs(
         token_start = result.size();
         if (!applied) {
             auto error = applied.error();
-            error.location = SourcePosition { .file = ctx.current_file, .line = pattern.location.line };
+            error.location = SourcePosition { .file = intern(pattern.location.filename), .line = pattern.location.line };
             return pup::unexpected<Error>(error);
         }
         return {};
@@ -1260,7 +1260,7 @@ auto expand_inputs(
             auto expanded = parser::expand_pattern(*ctx.eval, pool.get(path_id), *percent_flags);
             if (!expanded) {
                 auto error = Error { ErrorCode::ParseError, expanded.error().message };
-                error.location = SourcePosition { .file = ctx.current_file, .line = pattern.location.line };
+                error.location = SourcePosition { .file = intern(pattern.location.filename), .line = pattern.location.line };
                 return pup::unexpected<Error>(error);
             }
             auto text = pool.get(*expanded);
@@ -1284,7 +1284,7 @@ auto expand_inputs(
             auto group_ref_result = parse_group_reference(path_sv, str(ctx.current_dir), str(ctx.options.source_root));
             if (!group_ref_result) {
                 auto error = group_ref_result.error();
-                error.location = SourcePosition { .file = ctx.current_file, .line = pattern.location.line };
+                error.location = SourcePosition { .file = intern(pattern.location.filename), .line = pattern.location.line };
                 return pup::unexpected<Error>(error);
             }
             auto const& group_ref = *group_ref_result;

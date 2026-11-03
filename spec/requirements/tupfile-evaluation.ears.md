@@ -95,3 +95,12 @@ What defining a bang macro in terms of another one binds.
 When a Tupfile defines a bang macro as `!name = !target`, putup shall bind `!name` to a copy of
 `!target`'s definition as it stands at that line, and reject the Tupfile if `!target` is not
 defined.
+
+### REQ-EVAL-BANG-WORD-ERROR-SITE
+
+- conformance: deliberate-deviation
+- reference: upstream reports a failing rule as "Error parsing %s line %i" with the file being parsed and the line of the rule (`parse_tupfile`, `src/tup/parser.c`), so a malformed output word a macro defines in Tuprules.tup is reported on the calling Tupfile's line. The word is wrong as the macro wrote it, whichever rule calls the macro, so putup names the line that holds the text to change. putup reported the calling Tupfile's name with the definition's line number, a position in neither file
+- discharge: test "Scenario: A refused output word from a bang macro is reported where the macro wrote it"
+
+When an output word a bang macro defines is refused, putup shall report the file and line of the
+macro's definition.

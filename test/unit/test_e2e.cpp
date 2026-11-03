@@ -9203,6 +9203,35 @@ SCENARIO("A group spelled inside a longer path word is refused", "[e2e][parse][g
     }
 }
 
+SCENARIO("A refused output word from a bang macro is reported where the macro wrote it", "[e2e][parse][macro]")
+{
+    auto const [word, message] = GENERATE(table<std::string, std::string>({
+        { "x<g>.txt", "A group must be a whole path element" },
+        { "../b.txt", "" },
+    }));
+    CAPTURE(word);
+
+    GIVEN("a macro defined on line 5 of Tuprules.tup whose outputs hold the word, called from the Tupfile")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tuprules.tup", "\n\n\n\n!bad = |> echo hi > %o |> b.txt " + word + "\n");
+        f.write_file("Tupfile", "include_rules\n: |> !bad |>\n");
+
+        WHEN("the project is parsed")
+        {
+            auto result = f.parse();
+
+            THEN("parsing fails and names line 5 of Tuprules.tup")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("Tuprules.tup:5") != std::string::npos);
+                REQUIRE(result.stderr_output.find(message) != std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("An output group named through a variable collects the rule's outputs", "[e2e][groups]")
 {
     GIVEN("a rule whose output list ends in a variable holding <g>, and a rule reading <g>")
