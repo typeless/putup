@@ -75,6 +75,16 @@ auto parse_path_pattern(ParserState& s, bool stop_at_angle = false) -> Result<Pa
 auto parse_command(ParserState& s, std::optional<Expression>& display) -> Result<Expression>;
 auto report_error(ParserState& s, std::string_view message) -> void;
 
+auto current_touches_previous(ParserState const& s) -> bool
+{
+    return s.current.location.offset == s.previous.location.offset + s.previous.text.size();
+}
+
+auto refuse_group_inside_word() -> Error
+{
+    return Error { ErrorCode::ParseError, "A group must be a whole path element, as <name> or dir/<name>" };
+}
+
 auto advance(ParserState& s) -> Token
 {
     s.previous = s.current;
@@ -561,8 +571,14 @@ auto parse_rule_body(ParserState& s) -> Result<RuleBody>
         return pup::unexpected<Error>(arrow2.error());
     }
 
-    auto parse_output_group = [&s, &body](Vec<PathPattern>& section) -> Result<void> {
+    auto parse_output_group = [&s, &body](Vec<PathPattern>& section, bool glued_to_previous_word) -> Result<void> {
         auto dir = std::optional<Expression> {};
+        if (glued_to_previous_word) {
+            auto const* lit = section.back().path.parts.empty() ? nullptr : std::get_if<Expression::Literal>(&section.back().path.parts.back());
+            if (!lit || !global_pool().get(lit->value).ends_with('/')) {
+                return pup::unexpected<Error>(refuse_group_inside_word());
+            }
+        }
         if (!section.empty() && !section.back().path.parts.empty()) {
             if (auto* lit = std::get_if<Expression::Literal>(&section.back().path.parts.back())) {
                 auto lit_sv = global_pool().get(lit->value);
@@ -581,6 +597,9 @@ auto parse_rule_body(ParserState& s) -> Result<RuleBody>
         if (!close) {
             return pup::unexpected<Error>(close.error());
         }
+        if (current_touches_previous(s) && !s.current.is_one_of(TokenType::Pipe, TokenType::Newline, TokenType::Eof)) {
+            return pup::unexpected<Error>(refuse_group_inside_word());
+        }
         if (body.output_order_only_group) {
             auto err = Buf {};
             err.fmt("Multiple output groups detected: '<{}>' and '<{}>'", global_pool().get(*body.output_order_only_group), global_pool().get(name));
@@ -593,8 +612,9 @@ auto parse_rule_body(ParserState& s) -> Result<RuleBody>
 
     auto parse_output_section = [&s, &parse_output_group](Vec<PathPattern>& section) -> Result<void> {
         while (!check(s, TokenType::Pipe) && !check(s, TokenType::OpenBrace) && !check(s, TokenType::Newline) && !check(s, TokenType::Eof)) {
+            auto const glued_to_previous_word = !section.empty() && current_touches_previous(s);
             if (match(s, TokenType::OpenAngle)) {
-                if (auto group = parse_output_group(section); !group) {
+                if (auto group = parse_output_group(section, glued_to_previous_word); !group) {
                     return group;
                 }
                 continue;
@@ -917,6 +937,9 @@ auto parse_path_pattern(ParserState& s, bool stop_at_angle) -> Result<PathPatter
         }
         if (!match(s, TokenType::CloseAngle)) {
             return pup::make_error<PathPattern>(ErrorCode::ParseError, "Expected '>' after group name");
+        }
+        if (current_touches_previous(s) && !s.current.is_one_of(TokenType::Pipe, TokenType::PipeArrow, TokenType::Newline, TokenType::Eof)) {
+            return pup::unexpected<Error>(refuse_group_inside_word());
         }
         return pattern;
     }

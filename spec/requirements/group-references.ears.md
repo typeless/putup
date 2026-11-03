@@ -108,6 +108,15 @@ after its outputs, then putup shall reject the Tupfile and name the bin.
 When a `{` appears inside a word of a rule's inputs, order-only inputs or outputs rather than at
 its start, putup shall read it as part of that word's path rather than as the start of a bin.
 
+### REQ-GROUPREF-WHOLE-ELEMENT
+
+- conformance: deliberate-deviation
+- reference: upstream's `new_pl` (`src/tup/parser.c`) marks any path-list word holding a `<` as a group. In the outputs `do_rule_outputs` names the group node after the word's whole last element (`tup_db_create_node_part(dest_tent, pl->pel->path, ...)`), so `x<g>.txt`, `pre<g>`, `<g>post`, `<g>{b}` and `<g>#` declare groups by those names, which no `<g>` or `%<g>` reaches. In the inputs `nl_add_path` makes a group only of an element that begins with `<`, so `<g>post` reads a group named `<g>post` and `pre<g>` or `x<g>.txt` is looked up as a file and refused as "Explicitly named file ... not found" unless one by that name exists. putup refuses every such word instead, since each either names a group no reference can reach or a file whose name only looks like a group reference. Upstream reads the words after variable expansion; putup checks input words and output file words after expansion too, but decides where an output group written in the Tupfile begins before expansion, so `$(DIR)<g>` with `DIR = dir/` is refused as an output while upstream reads `dir/<g>`, and an input `$(DIR)<g>` reads `dir/<g>` as upstream does. Before the refusal putup split an output word at its `<`, so `x<g>.txt` wrote files `x` and `.txt` and declared `<g>`, `x%<g>.txt` failed with "Unknown %-flag: ''", and `<g>post` declared `<g>` and wrote `post`; in the inputs `pre<g>` read the group `g` of a directory named `pre`, `x<g>.txt` read a file of that name, and `<g>post` read the group and a file `post`
+- discharge: test "Scenario: A group spelled inside a longer path word is refused"
+
+If a word of a rule's inputs, order-only inputs or outputs holds a `<` that does not open its whole
+last path element, as in `<name>` or `dir/<name>`, then putup shall reject the Tupfile.
+
 ## Group: exclusion
 
 What `!` or `^` in front of a bin or group reference means.

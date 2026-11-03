@@ -9165,6 +9165,44 @@ SCENARIO("A brace inside a path word names a file rather than a bin", "[e2e][gro
     }
 }
 
+SCENARIO("A group spelled inside a longer path word is refused", "[e2e][parse][groups]")
+{
+    auto const rule = GENERATE(as<std::string> {},
+        ": |> touch %o |> x.txt x<g>.txt\n",
+        ": |> touch %o |> x.txt x%<g>.txt\n",
+        ": |> touch %o |> x.txt pre<g>\n",
+        ": |> touch %o |> x.txt <g>post\n",
+        ": |> touch %o |> x.txt | y.txt <g>post\n",
+        ": x<g>.txt |> touch %o |> y.txt\n",
+        ": pre<g> |> touch %o |> y.txt\n",
+        ": <g>post |> touch %o |> y.txt\n",
+        ": | pre<g> |> touch %o |> y.txt\n",
+        ": | <g>post |> touch %o |> y.txt\n",
+        ": |> touch %o |> x.txt $(X)\n",
+        ": $(X) |> touch %o |> y.txt\n");
+    CAPTURE(rule);
+
+    GIVEN("a group <g>, a variable X holding x<g>.txt, and a rule that writes the group inside a longer word")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", "X = x<g>.txt\n: |> touch %o |> g.txt <g>\n" + rule);
+
+        WHEN("the project is parsed")
+        {
+            auto result = f.parse();
+
+            THEN("parsing fails on the rule's line and says a group must be a whole path element")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("Tupfile:3") != std::string::npos);
+                REQUIRE(result.stderr_output.find("A group must be a whole path element, as <name> or dir/<name>") != std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("A caret exclusion that does not compile fails the rule", "[e2e][glob][exclusion]")
 {
     GIVEN("a rule whose caret exclusion uses a word-boundary escape")

@@ -112,26 +112,25 @@ struct GroupReference {
 };
 
 /// Parse a group reference from a path expression
-/// Returns nullopt if the path doesn't contain a valid <group> suffix
+/// Returns nullopt if the path holds no '<', and an error if its '<' does not open a whole last element
 auto parse_group_reference(
     std::string_view path,
     std::string_view current_dir,
     std::string_view source_root
-) -> std::optional<GroupReference>
+) -> Result<std::optional<GroupReference>>
 {
-    auto lt_pos = path.rfind('<');
-    auto gt_pos = path.rfind('>');
-    if (lt_pos == std::string_view::npos || gt_pos == std::string_view::npos
-        || gt_pos != path.size() - 1 || gt_pos <= lt_pos) {
-        return std::nullopt;
+    auto lt_pos = path.find('<');
+    if (lt_pos == std::string_view::npos) {
+        return std::optional<GroupReference> {};
     }
-    auto group_name = path.substr(lt_pos + 1, gt_pos - lt_pos - 1);
-    if (group_name.empty()) {
-        return std::nullopt;
+    auto group_name = path.substr(lt_pos + 1, path.size() - lt_pos - 2);
+    if ((lt_pos != 0 && path[lt_pos - 1] != '/') || !path.ends_with('>') || lt_pos + 2 >= path.size()
+        || group_name.find_first_of("<>") != std::string_view::npos) {
+        return make_error<std::optional<GroupReference>>(ErrorCode::ParseError, "A group must be a whole path element, as <name> or dir/<name>");
     }
     auto dir_part = path.substr(0, lt_pos);
     auto group_dir = normalize_group_dir(dir_part, current_dir, source_root);
-    return GroupReference { group_name, group_dir };
+    return std::optional { GroupReference { group_name, group_dir } };
 }
 
 /// Spell a group reference as the canonical key both operand producers agree on.
@@ -1119,6 +1118,11 @@ auto expand_outputs(
                 return pup::unexpected<Error>(error);
             }
             auto output_path_sv = pool.get(*expanded);
+            if (auto group_ref = parse_group_reference(output_path_sv, str(ctx.current_dir), str(ctx.options.source_root)); !group_ref) {
+                auto error = group_ref.error();
+                error.location = SourcePosition { .file = ctx.current_file, .line = pattern.location.line };
+                return pup::unexpected<Error>(error);
+            }
 
             auto full_output_path_sv = pool.get(pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), output_path_sv))));
 
@@ -1268,7 +1272,13 @@ auto expand_inputs(
                 }
                 continue;
             }
-            auto group_ref = parse_group_reference(path_sv, str(ctx.current_dir), str(ctx.options.source_root));
+            auto group_ref_result = parse_group_reference(path_sv, str(ctx.current_dir), str(ctx.options.source_root));
+            if (!group_ref_result) {
+                auto error = group_ref_result.error();
+                error.location = SourcePosition { .file = ctx.current_file, .line = pattern.location.line };
+                return pup::unexpected<Error>(error);
+            }
+            auto const& group_ref = *group_ref_result;
             if (group_ref) {
                 request_demand_driven_parse(*ctx.eval, str(group_ref->group_dir));
                 result.push_back(RuleInput {
