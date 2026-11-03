@@ -317,7 +317,7 @@ SCENARIO("Percent flags inside display text expand against the rule", "[e2e][bui
 
 SCENARIO("A group flag inside display text is reported as written", "[e2e][build][display][groups]")
 {
-    GIVEN("rules whose displays spell group flags: one whose command spells it too, one whose command does not, one naming a group the rule never reads")
+    GIVEN("rules whose displays spell group flags: one whose command spells it too, one whose command does not, one naming a group the rule never reads, one escaped, one never closed")
     {
         auto f = E2EFixture { "glob_mixed_space" };
         f.write_file("a.src", "x\n");
@@ -325,7 +325,9 @@ SCENARIO("A group flag inside display text is reported as written", "[e2e][build
             ": a.src |> cp %f %o |> a.obj <objs>\n"
             ": | <objs> |> ^ USES %<objs>^ cat %<objs> > %o |> uses.txt\n"
             ": | <objs> |> ^ LABEL %<objs>^ touch %o |> label.txt\n"
-            ": |> ^ NAMES %<undeclared>^ touch %o |> names.txt\n");
+            ": |> ^ NAMES %<undeclared>^ touch %o |> names.txt\n"
+            ": | <objs> |> ^ ESCAPED %%<objs>^ cat %<objs> > %o |> escaped.txt\n"
+            ": |> ^ OPEN %<objs never closed^ touch %o |> open.txt\n");
         REQUIRE(f.init().success());
 
         WHEN("the build reports the commands it runs")
@@ -339,7 +341,10 @@ SCENARIO("A group flag inside display text is reported as written", "[e2e][build
                 REQUIRE(result.stdout_output.find("USES %<objs>") != std::string::npos);
                 REQUIRE(result.stdout_output.find("LABEL %<objs>") != std::string::npos);
                 REQUIRE(result.stdout_output.find("NAMES %<undeclared>") != std::string::npos);
+                REQUIRE(result.stdout_output.find("ESCAPED %<objs>") != std::string::npos);
+                REQUIRE(result.stdout_output.find("OPEN %<objs never closed") != std::string::npos);
                 REQUIRE(f.read_file("uses.txt") == "x\n");
+                REQUIRE(f.read_file("escaped.txt") == "x\n");
             }
         }
     }

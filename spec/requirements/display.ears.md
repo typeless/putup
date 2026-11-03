@@ -86,11 +86,11 @@ command without its annotation.
 ### REQ-DISP-GROUP-FLAG-TEXT
 
 - conformance: tup-conformant
-- reference: upstream's `tup_printf` copies `%<` through as text in every string it expands (tup `parser.c`, the `'<'` branch: "%<group> is expanded by the updater before executing a command"), and the updater splices groups only into the command (`updater.c`, `expand_command`); `print_tup_entry` prints the stored display as written, so a display reads `%<objs>` whether or not the command reads the group, and names a group the rule never reads without complaint. putup substituted the group's members into a display only when the command also spliced that group, printed it as written otherwise, and refused a display naming a group the rule could not resolve
+- reference: upstream's `tup_printf` copies `%<` through as text in every string it expands (tup `parser.c`, the `'<'` branch: "%<group> is expanded by the updater before executing a command"), and the updater splices groups only into the command (`updater.c`, `expand_command`); `print_tup_entry` prints the stored display as written, so a display reads `%<objs>` whether or not the command reads the group, names a group the rule never reads without complaint, keeps a `%<` with no closing `>` as text (the end-group marker is looked for only in `updater.c`), and reads `%%<objs>` as `%<objs>` (the `'%'` branch, with the display expanded under `EXPAND_PERCPERC` by `do_rule`'s `tup_printf(tf, cs.display, ...)`). putup substituted the group's members into a display only when the command also spliced that group, printed it as written otherwise, refused a display naming a group the rule could not resolve, refused one whose `%<` was never closed, and spliced the members into a display spelling `%%<objs>`
 - discharge: test "Scenario: A group flag inside display text is reported as written"
 
-putup shall report a `%<name>` in a display annotation as written, neither splicing the group's
-members into it nor resolving the group it names.
+putup shall report a `%<` group flag in a display annotation as written, whether or not a `>`
+closes it, neither splicing the group's members into it nor resolving the group it names.
 
 ### REQ-DISP-MACRO
 
