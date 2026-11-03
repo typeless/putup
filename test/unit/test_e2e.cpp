@@ -315,6 +315,36 @@ SCENARIO("Percent flags inside display text expand against the rule", "[e2e][bui
     }
 }
 
+SCENARIO("A group flag inside display text is reported as written", "[e2e][build][display][groups]")
+{
+    GIVEN("rules whose displays spell group flags: one whose command spells it too, one whose command does not, one naming a group the rule never reads")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.src", "x\n");
+        f.write_file("Tupfile",
+            ": a.src |> cp %f %o |> a.obj <objs>\n"
+            ": | <objs> |> ^ USES %<objs>^ cat %<objs> > %o |> uses.txt\n"
+            ": | <objs> |> ^ LABEL %<objs>^ touch %o |> label.txt\n"
+            ": |> ^ NAMES %<undeclared>^ touch %o |> names.txt\n");
+        REQUIRE(f.init().success());
+
+        WHEN("the build reports the commands it runs")
+        {
+            auto result = f.build({ "-v" });
+            REQUIRE(result.success());
+
+            THEN("every display keeps its group flag, and the command still reads the group's members")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.stdout_output.find("USES %<objs>") != std::string::npos);
+                REQUIRE(result.stdout_output.find("LABEL %<objs>") != std::string::npos);
+                REQUIRE(result.stdout_output.find("NAMES %<undeclared>") != std::string::npos);
+                REQUIRE(f.read_file("uses.txt") == "x\n");
+            }
+        }
+    }
+}
+
 SCENARIO("An unterminated caret is a parse error, not a shell error", "[e2e][build][display]")
 {
     GIVEN("a rule whose display annotation is never closed")

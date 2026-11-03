@@ -458,7 +458,7 @@ private:
 
 auto section_names_outputs(PatternSection section) -> bool
 {
-    return section == PatternSection::Command || section == PatternSection::ExtraOutputs;
+    return section == PatternSection::Command || section == PatternSection::Display || section == PatternSection::ExtraOutputs;
 }
 
 }
@@ -523,7 +523,7 @@ auto expand_pattern_atoms(
                     pos = end + 1;
                     continue;
                 }
-                if (letter == 'i' && flags.section != PatternSection::Command) {
+                if (letter == 'i' && flags.section != PatternSection::Command && flags.section != PatternSection::Display) {
                     auto msg = Buf {};
                     msg.fmt("%{}i is only valid in a command string", num);
                     return make_error<Instruction>(ErrorCode::ParseError, msg.view());
@@ -543,7 +543,7 @@ auto expand_pattern_atoms(
             return make_error<Instruction>(ErrorCode::ParseError, msg.view());
         }
 
-        if (flag == '<' && flags.section == PatternSection::OrderOnlyInputs) {
+        if (flag == '<' && (flags.section == PatternSection::OrderOnlyInputs || flags.section == PatternSection::Display)) {
             builder.literal("%<");
             continue;
         }
@@ -580,7 +580,7 @@ auto expand_pattern_atoms(
             );
             break;
         case 'i':
-            if (flags.section != PatternSection::Command) {
+            if (flags.section != PatternSection::Command && flags.section != PatternSection::Display) {
                 return make_error<Instruction>(ErrorCode::ParseError, "%i is only valid in a command string");
             }
             if (flags.order_only_inputs.empty()) {

@@ -961,6 +961,7 @@ auto expand_command(
     parser::Expression const& cmd,
     parser::PatternFlags flags,
     ExpandedOutputs const& outputs,
+    parser::PatternSection section,
     Instruction* out_instruction = nullptr
 ) -> Result<StringId>
 {
@@ -991,7 +992,7 @@ auto expand_command(
     flags.all_outputs = TokenList<std::string_view>::grouped(
         std::move(outputs_sv), outputs.tokens, outputs.token_count
     );
-    flags.section = parser::PatternSection::Command;
+    flags.section = section;
 
     auto atoms = parser::expand_pattern_atoms(*ctx.eval, pool.get(*expanded), flags);
     if (!atoms) {
@@ -2266,7 +2267,7 @@ auto expand_rule(
         return pup::unexpected<Error>(extra_outputs.error());
     }
 
-    auto cmd_result = expand_command(ctx, eff_command, flags, *outputs, &instruction_pattern);
+    auto cmd_result = expand_command(ctx, eff_command, flags, *outputs, parser::PatternSection::Command, &instruction_pattern);
     if (!cmd_result) {
         return pup::unexpected<Error>(cmd_result.error());
     }
@@ -2292,7 +2293,7 @@ auto expand_rule(
     }
 
     if (eff_display) {
-        auto disp_result = expand_command(ctx, *eff_display, flags, *outputs);
+        auto disp_result = expand_command(ctx, *eff_display, flags, *outputs, parser::PatternSection::Display);
         if (!disp_result) {
             return pup::unexpected<Error>(disp_result.error());
         }
@@ -3059,12 +3060,6 @@ auto finalize_graph(
     for (auto const& [key, members] : accumulated) {
         auto command_id = static_cast<NodeId>(key >> 32);
         auto name_id = static_cast<StringId>(key & 0xFFFFFFFF);
-        auto group_name = str(name_id);
-        auto pat_buf = Buf {};
-        pat_buf += "%<";
-        pat_buf += group_name;
-        pat_buf += '>';
-        auto pattern_sv = pat_buf.view();
 
         auto* cmd_node = get_command_node(g, command_id);
         if (!cmd_node) {
@@ -3123,21 +3118,6 @@ auto finalize_graph(
                 }
             }
             cmd_node->instruction = std::move(rewritten);
-        }
-
-        auto display_sv = str(cmd_node->display);
-        if (display_sv.find(pattern_sv) != std::string_view::npos) {
-            auto result = Buf {};
-            auto pos = display_sv.find(pattern_sv);
-            std::size_t last = 0;
-            while (pos != std::string_view::npos) {
-                result += display_sv.substr(last, pos - last);
-                result += replacement.view();
-                last = pos + pattern_sv.size();
-                pos = display_sv.find(pattern_sv, last);
-            }
-            result += display_sv.substr(last);
-            cmd_node->display = intern(result.view());
         }
     }
 
