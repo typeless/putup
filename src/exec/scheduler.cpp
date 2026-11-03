@@ -157,7 +157,7 @@ auto parse_stdout_depfile(
     BuildJob const& job,
     std::string_view stdout_sv,
     Vec<StringId>& out_deps,
-    NodeId& out_deps_cmd,
+    std::optional<NodeId>& out_deps_cmd,
     bool& out_rejected
 ) -> void
 {
@@ -256,7 +256,7 @@ auto discover_d_file_deps(
             for (auto dep_id : depfile_result->dependencies) {
                 result.discovered_deps.push_back(dep_id);
             }
-            if (result.deps_for_command == INVALID_NODE_ID) {
+            if (!result.deps_for_command) {
                 result.deps_for_command = job.id;
             }
         }
@@ -734,7 +734,7 @@ auto Scheduler::build_job_list(
         // Check if this is a generated rule that captures stdout
         auto capture_stdout = graph::is_stdout_capture(g, id);
         auto inject_implicit = capture_stdout && graph::get<graph::OutputAction>(g, id) == graph::OutputAction::InjectImplicitDeps;
-        auto parent_cmd = inject_implicit ? graph::get_parent_command(g, id) : INVALID_NODE_ID;
+        auto parent_cmd = inject_implicit ? graph::get_parent_command(g, id) : std::nullopt;
 
         // Expand command from instruction pattern + operands
         auto cmd_id = graph::expand_instruction(g, id, cache, source_root_sv, config_root_sv);
@@ -1084,7 +1084,7 @@ auto Scheduler::execute_parallel(
 
             // Parse depfile from stdout BEFORE reap clears the buffer
             auto stdout_deps = Vec<StringId> {};
-            auto stdout_deps_cmd = INVALID_NODE_ID;
+            auto stdout_deps_cmd = std::optional<NodeId> {};
             auto scan_rejected = false;
             parse_stdout_depfile(job, slot.stdout_buf.view(), stdout_deps, stdout_deps_cmd, scan_rejected);
 

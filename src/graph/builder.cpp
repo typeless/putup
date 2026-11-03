@@ -1514,9 +1514,10 @@ auto ensure_env_var_node(
     std::string_view value
 ) -> std::optional<NodeId>
 {
-    if (state.env_var_dir_id == INVALID_NODE_ID) {
+    if (!state.env_var_dir_id) {
         return std::nullopt;
     }
+    auto const env_var_dir_id = *state.env_var_dir_id;
     auto var_name_id = to_underlying(intern(var_name));
     auto node_name_buf = Buf {};
     node_name_buf += var_name;
@@ -1527,7 +1528,7 @@ auto ensure_env_var_node(
 
     if (auto const* existing_node_id = state.imported_env_var_nodes.find(var_name_id)) {
         auto* existing = get_file_node(ctx.state->graph, *existing_node_id);
-        auto const* env_var_dir = get_file_node(ctx.state->graph, state.env_var_dir_id);
+        auto const* env_var_dir = get_file_node(ctx.state->graph, env_var_dir_id);
         if (existing && env_var_dir && existing->name != name_id) {
             existing->name = name_id;
             existing->path_id = ctx.state->graph.paths.intern(env_var_dir->path_id, name_id);
@@ -1539,7 +1540,7 @@ auto ensure_env_var_node(
     auto node = FileNode {
         .type = NodeType::Variable,
         .name = name_id,
-        .parent_dir = state.env_var_dir_id,
+        .parent_dir = env_var_dir_id,
         .content_hash = content_hash,
     };
     auto result = add_file_node(ctx.state->graph, std::move(node));
@@ -2769,8 +2770,8 @@ auto add_tupfile(
         }
     }
 
-    if (state.env_var_dir_id == INVALID_NODE_ID) {
-        if (auto existing = find_by_dir_name(build_state.graph, NodeId { 0 }, "$")) {
+    if (!state.env_var_dir_id) {
+        if (auto existing = find_by_dir_name(build_state.graph, SOURCE_ROOT_ID, "$")) {
             state.env_var_dir_id = *existing;
         } else {
             auto env_dir_node = FileNode {
@@ -2785,7 +2786,7 @@ auto add_tupfile(
         }
     }
 
-    if (state.toolchain_node_id == INVALID_NODE_ID && eval.config_vars) {
+    if (!state.toolchain_node_id && eval.config_vars) {
         auto tracked = eval.config_vars->get("TRACKED_TOOLS");
         if (!tracked.empty()) {
             auto fingerprint = Buf {};
@@ -2807,8 +2808,8 @@ auto add_tupfile(
             }
         }
     }
-    if (state.toolchain_node_id != INVALID_NODE_ID) {
-        ctx.sticky_sources.push_back(state.toolchain_node_id);
+    if (state.toolchain_node_id) {
+        ctx.sticky_sources.push_back(*state.toolchain_node_id);
     }
 
     eval.string_pool = &global_pool();

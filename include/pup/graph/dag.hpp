@@ -53,8 +53,8 @@ struct FileNode {
 
 /// Guard entry - a condition and the polarity (true/false) required for this guard
 struct Guard {
-    NodeId condition = INVALID_NODE_ID; ///< Condition node ID
-    bool polarity = true;               ///< True if condition must be true, false if must be false
+    NodeId condition;     ///< Condition node ID
+    bool polarity = true; ///< True if condition must be true, false if must be false
 
     auto operator==(Guard const& other) const -> bool = default;
 };
@@ -79,7 +79,7 @@ struct CommandNode {
 
     std::optional<GeneratedOutput> generated_output = {}; ///< Output specification
     OutputAction output_action = {};                      ///< What to do with output
-    NodeId parent_command = INVALID_NODE_ID;              ///< Parent command for InjectImplicitDeps
+    std::optional<NodeId> parent_command = {};            ///< Parent command for InjectImplicitDeps
 
     Vec<Guard> guards = {};
 };
@@ -88,9 +88,9 @@ struct CommandNode {
 /// Used for phi-node model: both branches are in graph, guards determine which executes
 struct ConditionNode {
     NodeId id = 0;
-    StringId expression = StringId::Empty;   ///< String representation of condition
-    bool current_value = false;              ///< Evaluated at graph time
-    NodeId config_var_dep = INVALID_NODE_ID; ///< Config var this depends on (if any)
+    StringId expression = StringId::Empty;     ///< String representation of condition
+    bool current_value = false;                ///< Evaluated at graph time
+    std::optional<NodeId> config_var_dep = {}; ///< Config var this depends on (if any)
 };
 
 /// Phi node - merges outputs from conditional branches
@@ -98,11 +98,11 @@ struct ConditionNode {
 /// the phi node resolves to the active branch's output
 struct PhiNode {
     NodeId id = 0;
-    StringId name = StringId::Empty;      ///< Canonical output name
-    NodeId parent_dir = 0;                ///< Parent directory
-    NodeId condition = INVALID_NODE_ID;   ///< The condition determining which output to use
-    NodeId then_output = INVALID_NODE_ID; ///< Output when condition is true
-    NodeId else_output = INVALID_NODE_ID; ///< Output when condition is false
+    StringId name = StringId::Empty; ///< Canonical output name
+    NodeId parent_dir = 0;           ///< Parent directory
+    NodeId condition;                ///< The condition determining which output to use
+    NodeId then_output;              ///< Output when condition is true
+    NodeId else_output;              ///< Output when condition is false
 };
 
 /// Build graph - DAG of nodes and edges (plain data struct)
@@ -244,7 +244,7 @@ auto get_parent_dir(Graph const& graph, NodeId id) -> NodeId;
 
 /// Get the parent command for InjectImplicitDeps commands
 [[nodiscard]]
-auto get_parent_command(Graph const& graph, NodeId id) -> NodeId;
+auto get_parent_command(Graph const& graph, NodeId id) -> std::optional<NodeId>;
 
 /// Check if a command captures stdout (generated rule with Stdout output type)
 [[nodiscard]]

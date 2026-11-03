@@ -350,10 +350,10 @@ auto view<ExportedVars>(Graph const& graph, NodeId id) -> SortedIdVec const&
     return node ? node->exported_vars : empty;
 }
 
-auto get_parent_command(Graph const& graph, NodeId id) -> NodeId
+auto get_parent_command(Graph const& graph, NodeId id) -> std::optional<NodeId>
 {
     auto const* node = get_command_node(graph, id);
-    return node ? node->parent_command : INVALID_NODE_ID;
+    return node ? node->parent_command : std::nullopt;
 }
 
 auto is_stdout_capture(Graph const& graph, NodeId id) -> bool
@@ -1098,8 +1098,8 @@ auto compute_command_key(Graph const& graph, NodeId cmd_id, PathCache& cache) ->
     state = sha256_update(state, std::span<std::byte const> { &SEP, 1 });
     state = sha256_update(state, pool.get(get<SourceDir>(graph, cmd_id)));
 
-    if (auto parent = get_parent_command(graph, cmd_id); parent != INVALID_NODE_ID) {
-        auto parent_key = compute_command_key(graph, parent, cache);
+    if (auto parent = get_parent_command(graph, cmd_id)) {
+        auto parent_key = compute_command_key(graph, *parent, cache);
         state = sha256_update(state, std::span<std::byte const> { &SEP, 1 });
         state = sha256_update(state, std::span<std::byte const> { parent_key.data(), parent_key.size() });
     }
@@ -1275,7 +1275,7 @@ auto collect_affected_commands(
 
     for (auto cmd_id : nodes_of_type(graph, NodeType::Command)) {
         auto parent = get_parent_command(graph, cmd_id);
-        if (parent != INVALID_NODE_ID && affected.contains(parent)) {
+        if (parent && affected.contains(*parent)) {
             affected.set(cmd_id, 1);
         }
     }

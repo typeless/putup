@@ -31,9 +31,9 @@ struct BuildJob {
     Vec<StringId> exported_vars = {};     ///< Env vars to export to command
 
     // For auto-generated rules (from pattern matching)
-    bool capture_stdout = false;             ///< Capture stdout for depfile parsing
-    bool inject_implicit_deps = false;       ///< Parse stdout as depfile
-    NodeId parent_command = INVALID_NODE_ID; ///< Parent command for implicit deps
+    bool capture_stdout = false;               ///< Capture stdout for depfile parsing
+    bool inject_implicit_deps = false;         ///< Parse stdout as depfile
+    std::optional<NodeId> parent_command = {}; ///< Parent command for implicit deps
 
     // For phi-node model: true if all guards are satisfied
     bool guard_active = true;
@@ -46,8 +46,8 @@ struct JobResult {
     int exit_code = 0;
     StringId output = StringId::Empty;
     std::chrono::milliseconds duration = {};
-    Vec<StringId> discovered_deps = {};        ///< Implicit deps from .d files
-    NodeId deps_for_command = INVALID_NODE_ID; ///< If set, deps belong to this command (not id)
+    Vec<StringId> discovered_deps = {};          ///< Implicit deps from .d files
+    std::optional<NodeId> deps_for_command = {}; ///< If set, deps belong to this command (not id)
 };
 
 /// Callback types for scheduler events

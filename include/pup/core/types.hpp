@@ -15,9 +15,8 @@ namespace pup {
 /// reused within a run.
 using NodeId = std::uint32_t;
 
-/// Sentinel for "no node exists" / "no parent" (top-level nodes have parent_dir = 0)
-inline constexpr auto INVALID_NODE_ID = NodeId { 0 };
-inline constexpr auto SOURCE_ROOT_ID = INVALID_NODE_ID;
+/// Source root node ID (parent of top-level source files and directories)
+inline constexpr auto SOURCE_ROOT_ID = NodeId { 0 };
 
 /// Build root node ID (parent of Generated/Ghost nodes in variant builds)
 inline constexpr auto BUILD_ROOT_ID = NodeId { 1 };
@@ -256,8 +255,8 @@ constexpr auto names_link_type(std::uint8_t value) -> bool
 /// discovered dependency is recorded only in the index, so both the router that decides who runs
 /// and the scheduler that decides in what order have to be told about it separately (#276, #277).
 struct OrderingEdge {
-    NodeId producer = INVALID_NODE_ID;
-    NodeId consumer = INVALID_NODE_ID;
+    NodeId producer;
+    NodeId consumer;
 };
 
 /// Node state flags (bitmask)

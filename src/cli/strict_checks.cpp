@@ -145,7 +145,7 @@ auto check_unscanned_compiles(
     auto commands = graph::nodes_of_type(graph, NodeType::Command);
 
     for (auto id : commands) {
-        if (graph::get_parent_command(graph, id) != INVALID_NODE_ID) {
+        if (graph::get_parent_command(graph, id)) {
             continue;
         }
 

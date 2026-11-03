@@ -9,13 +9,14 @@
 #include "pup/core/vec.hpp"
 
 #include <cstdint>
+#include <optional>
 
 namespace pup::graph {
 
 /// Information about a matched command for rule generation
 struct CommandInfo {
     // check_unscanned_compiles calls match_and_generate with only command/node_id/working_dir populated; a scanner consuming other fields must extend that check.
-    NodeId node_id = INVALID_NODE_ID;
+    NodeId node_id;
     StringId command = StringId::Empty;
     StringId display = StringId::Empty;
     Vec<StringId> inputs;
@@ -50,7 +51,7 @@ struct GeneratedRule {
     StringId display = StringId::Empty;
     Vec<GeneratedOutput> outputs;
     OutputAction action = OutputAction::Normal;
-    NodeId parent_command = INVALID_NODE_ID;   ///< For InjectImplicitDeps
+    std::optional<NodeId> parent_command = {}; ///< For InjectImplicitDeps
     StringId covered_object = StringId::Empty; ///< The parent's object this rule records headers for
 };
 

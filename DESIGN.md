@@ -114,13 +114,15 @@ Output files
 
 ```cpp
 using NodeId = std::uint32_t;
-constexpr NodeId INVALID_NODE_ID = 0;  // Sentinel for "no parent" (source root level)
 constexpr NodeId SOURCE_ROOT_ID = 0;   // Parent of source files and directories
 constexpr NodeId BUILD_ROOT_ID = 1;    // Parent of Generated/Ghost nodes (variant builds)
 ```
 
-Note: `INVALID_NODE_ID` and `SOURCE_ROOT_ID` are both 0, used interchangeably. Top-level
-source files have parent=0, meaning they're at source root level. For variant builds,
+Both roots are live Directory nodes, built by `make_graph` at `files[0]` and `files[1]`, so
+a lookup that lands on a root reads a real node. Top-level source files have parent=0. The
+node enumerators (`all_nodes`, `nodes_of_type`) start at 1 and the index has no entry for
+the source root, so a parent id of 0 means the source root on both sides. There is no
+"no node" id: a field that may name no node is `std::optional<NodeId>`. For variant builds,
 Generated/Ghost nodes are stored under `BUILD_ROOT_ID` at source-relative paths.
 
 ### Content Hash
@@ -564,7 +566,7 @@ struct FileNode {
 
 /// Guard entry - condition + required polarity
 struct Guard {
-    NodeId condition = INVALID_NODE_ID;  // Condition node ID
+    NodeId condition;                    // Condition node ID
     bool polarity = true;                // True if condition must be true
 };
 
@@ -580,7 +582,7 @@ struct CommandNode {
     SortedIdVec exported_vars = {};            // Env vars to export (interned StringIds)
     std::optional<GeneratedOutput> generated_output = {};  // Output specification
     OutputAction output_action = {};           // What to do with output
-    NodeId parent_command = INVALID_NODE_ID;   // Parent command for InjectImplicitDeps
+    std::optional<NodeId> parent_command = {}; // Parent command for InjectImplicitDeps
 
     // Guards for conditional execution (phi-node model)
     // ALL guards must be satisfied for command to execute
@@ -598,7 +600,7 @@ struct ConditionNode {
     NodeId id = 0;
     StringId expression = StringId::Empty;     // String representation of condition
     bool current_value = false;                // Evaluated at graph time
-    NodeId config_var_dep = INVALID_NODE_ID;   // Config var this depends on (if any)
+    std::optional<NodeId> config_var_dep = {}; // Config var this depends on (if any)
 };
 
 /// Phi node - merges outputs from conditional branches
@@ -608,9 +610,9 @@ struct PhiNode {
     NodeId id = 0;
     StringId name = StringId::Empty;       // Canonical output name
     NodeId parent_dir = 0;                 // Parent directory
-    NodeId condition = INVALID_NODE_ID;    // The condition determining which output
-    NodeId then_output = INVALID_NODE_ID;  // Output when condition is true
-    NodeId else_output = INVALID_NODE_ID;  // Output when condition is false
+    NodeId condition;                      // The condition determining which output
+    NodeId then_output;                    // Output when condition is true
+    NodeId else_output;                    // Output when condition is false
 };
 
 struct Edge {
@@ -895,7 +897,7 @@ struct GeneratedRule {
     StringId display;
     Vec<GeneratedOutput> outputs;
     OutputAction action = OutputAction::Normal;
-    NodeId parent_command = INVALID_NODE_ID;
+    std::optional<NodeId> parent_command = {};
 };
 ```
 
@@ -1182,7 +1184,7 @@ struct BuildJob {
     // For auto-generated rules (from pattern matching)
     bool capture_stdout = false;             // Capture stdout for depfile parsing
     bool inject_implicit_deps = false;       // Parse stdout as depfile
-    NodeId parent_command = INVALID_NODE_ID; // Parent command for implicit deps
+    std::optional<NodeId> parent_command = {}; // Parent command for implicit deps
 
     // Phi-node model: evaluated at schedule time from CommandNode.guards
     bool guard_active = true;  // True if all guards satisfied, job skipped if false
@@ -1195,7 +1197,7 @@ struct JobResult {
     StringId output = StringId::Empty;
     std::chrono::milliseconds duration = {};
     Vec<StringId> discovered_deps = {};        // Implicit deps from .d files
-    NodeId deps_for_command = INVALID_NODE_ID; // If set, deps belong to this command (not id)
+    std::optional<NodeId> deps_for_command = {}; // If set, deps belong to this command (not id)
 };
 
 struct BuildStats {

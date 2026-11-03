@@ -2332,11 +2332,11 @@ TEST_CASE("GraphBuilder records each command at the line of the rule that declar
         auto const location = get<SourcePosition>(bs.graph, id);
         CHECK(sv(location.file) == tupfile);
         auto const parent = get_parent_command(bs.graph, id);
-        if (parent == INVALID_NODE_ID) {
+        if (!parent) {
             rule_lines.push_back(location.line);
         } else {
             ++scans;
-            CHECK(location == get<SourcePosition>(bs.graph, parent));
+            CHECK(location == get<SourcePosition>(bs.graph, *parent));
         }
     }
     std::ranges::sort(rule_lines);

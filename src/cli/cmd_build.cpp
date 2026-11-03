@@ -853,24 +853,24 @@ auto serialize_edges(
     pup::NodeIdMap32 const& cmd_remap
 ) -> void
 {
-    auto remap_endpoint = [&cmd_remap](pup::NodeId id) -> pup::NodeId {
+    auto remap_endpoint = [&cmd_remap](pup::NodeId id) -> std::optional<pup::NodeId> {
         if (!pup::node_id::is_command(id)) {
             return id;
         }
         if (!cmd_remap.contains(id)) {
-            return pup::INVALID_NODE_ID;
+            return std::nullopt;
         }
         return pup::node_id::make_command(cmd_remap.get(id));
     };
     for (auto const& edge : state.graph.edges) {
         auto from = remap_endpoint(edge.from);
         auto to = remap_endpoint(edge.to);
-        if (from == pup::INVALID_NODE_ID || to == pup::INVALID_NODE_ID) {
+        if (!from || !to) {
             continue;
         }
         index.add_edge(pup::index::EdgeEntry {
-            .from = from,
-            .to = to,
+            .from = *from,
+            .to = *to,
             .type = edge.type,
         });
     }
@@ -1287,26 +1287,26 @@ auto merge_out_of_scope_commands(
 
     auto new_lookup = index_command_lookup(ctx.index);
 
-    auto find_new_id_by_path = [&](StringId path) -> pup::NodeId {
+    auto find_new_id_by_path = [&](StringId path) -> std::optional<pup::NodeId> {
         if (auto found = ctx.path_to_id.find(path)) {
             return *found;
         }
-        return pup::INVALID_NODE_ID;
+        return std::nullopt;
     };
 
     auto old_to_new_file = pup::NodeIdMap32 {};
-    auto resolve_file = [&](pup::NodeId old_id) -> pup::NodeId {
+    auto resolve_file = [&](pup::NodeId old_id) -> std::optional<pup::NodeId> {
         if (old_to_new_file.contains(old_id)) {
             return pup::NodeId { old_to_new_file.get(old_id) };
         }
         auto const* old_file = old_index.find_file_by_id(old_id);
         if (!old_file || pup::is_empty(old_file->path)) {
-            return pup::INVALID_NODE_ID;
+            return std::nullopt;
         }
         auto path_sv = pool.get(old_file->path);
         auto new_id = pup::NodeId {};
-        if (auto existing = find_new_id_by_path(old_file->path); existing != pup::INVALID_NODE_ID) {
-            new_id = existing;
+        if (auto existing = find_new_id_by_path(old_file->path)) {
+            new_id = *existing;
         } else {
             auto parent_id = get_or_create_dir(ctx, pup::path::parent(path_sv));
             new_id = ctx.next_id++;
@@ -1334,10 +1334,10 @@ auto merge_out_of_scope_commands(
             return false;
         }
         auto new_id = find_new_id_by_path(old_file->path);
-        if (new_id == pup::INVALID_NODE_ID) {
+        if (!new_id) {
             return false;
         }
-        auto const* new_file = ctx.index.find_file_by_id(new_id);
+        auto const* new_file = ctx.index.find_file_by_id(*new_id);
         return new_file && new_file->content_hash != old_file->content_hash;
     };
     auto any_dep_changed = [&](pup::index::CommandEntry const& cmd) -> bool {
@@ -1376,11 +1376,11 @@ auto merge_out_of_scope_commands(
         auto must_rerun = cmd.must_rerun || any_dep_changed(cmd);
 
         auto unresolved = false;
-        auto new_dir_id = pup::NodeId { 0 };
-        if (cmd.dir_id != pup::NodeId { 0 }) {
-            new_dir_id = resolve_file(cmd.dir_id);
-            if (new_dir_id == pup::INVALID_NODE_ID) {
-                new_dir_id = pup::NodeId { 0 };
+        auto new_dir_id = pup::SOURCE_ROOT_ID;
+        if (cmd.dir_id != pup::SOURCE_ROOT_ID) {
+            if (auto resolved = resolve_file(cmd.dir_id)) {
+                new_dir_id = *resolved;
+            } else {
                 unresolved = true;
             }
         }
@@ -1393,11 +1393,11 @@ auto merge_out_of_scope_commands(
             for (auto token = std::uint32_t { 1 }; token <= old_ids.token_count(); ++token) {
                 for (auto old_id : old_ids.token(token)) {
                     auto id = resolve_file(old_id);
-                    if (id == pup::INVALID_NODE_ID) {
+                    if (!id) {
                         unresolved = true;
                         continue;
                     }
-                    kept_ids.push_back(id);
+                    kept_ids.push_back(*id);
                     kept_tokens.push_back(token);
                 }
             }
@@ -1436,21 +1436,24 @@ auto merge_out_of_scope_commands(
         if (!from_is_merged && !to_is_merged) {
             continue;
         }
-        auto remap_endpoint = [&](pup::NodeId id) -> pup::NodeId {
+        auto remap_endpoint = [&](pup::NodeId id) -> std::optional<pup::NodeId> {
             if (pup::node_id::is_command(id)) {
-                return old_to_new_cmd.contains(id) ? pup::NodeId { old_to_new_cmd.get(id) } : pup::INVALID_NODE_ID;
+                if (!old_to_new_cmd.contains(id)) {
+                    return std::nullopt;
+                }
+                return pup::NodeId { old_to_new_cmd.get(id) };
             }
             return resolve_file(id);
         };
         auto from = remap_endpoint(edge.from);
         auto to = remap_endpoint(edge.to);
-        if (from == pup::INVALID_NODE_ID || to == pup::INVALID_NODE_ID) {
+        if (!from || !to) {
             continue;
         }
-        if (ctx.added_edges.insert(from, to)) {
+        if (ctx.added_edges.insert(*from, *to)) {
             ctx.index.add_edge(pup::index::EdgeEntry {
-                .from = from,
-                .to = to,
+                .from = *from,
+                .to = *to,
                 .type = edge.type,
             });
         }
@@ -2404,8 +2407,8 @@ auto build_single_variant(
                 pup::exec::finalize_progress(prev_lines);
             }
             veprint(variant_name, "FAILED: {}\n", pool.get(job.command));
-            if (job.parent_command != pup::INVALID_NODE_ID) {
-                veprint(variant_name, "  dependency scan for: {}\n", pool.get(pup::graph::expand_instruction(bs.graph, job.parent_command, bs.path_cache, source_root_str, config_root_str)));
+            if (job.parent_command) {
+                veprint(variant_name, "  dependency scan for: {}\n", pool.get(pup::graph::expand_instruction(bs.graph, *job.parent_command, bs.path_cache, source_root_str, config_root_str)));
             }
             if (!pup::is_empty(job_result.output)) {
                 auto output_sv = pool.get(job_result.output);
@@ -2413,9 +2416,7 @@ auto build_single_variant(
             }
         }
 
-        auto target_id = job_result.deps_for_command != pup::INVALID_NODE_ID
-            ? job_result.deps_for_command
-            : job.id;
+        auto target_id = job_result.deps_for_command.value_or(job.id);
         if (job_result.success) {
             executed_cmds.push_back(target_id);
         }
