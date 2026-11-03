@@ -49,9 +49,9 @@ srcs += yn.c zeta.c zeta_ui.c
 
 # get_patches.c - empty patch list (generated here, not from source tree)
 : |> ^ GEN %o^ printf '#include <stddef.h>\nconst char * const mpfr_patches[] = { NULL };\n' > %o |> get_patches.c
-: get_patches.c |> !cc |> <objs>
+: get_patches.c |> !cc |> %B.o <objs>
 
-: foreach $(srcs) |> !cc |> <objs>
+: foreach $(srcs) |> !cc |> %B.o <objs>
 
 # Archive
 : <objs> |> ^ AR %o^ $(AR) rcs %o %<objs> |> libmpfr.a $(S)/<libs>

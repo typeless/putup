@@ -102,11 +102,12 @@ selects by, so that `%No` for the group's position expands to nothing.
 ### REQ-GROUPREF-MACRO-OUTPUT-GROUP
 
 - conformance: tup-conformant
-- reference: upstream's `parse_bang_rule_internal` (`src/tup/parser.c`) copies the macro's outputs into the rule only when the rule writes none, and the macro's `<m>` is one of those output words, so a rule writing its own outputs leaves the macro's group out; the macro's extra outputs are copied always, so a group among them applies either way. putup applied a group written in the macro's outputs whenever the rule named no group of its own, so the rule's outputs joined the macro's group
+- reference: upstream's `parse_bang_rule_internal` (`src/tup/parser.c`) copies the macro's outputs into the rule only when the rule writes none, and the macro's `<m>` is one of those output words, so a rule writing its own outputs leaves the macro's group out; the macro's extra outputs are copied always, so a group among them applies either way. A group word is itself one of the rule's outputs (`get_path_list` adds every word to `r->outputs`), so a rule whose only output word is `<g>` also leaves out the macro's files. putup applied a group written in the macro's outputs whenever the rule named no group of its own, so the rule's outputs joined the macro's group, and a rule writing only a group took the macro's files
 - discharge: test "Scenario: A bang macro's output group goes with the macro's outputs"
+- discharge: test "Scenario: A rule whose only output word is a group leaves out the bang macro's outputs"
 
-When a rule that calls a bang macro writes outputs of its own, putup shall leave out the output
-group the macro's outputs name.
+When a rule that calls a bang macro writes outputs of its own, a group word among them included,
+putup shall leave out the macro's outputs and the output group they name.
 
 ### REQ-GROUPREF-OUTPUT-DIR-GLUED
 

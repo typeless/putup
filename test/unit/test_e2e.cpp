@@ -9361,6 +9361,47 @@ SCENARIO("A bang macro's output group goes with the macro's outputs", "[e2e][gro
     }
 }
 
+SCENARIO("A rule whose only output word is a group leaves out the bang macro's outputs", "[e2e][groups][macro]")
+{
+    GIVEN("a macro whose command writes %o into b.txt, called by a rule whose outputs are only <r>")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", "!m = |> echo hi > %o |> b.txt\n: |> !m |> <r>\n");
+
+        WHEN("the project is parsed")
+        {
+            auto result = f.parse();
+
+            THEN("parsing fails because the command's %o has no outputs")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("Tupfile:2") != std::string::npos);
+                REQUIRE(result.stderr_output.find("%o used in rule pattern and no output files were specified") != std::string::npos);
+            }
+        }
+    }
+
+    GIVEN("the same macro called by a rule that writes b.txt and <r>")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", "!m = |> echo hi > %o |> b.txt\n: |> !m |> b.txt <r>\n: <r> |> echo [%<r>] > %o |> y.txt\n");
+        REQUIRE(f.init().success());
+
+        WHEN("built")
+        {
+            auto result = f.build();
+
+            THEN("the group holds b.txt")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("y.txt") == "[b.txt]\n");
+            }
+        }
+    }
+}
+
 SCENARIO("Percent flags inside an output group's name expand against the rule", "[e2e][groups][flags]")
 {
     auto const group_word = GENERATE(as<std::string> {}, "<%B>", "$(G)");
