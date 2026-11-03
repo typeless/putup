@@ -123,10 +123,13 @@ auto parse_group_reference(
     if (lt_pos == std::string_view::npos) {
         return std::optional<GroupReference> {};
     }
-    auto group_name = path.substr(lt_pos + 1, path.size() - lt_pos - 2);
-    if ((lt_pos != 0 && path[lt_pos - 1] != '/') || !path.ends_with('>') || lt_pos + 2 >= path.size()
-        || group_name.find_first_of("<>") != std::string_view::npos) {
+    if ((lt_pos != 0 && path[lt_pos - 1] != '/') || !path.ends_with('>') || lt_pos + 1 == path.size()
+        || path.find_first_of("<>", lt_pos + 1) != path.size() - 1) {
         return make_error<std::optional<GroupReference>>(ErrorCode::ParseError, "A group must be a whole path element, as <name> or dir/<name>");
+    }
+    auto group_name = path.substr(lt_pos + 1, path.size() - lt_pos - 2);
+    if (group_name.empty()) {
+        return make_error<std::optional<GroupReference>>(ErrorCode::ParseError, "A group needs a name between '<' and '>'");
     }
     auto dir_part = path.substr(0, lt_pos);
     auto group_dir = normalize_group_dir(dir_part, current_dir, source_root);
@@ -949,6 +952,7 @@ auto atoms_from_generated_text(std::string_view text) -> Instruction
 /// later extra-outputs section names the declared text, since the result is joined with the rule's
 /// directory again -- the full path would double that prefix.
 struct ExpandedOutputs {
+    Vec<GroupReference> groups; ///< Output groups named by words that expanded to <name> or dir/<name>
     Vec<PathId> ids;
     Vec<StringId> declared;
     Vec<std::uint32_t> tokens;     ///< For each id, the number of the written token it came from
@@ -1118,10 +1122,15 @@ auto expand_outputs(
                 return pup::unexpected<Error>(error);
             }
             auto output_path_sv = pool.get(*expanded);
-            if (auto group_ref = parse_group_reference(output_path_sv, str(ctx.current_dir), str(ctx.options.source_root)); !group_ref) {
+            auto group_ref = parse_group_reference(output_path_sv, str(ctx.current_dir), str(ctx.options.source_root));
+            if (!group_ref) {
                 auto error = group_ref.error();
                 error.location = SourcePosition { .file = ctx.current_file, .line = pattern.location.line };
                 return pup::unexpected<Error>(error);
+            }
+            if (*group_ref) {
+                result.groups.push_back(**group_ref);
+                continue;
             }
 
             auto full_output_path_sv = pool.get(pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), output_path_sv))));
@@ -2277,6 +2286,28 @@ auto expand_rule(
         return pup::unexpected<Error>(extra_outputs.error());
     }
 
+    auto output_group = std::optional<GroupReference> {};
+    if (eff_output_oo_group) {
+        auto dir = StringId::Empty;
+        if (eff_oo_group_dir) {
+            auto expanded = parser::expand(*ctx.eval, *eff_oo_group_dir);
+            if (expanded) {
+                dir = normalize_group_dir(str(*expanded), str(ctx.current_dir), str(ctx.options.source_root));
+            }
+        }
+        output_group = GroupReference { str(*eff_output_oo_group), dir };
+    }
+    for (auto const* expanded : { &*outputs, &*extra_outputs }) {
+        for (auto const& group : expanded->groups) {
+            if (output_group) {
+                auto err = Buf {};
+                err.fmt("Multiple output groups detected: '<{}>' and '<{}>'", output_group->group_name, group.group_name);
+                return make_error<void>(ErrorCode::ParseError, err.view());
+            }
+            output_group = group;
+        }
+    }
+
     auto cmd_result = expand_command(ctx, eff_command, flags, *outputs, parser::PatternSection::Command, &instruction_pattern);
     if (!cmd_result) {
         return pup::unexpected<Error>(cmd_result.error());
@@ -2468,21 +2499,13 @@ auto expand_rule(
             ctx.groups.get_or_create(gkey).push_back(*output_id);
         }
 
-        if (eff_output_oo_group && is_context_active(ctx)) {
-            auto dir = StringId::Empty;
-
-            if (eff_oo_group_dir) {
-                auto expanded = parser::expand(*ctx.eval, *eff_oo_group_dir);
-                if (expanded) {
-                    dir = normalize_group_dir(str(*expanded), str(ctx.current_dir), str(ctx.options.source_root));
-                }
-            }
-
+        if (output_group && is_context_active(ctx)) {
+            auto dir = output_group->group_dir;
             if (is_empty(dir)) {
                 dir = is_empty(ctx.current_dir) ? intern(".") : ctx.current_dir;
             }
 
-            auto group_id_result = get_or_create_group_node(ctx, state, str(dir), str(*eff_output_oo_group));
+            auto group_id_result = get_or_create_group_node(ctx, state, str(dir), output_group->group_name);
             if (!group_id_result) {
                 return pup::unexpected<Error>(group_id_result.error());
             }

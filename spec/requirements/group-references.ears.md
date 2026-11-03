@@ -79,6 +79,34 @@ If a rule declares a group in a directory whose source or config tree holds an e
 bracketed name, or where the graph already holds a node of another type under that name, then putup
 shall reject the Tupfile and name the group and what the name already holds.
 
+### REQ-GROUPREF-OUTPUT-EXPANDED-WORD
+
+- conformance: tup-conformant
+- reference: upstream's `do_rule_outputs` (`src/tup/parser.c`) evaluates the output list with `eval_path_list` before `new_pl` classifies each word, so a variable expanding to `<g>` or `dir/<g>` declares the rule's output group as the written word would, and a second group, written or expanded, fails with "Multiple output groups detected". upstream's `get_path_list` gives every written output word an `orderid`, the group's word included, and `%No` selects by it, so in `a.txt $(G) b.txt` the output `b.txt` is `%3o`; putup keeps the expanded group's token slot the same way, while a group written in the Tupfile still takes no slot in putup, a divergence this requirement does not cover. putup recognised an output group only as written in the Tupfile, so `G = <g>` with `|> a.txt $(G)` declared a file named `<g>` and the command failed in the shell
+- discharge: test "Scenario: An output group named through a variable collects the rule's outputs"
+
+When a word of a rule's outputs expands to `<name>` or `dir/<name>`, putup shall add the rule's
+outputs to that group, and if the rule then names more than one output group, putup shall reject
+the Tupfile and name two of them.
+
+### REQ-GROUPREF-OUTPUT-DIR-GLUED
+
+- conformance: tup-conformant
+- reference: upstream's `get_path_list` and `next_path` (`src/tup/parser.c`) split the output list at whitespace and `new_pl` classifies each word on its own, so in `notsub/ <g>` the word `notsub/` is an output and `<g>` is the rule directory's group; how upstream names the output `notsub/` (`get_path_elements`) was not read. putup's output parser joined a preceding word ending in `/` to a following `<name>` across the space, declaring the group `notsub/<g>` and dropping `notsub/` from the outputs
+- discharge: test "Scenario: A directory word set apart from an output group is an output of its own"
+
+When a rule's outputs write a word ending in `/` and, after whitespace, a `<name>`, putup shall
+read the word as an output and `<name>` as the group of the rule's directory.
+
+### REQ-GROUPREF-NAMED
+
+- conformance: deliberate-deviation
+- reference: upstream's `new_pl` (`src/tup/parser.c`) accepts `<>` as a group named `<>`, and the updater's `expand_command` (`src/tup/updater.c`) takes the group name from `%<` through `>` inclusive, so `%<>` reaches that group and no other: upstream handles the empty name consistently. putup refuses it in every section, written or reached through a variable, because a reference with nothing between its brackets is a misspelling far more often than a name, and refusing it costs a Tupfile that meant it one rename. Before the refusal a written `<>` in the inputs failed with "Malformed group reference in inputs: './<>'", in the outputs beside another output it was accepted as a group with an empty name, and one reached through a variable was refused as not a whole path element
+- discharge: test "Scenario: A group with an empty name is refused"
+
+If a rule's inputs, order-only inputs or outputs name a group with nothing between `<` and `>`,
+then putup shall reject the Tupfile.
+
 ## Group: bins
 
 Which `{bin}` a rule may name in its inputs or order-only inputs.

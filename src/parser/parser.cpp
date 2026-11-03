@@ -85,6 +85,11 @@ auto refuse_group_inside_word() -> Error
     return Error { ErrorCode::ParseError, "A group must be a whole path element, as <name> or dir/<name>" };
 }
 
+auto refuse_unnamed_group() -> Error
+{
+    return Error { ErrorCode::ParseError, "A group needs a name between '<' and '>'" };
+}
+
 auto advance(ParserState& s) -> Token
 {
     s.previous = s.current;
@@ -578,15 +583,8 @@ auto parse_rule_body(ParserState& s) -> Result<RuleBody>
             if (!lit || !global_pool().get(lit->value).ends_with('/')) {
                 return pup::unexpected<Error>(refuse_group_inside_word());
             }
-        }
-        if (!section.empty() && !section.back().path.parts.empty()) {
-            if (auto* lit = std::get_if<Expression::Literal>(&section.back().path.parts.back())) {
-                auto lit_sv = global_pool().get(lit->value);
-                if (!lit_sv.empty() && lit_sv.back() == '/') {
-                    dir = std::move(section.back().path);
-                    section.pop_back();
-                }
-            }
+            dir = std::move(section.back().path);
+            section.pop_back();
         }
         auto name = StringId::Empty;
         if (check(s, TokenType::Identifier) || check(s, TokenType::Text)) {
@@ -596,6 +594,9 @@ auto parse_rule_body(ParserState& s) -> Result<RuleBody>
         auto close = expect(s, TokenType::CloseAngle, "Expected '>' after group name");
         if (!close) {
             return pup::unexpected<Error>(close.error());
+        }
+        if (name == StringId::Empty) {
+            return pup::unexpected<Error>(refuse_unnamed_group());
         }
         if (current_touches_previous(s) && !s.current.is_one_of(TokenType::Pipe, TokenType::Newline, TokenType::Eof)) {
             return pup::unexpected<Error>(refuse_group_inside_word());
@@ -937,6 +938,9 @@ auto parse_path_pattern(ParserState& s, bool stop_at_angle) -> Result<PathPatter
         }
         if (!match(s, TokenType::CloseAngle)) {
             return pup::make_error<PathPattern>(ErrorCode::ParseError, "Expected '>' after group name");
+        }
+        if (pattern.group_name == StringId::Empty) {
+            return pup::unexpected<Error>(refuse_unnamed_group());
         }
         if (current_touches_previous(s) && !s.current.is_one_of(TokenType::Pipe, TokenType::PipeArrow, TokenType::Newline, TokenType::Eof)) {
             return pup::unexpected<Error>(refuse_group_inside_word());

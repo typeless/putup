@@ -9203,6 +9203,109 @@ SCENARIO("A group spelled inside a longer path word is refused", "[e2e][parse][g
     }
 }
 
+SCENARIO("An output group named through a variable collects the rule's outputs", "[e2e][groups]")
+{
+    GIVEN("a rule whose output list ends in a variable holding <g>, and a rule reading <g>")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile",
+            "G = <g>\n"
+            ": |> echo hi > %o |> a.txt $(G)\n"
+            ": <g> |> cat %<g> > %o |> b.txt\n");
+        REQUIRE(f.init().success());
+
+        WHEN("built")
+        {
+            auto result = f.build();
+
+            THEN("the reader splices the first rule's output")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("b.txt") == "hi\n");
+            }
+        }
+    }
+
+    GIVEN("a rule naming one output group in its text and another through a variable")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile",
+            "G = <g>\n"
+            ": |> touch %o |> a.txt <h> $(G)\n");
+
+        WHEN("the project is parsed")
+        {
+            auto result = f.parse();
+
+            THEN("parsing fails naming both groups")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("Multiple output groups detected: '<h>' and '<g>'") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("A group with an empty name is refused", "[e2e][parse][groups]")
+{
+    auto const rule = GENERATE(as<std::string> {},
+        ": |> touch %o |> x.txt <>\n",
+        ": <> |> touch %o |> y.txt\n",
+        ": | <> |> touch %o |> y.txt\n",
+        ": |> touch %o |> x.txt $(E)\n",
+        ": $(E) |> touch %o |> y.txt\n");
+    CAPTURE(rule);
+
+    GIVEN("a variable E holding <> and a rule naming a group with no name")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", "E = <>\n" + rule);
+
+        WHEN("the project is parsed")
+        {
+            auto result = f.parse();
+
+            THEN("parsing fails on the rule's line and says the group needs a name")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("Tupfile:2") != std::string::npos);
+                REQUIRE(result.stderr_output.find("A group needs a name between '<' and '>'") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("A directory word set apart from an output group is an output of its own", "[e2e][groups]")
+{
+    GIVEN("a rule whose outputs are x.txt, the word notsub/ and, after a space, <g>")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile",
+            ": |> echo hi > x.txt && echo s > notsub |> x.txt notsub/ <g>\n"
+            ": <g> |> cat %<g> > %o |> y.txt\n");
+        REQUIRE(f.init().success());
+
+        WHEN("built")
+        {
+            auto result = f.build();
+
+            THEN("<g> is the rule directory's group and holds both outputs")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                auto const y = f.read_file("y.txt");
+                REQUIRE(y.find("hi\n") != std::string::npos);
+                REQUIRE(y.find("s\n") != std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("A caret exclusion that does not compile fails the rule", "[e2e][glob][exclusion]")
 {
     GIVEN("a rule whose caret exclusion uses a word-boundary escape")
