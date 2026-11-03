@@ -54,9 +54,7 @@ struct BangMacroDef {
     std::optional<parser::Expression> display;
     Vec<parser::PathPattern> outputs;
     Vec<parser::PathPattern> extra_outputs;
-    std::optional<StringId> output_group;                          ///< {binname} at end
-    std::optional<StringId> output_order_only_group;               ///< <groupname> at end
-    std::optional<parser::Expression> output_order_only_group_dir; ///< path/ prefix for <group>
+    std::optional<StringId> output_group; ///< {binname} at end
 };
 
 /// Pending weak assignment with captured dependencies

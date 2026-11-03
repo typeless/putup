@@ -290,6 +290,15 @@ reference through as text rather than splice the group's members.
 If a rule's command splices a `%<name>` that names no group the rule can resolve, or a `%<` with
 no closing `>`, then putup shall reject the Tupfile and name the group or the missing marker.
 
+### REQ-OPERAND-GROUP-SPLICE-EMPTY
+
+- conformance: tup-conformant
+- reference: upstream's `expand_group` (`src/tup/updater.c`) finds the group among the command's inputs and appends each generated member, so a group with none appends nothing and the command runs with the splice gone. putup rewrote a command's `%<name>` only for groups that had members, so the splice of an empty group reached the shell as the text `%<name>`, where `<name>` read as a redirection
+- discharge: test "Scenario: A command splicing a group with no members gets nothing in its place"
+
+When a rule's command splices a group that the rule takes as an input and that has no member
+files, putup shall replace the splice with nothing.
+
 ### REQ-OPERAND-GROUP-IS-AN-OPERAND
 
 - conformance: tup-conformant

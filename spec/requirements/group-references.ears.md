@@ -79,15 +79,34 @@ If a rule declares a group in a directory whose source or config tree holds an e
 bracketed name, or where the graph already holds a node of another type under that name, then putup
 shall reject the Tupfile and name the group and what the name already holds.
 
-### REQ-GROUPREF-OUTPUT-EXPANDED-WORD
+### REQ-GROUPREF-OUTPUT-WORD
 
 - conformance: tup-conformant
-- reference: upstream's `do_rule_outputs` (`src/tup/parser.c`) evaluates the output list with `eval_path_list` before `new_pl` classifies each word, so a variable expanding to `<g>` or `dir/<g>` declares the rule's output group as the written word would, and a second group, written or expanded, fails with "Multiple output groups detected". upstream's `get_path_list` gives every written output word an `orderid`, the group's word included, and `%No` selects by it, so in `a.txt $(G) b.txt` the output `b.txt` is `%3o`; putup keeps the expanded group's token slot the same way, while a group written in the Tupfile still takes no slot in putup, a divergence this requirement does not cover. putup recognised an output group only as written in the Tupfile, so `G = <g>` with `|> a.txt $(G)` declared a file named `<g>` and the command failed in the shell
+- reference: upstream's `do_rule_outputs` (`src/tup/parser.c`) runs every output word through `tup_printf` and `eval_path_list` before `new_pl` classifies it, so a word that comes out as `<g>` or `dir/<g>` declares the rule's output group whether it was written so, reached through a variable, or spelled with a percent flag such as `<%B>`, and a second group fails with "Multiple output groups detected". putup read a group written in the Tupfile in the parser and stored its name unexpanded, apart from the output words, so `<%B>` declared a group literally named `%B`, and a word reaching `<g>` through a variable declared a file named `<g>` and the command failed in the shell
 - discharge: test "Scenario: An output group named through a variable collects the rule's outputs"
+- discharge: test "Scenario: Percent flags inside an output group's name expand against the rule"
 
-When a word of a rule's outputs expands to `<name>` or `dir/<name>`, putup shall add the rule's
-outputs to that group, and if the rule then names more than one output group, putup shall reject
-the Tupfile and name two of them.
+When a word of a rule's outputs, after variable and percent-flag expansion, is `<name>` or
+`dir/<name>`, putup shall add the rule's outputs to that group, and if the rule's outputs name more
+than one group, putup shall reject the Tupfile and name two of them.
+
+### REQ-GROUPREF-OUTPUT-WORD-NUMBERED
+
+- conformance: tup-conformant
+- reference: upstream's `get_path_list` (`src/tup/parser.c`) gives every written output word an `orderid`, the group's word included, and the `%No` branch of `tup_printf` selects outputs by it, so in `a.txt <g> b.txt` the output `b.txt` is `%3o` and `%2o` expands to nothing. putup kept a written group out of the output words, so `b.txt` was `%2o`; read from the source, not run against tup
+- discharge: test "Scenario: An output group's word takes its place in the numbering of %No"
+
+When a rule's outputs name a group, putup shall count the group's word in the numbering `%No`
+selects by, so that `%No` for the group's position expands to nothing.
+
+### REQ-GROUPREF-MACRO-OUTPUT-GROUP
+
+- conformance: tup-conformant
+- reference: upstream's `parse_bang_rule_internal` (`src/tup/parser.c`) copies the macro's outputs into the rule only when the rule writes none, and the macro's `<m>` is one of those output words, so a rule writing its own outputs leaves the macro's group out; the macro's extra outputs are copied always, so a group among them applies either way. putup applied a group written in the macro's outputs whenever the rule named no group of its own, so the rule's outputs joined the macro's group
+- discharge: test "Scenario: A bang macro's output group goes with the macro's outputs"
+
+When a rule that calls a bang macro writes outputs of its own, putup shall leave out the output
+group the macro's outputs name.
 
 ### REQ-GROUPREF-OUTPUT-DIR-GLUED
 
@@ -139,7 +158,7 @@ its start, putup shall read it as part of that word's path rather than as the st
 ### REQ-GROUPREF-WHOLE-ELEMENT
 
 - conformance: deliberate-deviation
-- reference: upstream's `new_pl` (`src/tup/parser.c`) marks any path-list word holding a `<` as a group. In the outputs `do_rule_outputs` names the group node after the word's whole last element (`tup_db_create_node_part(dest_tent, pl->pel->path, ...)`), so `x<g>.txt`, `pre<g>`, `<g>post`, `<g>{b}` and `<g>#` declare groups by those names, which no `<g>` or `%<g>` reaches. In the inputs `nl_add_path` makes a group only of an element that begins with `<`, so `<g>post` reads a group named `<g>post` and `pre<g>` or `x<g>.txt` is looked up as a file and refused as "Explicitly named file ... not found" unless one by that name exists. putup refuses every such word instead, since each either names a group no reference can reach or a file whose name only looks like a group reference. Upstream reads the words after variable expansion; putup checks input words and output file words after expansion too, but decides where an output group written in the Tupfile begins before expansion, so `$(DIR)<g>` with `DIR = dir/` is refused as an output while upstream reads `dir/<g>`, and an input `$(DIR)<g>` reads `dir/<g>` as upstream does. Before the refusal putup split an output word at its `<`, so `x<g>.txt` wrote files `x` and `.txt` and declared `<g>`, `x%<g>.txt` failed with "Unknown %-flag: ''", and `<g>post` declared `<g>` and wrote `post`; in the inputs `pre<g>` read the group `g` of a directory named `pre`, `x<g>.txt` read a file of that name, and `<g>post` read the group and a file `post`
+- reference: upstream's `new_pl` (`src/tup/parser.c`) marks any path-list word holding a `<` as a group. In the outputs `do_rule_outputs` names the group node after the word's whole last element (`tup_db_create_node_part(dest_tent, pl->pel->path, ...)`), so `x<g>.txt`, `pre<g>`, `<g>post`, `<g>{b}` and `<g>#` declare groups by those names, which no `<g>` or `%<g>` reaches. In the inputs `nl_add_path` makes a group only of an element that begins with `<`, so `<g>post` reads a group named `<g>post` and `pre<g>` or `x<g>.txt` is looked up as a file and refused as "Explicitly named file ... not found" unless one by that name exists. putup refuses every such word instead, since each either names a group no reference can reach or a file whose name only looks like a group reference. Upstream reads the words after variable and percent-flag expansion, keeping `%<` as text, and putup does the same, so `$(DIR)<g>` with `DIR = dir/` is `dir/<g>` and `x%<g>.txt` is refused like `x<g>.txt`. Before the refusal putup split an output word at its `<`, so `x<g>.txt` wrote files `x` and `.txt` and declared `<g>`, `x%<g>.txt` failed with "Unknown %-flag: ''", and `<g>post` declared `<g>` and wrote `post`; in the inputs `pre<g>` read the group `g` of a directory named `pre`, `x<g>.txt` read a file of that name, and `<g>post` read the group and a file `post`
 - discharge: test "Scenario: A group spelled inside a longer path word is refused"
 
 If a word of a rule's inputs, order-only inputs or outputs holds a `<` that does not open its whole

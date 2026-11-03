@@ -543,7 +543,7 @@ auto expand_pattern_atoms(
             return make_error<Instruction>(ErrorCode::ParseError, msg.view());
         }
 
-        if (flag == '<' && (flags.section == PatternSection::OrderOnlyInputs || flags.section == PatternSection::Display)) {
+        if (flag == '<' && flags.section != PatternSection::Command) {
             builder.literal("%<");
             continue;
         }

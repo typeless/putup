@@ -1852,8 +1852,6 @@ auto process_bang_macro(
     def.outputs = macro.outputs;
     def.extra_outputs = macro.extra_outputs;
     def.output_group = macro.output_group;
-    def.output_order_only_group = macro.output_order_only_group;
-    def.output_order_only_group_dir = macro.output_order_only_group_dir;
     define_bang_macro(ctx, std::move(def));
     return {};
 }
@@ -2196,15 +2194,6 @@ auto expand_rule(
     } else if (macro_ptr && macro_ptr->output_group) {
         eff_output_group = macro_ptr->output_group;
     }
-    auto eff_output_oo_group = std::optional<StringId> {};
-    if (rule.output_order_only_group) {
-        eff_output_oo_group = rule.output_order_only_group;
-    } else if (macro_ptr && macro_ptr->output_order_only_group) {
-        eff_output_oo_group = macro_ptr->output_order_only_group;
-    }
-    auto const* eff_oo_group_dir = rule.output_order_only_group_dir ? &*rule.output_order_only_group_dir
-        : macro_ptr && macro_ptr->output_order_only_group_dir       ? &*macro_ptr->output_order_only_group_dir
-                                                                    : nullptr;
 
     auto rule_order_only_group_names = SortedIdVec {};
 
@@ -2287,16 +2276,6 @@ auto expand_rule(
     }
 
     auto output_group = std::optional<GroupReference> {};
-    if (eff_output_oo_group) {
-        auto dir = StringId::Empty;
-        if (eff_oo_group_dir) {
-            auto expanded = parser::expand(*ctx.eval, *eff_oo_group_dir);
-            if (expanded) {
-                dir = normalize_group_dir(str(*expanded), str(ctx.current_dir), str(ctx.options.source_root));
-            }
-        }
-        output_group = GroupReference { str(*eff_output_oo_group), dir };
-    }
     for (auto const* expanded : { &*outputs, &*extra_outputs }) {
         for (auto const& group : expanded->groups) {
             if (output_group) {
@@ -3071,10 +3050,9 @@ auto finalize_graph(
             auto warn = Buf {};
             warn.fmt("order-only group {} has no members", group_path_sv);
             state.warnings.push_back(warn.intern(global_pool()));
-            continue;
+        } else {
+            (void)add_edge(g, edge.group_id, edge.command_id, LinkType::OrderOnly);
         }
-
-        (void)add_edge(g, edge.group_id, edge.command_id, LinkType::OrderOnly);
 
         auto group_basename = str(group_node->name);
         if (group_basename.size() > 2 && group_basename.front() == '<' && group_basename.back() == '>') {

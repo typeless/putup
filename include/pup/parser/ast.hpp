@@ -99,9 +99,7 @@ struct Rule final : AstNode {
     std::optional<Expression> display; ///< Display text between ^ ^ in command
     Vec<PathPattern> outputs;
     Vec<PathPattern> extra_outputs;
-    std::optional<StringId> output_group;                  ///< {binname} at end
-    std::optional<StringId> output_order_only_group;       ///< <groupname> at end
-    std::optional<Expression> output_order_only_group_dir; ///< path/ prefix for <group>
+    std::optional<StringId> output_group; ///< {binname} at end
 };
 
 /// Bang-macro definition: !name = |> command |> outputs
@@ -113,9 +111,7 @@ struct BangMacro final : AstNode {
     std::optional<Expression> display;
     Vec<PathPattern> outputs;
     Vec<PathPattern> extra_outputs;
-    std::optional<StringId> output_group;                  ///< {binname} at end
-    std::optional<StringId> output_order_only_group;       ///< <groupname> at end
-    std::optional<Expression> output_order_only_group_dir; ///< path/ prefix for <group>
+    std::optional<StringId> output_group; ///< {binname} at end
 };
 
 /// Bang-macro alias: !name = !target, which copies target's definition as it stands then

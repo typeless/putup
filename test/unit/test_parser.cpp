@@ -459,15 +459,17 @@ TEST_CASE("Parser order-only group input", "[parser]")
     REQUIRE(sv(rule->order_only_inputs[0].group_name) == "gen-headers");
 }
 
-TEST_CASE("Parser order-only output group", "[parser]")
+TEST_CASE("Parser reads an output group as an output word", "[parser]")
 {
-    auto result = parse_tupfile(": gen.sh |> ./gen.sh |> header.h <gen-headers>", "test.tup");
+    auto result = parse_tupfile(": gen.sh |> ./gen.sh |> header.h <gen-headers> sub/<more>", "test.tup");
 
     REQUIRE(result.success());
     auto const* rule = result.tupfile.statements[0]->as<Rule>();
-    REQUIRE(rule->outputs.size() == 1);
-    REQUIRE(rule->output_order_only_group.has_value());
-    REQUIRE(sv(*rule->output_order_only_group) == "gen-headers");
+    REQUIRE(rule->outputs.size() == 3);
+    REQUIRE(rule->outputs[1].kind == PathPattern::Kind::Path);
+    REQUIRE(rule->outputs[1].path.parts.size() == 1);
+    REQUIRE(sv(std::get<Expression::Literal>(rule->outputs[1].path.parts[0]).value) == "<gen-headers>");
+    REQUIRE(sv(std::get<Expression::Literal>(rule->outputs[2].path.parts[0]).value) == "sub/<more>");
 }
 
 TEST_CASE("Parser rule with both group types", "[parser]")
@@ -478,8 +480,8 @@ TEST_CASE("Parser rule with both group types", "[parser]")
     auto const* rule = result.tupfile.statements[0]->as<Rule>();
     REQUIRE(rule->output_group.has_value());
     REQUIRE(sv(*rule->output_group) == "objs");
-    REQUIRE(rule->output_order_only_group.has_value());
-    REQUIRE(sv(*rule->output_order_only_group) == "compiled");
+    REQUIRE(rule->outputs.size() == 2);
+    REQUIRE(sv(std::get<Expression::Literal>(rule->outputs[1].path.parts[0]).value) == "<compiled>");
 }
 
 TEST_CASE("Parser bang macro", "[parser]")

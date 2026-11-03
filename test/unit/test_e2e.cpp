@@ -9249,6 +9249,119 @@ SCENARIO("An output group named through a variable collects the rule's outputs",
     }
 }
 
+SCENARIO("A command splicing a group with no members gets nothing in its place", "[e2e][groups][flags]")
+{
+    GIVEN("a rule taking a group that no rule writes and splicing it into its command")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": <empty> |> echo [%<empty>] > %o |> y.txt\n");
+        REQUIRE(f.init().success());
+
+        WHEN("built")
+        {
+            auto result = f.build();
+
+            THEN("the splice expands to nothing")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("y.txt") == "[]\n");
+            }
+        }
+    }
+}
+
+SCENARIO("An output group's word takes its place in the numbering of %No", "[e2e][groups][flags]")
+{
+    auto const group_word = GENERATE(as<std::string> {}, "<g>", "$(G)");
+    CAPTURE(group_word);
+
+    GIVEN("a rule whose outputs are a.txt, an output group and b.txt, echoing %2o and %3o")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", "G = <g>\n: |> echo [%2o] [%3o] > b.txt && touch a.txt |> a.txt " + group_word + " b.txt\n");
+        REQUIRE(f.init().success());
+
+        WHEN("built")
+        {
+            auto result = f.build();
+
+            THEN("the group is the second word, so %2o is empty and %3o is b.txt")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("b.txt") == "[] [b.txt]\n");
+            }
+        }
+    }
+}
+
+SCENARIO("A bang macro's output group goes with the macro's outputs", "[e2e][groups][macro]")
+{
+    auto const [macro_group, rule_outputs, members] = GENERATE(table<char const*, char const*, char const*>({
+        { "<m>", "a.txt", "[]" },
+        { "$(G)", "a.txt", "[]" },
+        { "<m>", "", "[b.txt]" },
+        { "$(G)", "", "[b.txt]" },
+        { "| <m>", "a.txt", "[a.txt]" },
+    }));
+    CAPTURE(macro_group, rule_outputs);
+
+    GIVEN("a macro writing b.txt into an output group, called by a rule with or without outputs of its own")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file(
+            "Tupfile",
+            std::string { "G = <m>\n!m = |> echo hi > %o |> b.txt " } + macro_group + "\n"
+                + ": |> !m |> " + rule_outputs + "\n"
+                + ": <m> |> echo [%<m>] > %o |> y.txt\n"
+        );
+        REQUIRE(f.init().success());
+
+        WHEN("built")
+        {
+            auto result = f.build();
+
+            THEN("the group holds the macro's output only when the macro's outputs were used, and a group among its extra outputs always applies")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("y.txt") == std::string { members } + "\n");
+            }
+        }
+    }
+}
+
+SCENARIO("Percent flags inside an output group's name expand against the rule", "[e2e][groups][flags]")
+{
+    auto const group_word = GENERATE(as<std::string> {}, "<%B>", "$(G)");
+    CAPTURE(group_word);
+
+    GIVEN("a foreach rule over g.c whose output group is named by %B")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("g.c", "");
+        f.write_file("Tupfile",
+            "G = <%B>\n"
+            ": foreach g.c |> cp %f %o |> %B.o "
+                + group_word + "\n"
+                               ": <g> |> echo [%<g>] > %o |> y.txt\n");
+        REQUIRE(f.init().success());
+
+        WHEN("built")
+        {
+            auto result = f.build();
+
+            THEN("the object lands in the group <g>")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("y.txt") == "[g.o]\n");
+            }
+        }
+    }
+}
+
 SCENARIO("A group with an empty name is refused", "[e2e][parse][groups]")
 {
     auto const rule = GENERATE(as<std::string> {},

@@ -34,8 +34,6 @@ struct RuleBody {
     Vec<PathPattern> outputs;
     Vec<PathPattern> extra_outputs;
     std::optional<StringId> output_group;
-    std::optional<StringId> output_order_only_group;
-    std::optional<Expression> output_order_only_group_dir;
 };
 
 struct ParserState {
@@ -71,7 +69,7 @@ auto parse_export(ParserState& s) -> Result<Export>;
 auto parse_import(ParserState& s) -> Result<Import>;
 auto parse_expression(ParserState& s) -> Result<Expression>;
 auto parse_expression_until(ParserState& s, pup::Function<bool(Token const&)> const& stop, bool stop_at_gap = false) -> Result<Expression>;
-auto parse_path_pattern(ParserState& s, bool stop_at_angle = false) -> Result<PathPattern>;
+auto parse_path_pattern(ParserState& s, bool angle_opens_group = true) -> Result<PathPattern>;
 auto parse_command(ParserState& s, std::optional<Expression>& display) -> Result<Expression>;
 auto report_error(ParserState& s, std::string_view message) -> void;
 
@@ -470,8 +468,6 @@ auto parse_rule(ParserState& s) -> Result<Rule>
     rule.outputs = std::move(body->outputs);
     rule.extra_outputs = std::move(body->extra_outputs);
     rule.output_group = std::move(body->output_group);
-    rule.output_order_only_group = std::move(body->output_order_only_group);
-    rule.output_order_only_group_dir = std::move(body->output_order_only_group_dir);
 
     s.lexer.set_context(Lexer::Context::LineStart);
     return rule;
@@ -540,8 +536,6 @@ auto parse_bang_macro(ParserState& s) -> Result<std::variant<BangMacro, BangMacr
     macro.outputs = std::move(body->outputs);
     macro.extra_outputs = std::move(body->extra_outputs);
     macro.output_group = std::move(body->output_group);
-    macro.output_order_only_group = std::move(body->output_order_only_group);
-    macro.output_order_only_group_dir = std::move(body->output_order_only_group_dir);
 
     s.lexer.set_context(Lexer::Context::LineStart);
     return Parsed { std::move(macro) };
@@ -576,51 +570,9 @@ auto parse_rule_body(ParserState& s) -> Result<RuleBody>
         return pup::unexpected<Error>(arrow2.error());
     }
 
-    auto parse_output_group = [&s, &body](Vec<PathPattern>& section, bool glued_to_previous_word) -> Result<void> {
-        auto dir = std::optional<Expression> {};
-        if (glued_to_previous_word) {
-            auto const* lit = section.back().path.parts.empty() ? nullptr : std::get_if<Expression::Literal>(&section.back().path.parts.back());
-            if (!lit || !global_pool().get(lit->value).ends_with('/')) {
-                return pup::unexpected<Error>(refuse_group_inside_word());
-            }
-            dir = std::move(section.back().path);
-            section.pop_back();
-        }
-        auto name = StringId::Empty;
-        if (check(s, TokenType::Identifier) || check(s, TokenType::Text)) {
-            name = global_pool().intern(s.current.text);
-            advance(s);
-        }
-        auto close = expect(s, TokenType::CloseAngle, "Expected '>' after group name");
-        if (!close) {
-            return pup::unexpected<Error>(close.error());
-        }
-        if (name == StringId::Empty) {
-            return pup::unexpected<Error>(refuse_unnamed_group());
-        }
-        if (current_touches_previous(s) && !s.current.is_one_of(TokenType::Pipe, TokenType::Newline, TokenType::Eof)) {
-            return pup::unexpected<Error>(refuse_group_inside_word());
-        }
-        if (body.output_order_only_group) {
-            auto err = Buf {};
-            err.fmt("Multiple output groups detected: '<{}>' and '<{}>'", global_pool().get(*body.output_order_only_group), global_pool().get(name));
-            return pup::make_error<void>(ErrorCode::ParseError, err.view());
-        }
-        body.output_order_only_group = name;
-        body.output_order_only_group_dir = std::move(dir);
-        return {};
-    };
-
-    auto parse_output_section = [&s, &parse_output_group](Vec<PathPattern>& section) -> Result<void> {
+    auto parse_output_section = [&s](Vec<PathPattern>& section) -> Result<void> {
         while (!check(s, TokenType::Pipe) && !check(s, TokenType::OpenBrace) && !check(s, TokenType::Newline) && !check(s, TokenType::Eof)) {
-            auto const glued_to_previous_word = !section.empty() && current_touches_previous(s);
-            if (match(s, TokenType::OpenAngle)) {
-                if (auto group = parse_output_group(section, glued_to_previous_word); !group) {
-                    return group;
-                }
-                continue;
-            }
-            auto pattern = parse_path_pattern(s, true);
+            auto pattern = parse_path_pattern(s, false);
             if (!pattern) {
                 return pup::unexpected<Error>(pattern.error());
             }
@@ -902,7 +854,7 @@ auto parse_expression_until(
     return expr;
 }
 
-auto parse_path_pattern(ParserState& s, bool stop_at_angle) -> Result<PathPattern>
+auto parse_path_pattern(ParserState& s, bool angle_opens_group) -> Result<PathPattern>
 {
     auto pattern = PathPattern {};
     pattern.location = s.current.location;
@@ -930,7 +882,7 @@ auto parse_path_pattern(ParserState& s, bool stop_at_angle) -> Result<PathPatter
         return pattern;
     }
 
-    if (match(s, TokenType::OpenAngle)) {
+    if (angle_opens_group && match(s, TokenType::OpenAngle)) {
         pattern.kind = PathPattern::Kind::OrderOnlyGroup;
         if (check(s, TokenType::Identifier) || check(s, TokenType::Text)) {
             pattern.group_name = global_pool().intern(s.current.text);
@@ -948,10 +900,7 @@ auto parse_path_pattern(ParserState& s, bool stop_at_angle) -> Result<PathPatter
         return pattern;
     }
 
-    auto ends_path = [stop_at_angle](Token const& t) {
-        if (stop_at_angle && t.is(TokenType::OpenAngle)) {
-            return true;
-        }
+    auto ends_path = [](Token const& t) {
         return t.is_one_of(TokenType::Whitespace, TokenType::Pipe, TokenType::PipeArrow, TokenType::Newline, TokenType::Eof);
     };
     if (ends_path(s.current)) {
@@ -962,7 +911,6 @@ auto parse_path_pattern(ParserState& s, bool stop_at_angle) -> Result<PathPatter
 
     // Parse path expression (until whitespace or delimiter)
     // stop_at_gap=true ensures we stop at whitespace boundaries between paths
-    // For outputs (stop_at_angle=true), also stop at < for path/<group> syntax
     auto path = parse_expression_until(s, ends_path, true);
     if (!path) {
         return pup::unexpected<Error>(path.error());

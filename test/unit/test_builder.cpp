@@ -165,7 +165,7 @@ TEST_CASE("GraphBuilder order-only group - case 1: empty pattern.path", "[e2e][b
     auto out1 = PathPattern {};
     out1.path.parts.push_back(Expression::Literal { intern("generated.h") });
     rule1.outputs.push_back(out1);
-    rule1.output_order_only_group = intern("local-group");
+    rule1.outputs.push_back(make_path_pattern("<local-group>"));
     tupfile1.statements.push_back(make_rule_statement(std::move(rule1)));
 
     auto r1 = add_tupfile(bs, tupfile1, ctx, builder_state);
@@ -223,7 +223,7 @@ TEST_CASE("GraphBuilder order-only group - case 2: non-empty pattern.path with v
     auto out1 = PathPattern {};
     out1.path.parts.push_back(Expression::Literal { intern("config.h") });
     rule1.outputs.push_back(out1);
-    rule1.output_order_only_group = intern("gen-headers");
+    rule1.outputs.push_back(make_path_pattern("<gen-headers>"));
     tupfile1.statements.push_back(make_rule_statement(std::move(rule1)));
 
     auto r1 = add_tupfile(bs, tupfile1, ctx, builder_state);
@@ -282,7 +282,7 @@ TEST_CASE("GraphBuilder order-only group - case 3: path/<group> pattern", "[e2e]
     auto out1 = PathPattern {};
     out1.path.parts.push_back(Expression::Literal { intern("version.h") });
     rule1.outputs.push_back(out1);
-    rule1.output_order_only_group = intern("gen-headers");
+    rule1.outputs.push_back(make_path_pattern("<gen-headers>"));
     tupfile1.statements.push_back(make_rule_statement(std::move(rule1)));
 
     auto r1 = add_tupfile(bs, tupfile1, ctx, builder_state);
@@ -757,7 +757,7 @@ TEST_CASE("GraphBuilder cross-directory order-only group with relative path", "[
     auto out1 = PathPattern {};
     out1.path.parts.push_back(Expression::Literal { intern("config.h") });
     rule1.outputs.push_back(out1);
-    rule1.output_order_only_group = intern("gen-headers");
+    rule1.outputs.push_back(make_path_pattern("<gen-headers>"));
     tupfile1.statements.push_back(make_rule_statement(std::move(rule1)));
 
     auto r1 = add_tupfile(bs, tupfile1, ctx, builder_state);
@@ -835,7 +835,7 @@ TEST_CASE("GraphBuilder a bare group reference names the group of the referencin
     auto out1 = PathPattern {};
     out1.path.parts.push_back(Expression::Literal { intern("root.h") });
     rule1.outputs.push_back(out1);
-    rule1.output_order_only_group = intern("shared-group");
+    rule1.outputs.push_back(make_path_pattern("<shared-group>"));
     tupfile1.statements.push_back(make_rule_statement(std::move(rule1)));
 
     auto r1 = add_tupfile(bs, tupfile1, ctx, builder_state);
@@ -850,7 +850,7 @@ TEST_CASE("GraphBuilder a bare group reference names the group of the referencin
     auto kernel_out = PathPattern {};
     kernel_out.path.parts.push_back(Expression::Literal { intern("kernel.h") });
     producer.outputs.push_back(kernel_out);
-    producer.output_order_only_group = intern("shared-group");
+    producer.outputs.push_back(make_path_pattern("<shared-group>"));
     tupfile2.statements.push_back(make_rule_statement(std::move(producer)));
 
     auto consumer = Rule {};
