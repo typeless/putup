@@ -815,6 +815,26 @@ TEST_CASE("Parser rejects a token that ends a path where a path should start", "
     CHECK(global_pool().get(result.errors[0].message).starts_with("Expected a path, got "));
 }
 
+TEST_CASE("Parser reads a brace inside a path word as part of the path", "[parser][path-list]")
+{
+    auto result = parse_tupfile(": a{x}.c pre{b} {b} | o{y}.h |> cmd |> out{z}.txt ^r{2} {objs}\n", "test.tup");
+
+    REQUIRE(result.success());
+    auto const* rule = result.tupfile.statements[0]->as<Rule>();
+    REQUIRE(rule->inputs.size() == 3);
+    CHECK(rule->inputs[0].path.as_literal() == "a{x}.c");
+    CHECK(rule->inputs[1].path.as_literal() == "pre{b}");
+    CHECK(rule->inputs[2].kind == PathPattern::Kind::Bin);
+    REQUIRE(rule->order_only_inputs.size() == 1);
+    CHECK(rule->order_only_inputs[0].path.as_literal() == "o{y}.h");
+    REQUIRE(rule->outputs.size() == 2);
+    CHECK(rule->outputs[0].path.as_literal() == "out{z}.txt");
+    CHECK(rule->outputs[1].kind == PathPattern::Kind::RegexExclusion);
+    CHECK(rule->outputs[1].path.as_literal() == "r{2}");
+    REQUIRE(rule->output_group.has_value());
+    CHECK(global_pool().get(*rule->output_group) == "objs");
+}
+
 TEST_CASE("Parser rejects an exclusion of a bin or group", "[parser][path-list]")
 {
     auto const* source = GENERATE(

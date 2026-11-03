@@ -1242,14 +1242,19 @@ Groups collect outputs for use as inputs to other rules.
 
 **Cross-Directory Groups:**
 
-Groups can be referenced across directories:
+A `<group>` can be referenced from another directory; an output group `{name}` (tup calls it a
+bin) cannot, since it belongs to the Tupfile that fills it. `%<group>` expands to the group's
+members:
 ```tup
 # In lib/Tupfile:
-: foreach *.c |> !cc |> %B.o {objs}
+: foreach *.c |> !cc |> %B.o <objs>
 
 # In app/Tupfile:
-: ../lib/{objs} main.o |> !link |> app
+: main.o | ../lib/<objs> |> gcc main.o %<objs> -o %o |> app
 ```
+
+A `{` starts an output group only at the beginning of a word; inside a word it is part of the
+path, so `a{x}.c` names a file and `../lib/{objs}` names a path, not a group.
 
 **Group Naming:**
 - `{name}` - Output group (contents are inputs to dependent rules)

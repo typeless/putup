@@ -98,6 +98,16 @@ every operand it was meant to supply and the rule ran without them (#472).
 If a rule's inputs or order-only inputs name a bin that no earlier rule in the same Tupfile declares
 after its outputs, then putup shall reject the Tupfile and name the bin.
 
+### REQ-GROUPREF-BIN-WORD-START
+
+- conformance: tup-conformant
+- reference: upstream's `new_pl` (`src/tup/parser.c`) takes the bin branch only when a path-list word begins with `{`, so `a{x}.c` and `../lib/{objs}` are paths; its output-list scan in `split_input_pattern` skips a `{` whose preceding character is not a space ("it's part of a filename") and reads a bin only from a `{` at the start of the list or after whitespace. putup's `parse_path_pattern` ended a path word at any `{`, so `a{x}.c` became the path `a` followed by a reference to a bin `x`, and `out{z}.txt` became the output `out` followed by a bin
+- discharge: test "Parser reads a brace inside a path word as part of the path"
+- discharge: test "Scenario: A brace inside a path word names a file rather than a bin"
+
+When a `{` appears inside a word of a rule's inputs, order-only inputs or outputs rather than at
+its start, putup shall read it as part of that word's path rather than as the start of a bin.
+
 ## Group: exclusion
 
 What `!` or `^` in front of a bin or group reference means.

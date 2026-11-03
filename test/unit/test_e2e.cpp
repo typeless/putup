@@ -9109,6 +9109,27 @@ SCENARIO("A caret exclusion searches the text %f prints in a variant build", "[e
     }
 }
 
+SCENARIO("A brace inside a path word names a file rather than a bin", "[e2e][groups]")
+{
+    GIVEN("a source whose name holds braces and a rule naming it and an output like it")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": a{x}.c |> cat %f > %o |> out{x}.txt\n");
+        f.write_file("a{x}.c", "braced\n");
+        REQUIRE(f.init().success());
+
+        WHEN("built")
+        {
+            REQUIRE(f.build().success());
+
+            THEN("the rule read the braced file and wrote the braced output")
+            {
+                REQUIRE(f.read_file("out{x}.txt") == "braced\n");
+            }
+        }
+    }
+}
+
 SCENARIO("A caret exclusion that does not compile fails the rule", "[e2e][glob][exclusion]")
 {
     GIVEN("a rule whose caret exclusion uses a word-boundary escape")

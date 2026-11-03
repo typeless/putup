@@ -925,7 +925,7 @@ auto parse_path_pattern(ParserState& s, bool stop_at_angle) -> Result<PathPatter
         if (stop_at_angle && t.is(TokenType::OpenAngle)) {
             return true;
         }
-        return t.is_one_of(TokenType::Whitespace, TokenType::Pipe, TokenType::PipeArrow, TokenType::OpenBrace, TokenType::Newline, TokenType::Eof);
+        return t.is_one_of(TokenType::Whitespace, TokenType::Pipe, TokenType::PipeArrow, TokenType::Newline, TokenType::Eof);
     };
     if (ends_path(s.current)) {
         auto err = Buf {};
