@@ -44,7 +44,7 @@ Where a rule carries no display annotation, putup shall report that rule by its 
 ### REQ-DISP-FAIL
 
 - conformance: deliberate-deviation
-- reference: upstream reports a failing command by its display unless --verbose (tup `print_tup_entry`); putup's default output echoes no per-command line, so the failure line is the only record of what ran and an annotation there would name the step rather than the fault
+- reference: upstream reports a failing command by its display unless --verbose (tup `print_tup_entry`); a success line names the step by its display, but reproducing a failure needs the exact command, which upstream shows only under --verbose; upstream also prefixes the failure with the percent complete when its bar is off (tup `show_result`), and putup's failure line carries no percent, since it is not a result line
 - discharge: test "Scenario: A failing command is reported by its command line, not its display"
 - discharge: test "Scenario: A failing config rule is reported by its command line, not its display"
 
@@ -53,12 +53,12 @@ annotation.
 
 ### REQ-DISP-VERBOSE
 
-- conformance: deliberate-deviation
-- reference: upstream's --verbose switches from the display back to the real command (tup `print_tup_entry`); putup's -v is its only per-command echo, so switching it would leave an annotation unobservable in build output, and `show script` reports the commands instead
-- discharge: test "Scenario: A rule's display text stands in for the command in build output"
+- conformance: tup-conformant
+- reference: upstream's --verbose switches from the display back to the real command (tup `print_tup_entry`, tup `tup_entry_set_verbose`)
+- discharge: test "Scenario: Verbose output names the command a display annotation stands in for"
 
-While reporting each command it runs, putup shall report a rule's annotation rather than the
-command that verbose output would otherwise reveal.
+Where verbose output is requested, putup shall report each command it runs by its command line
+rather than by its display annotation.
 
 ---
 

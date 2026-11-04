@@ -2385,7 +2385,7 @@ auto build_single_variant(
 
     scheduler.on_job_start([&](pup::exec::BuildJob const& job) {
         auto& pool = pup::global_pool();
-        if (opts.verbose || opts.dry_run) {
+        if (opts.dry_run) {
             auto display_sv = pool.get(job.display);
             vprint(variant_name, "{}\n", display_sv);
         } else if (use_tty_progress) {
@@ -2398,24 +2398,34 @@ auto build_single_variant(
 
     scheduler.on_job_complete([&](pup::exec::BuildJob const& job, pup::exec::JobResult const& job_result) {
         auto& pool = pup::global_pool();
+        progress = pup::exec::job_completed(std::move(progress), job.id, job_result.success);
+        auto const wrote_output = !pup::is_empty(job_result.output);
         if (job_result.success) {
             must_rerun_cmds.remove(job.id);
         }
+        auto const reported = !job_result.success || (!opts.dry_run && (!opts.quiet || wrote_output));
+        if (use_tty_progress && reported) {
+            pup::exec::finalize_progress(prev_lines);
+        }
+        if (job_result.success && reported) {
+            auto const text = pool.get(opts.verbose ? job.command : job.display);
+            auto report = Buf {};
+            report.append(use_tty_progress ? text : pool.get(pup::exec::render_result(progress.completed + progress.failed, progress.total, text)));
+            report += '\n';
+            report.append(pool.get(job_result.output));
+            write_variant_lines(Stream::Out, variant_name, report.view());
+        }
         if (!job_result.success) {
             must_rerun_cmds.set(job.id, 1);
-            if (use_tty_progress) {
-                pup::exec::finalize_progress(prev_lines);
-            }
-            veprint(variant_name, "FAILED: {}\n", pool.get(job.command));
+            auto report = Buf {};
+            report.fmt("FAILED: {}\n", pool.get(job.command));
             if (job.parent_command) {
                 auto const parent = pup::graph::find_command(bs.graph, *job.parent_command);
                 assert(parent);
-                veprint(variant_name, "  dependency scan for: {}\n", pool.get(pup::graph::expand_instruction(bs.graph, *parent, bs.path_cache, source_root_str, config_root_str)));
+                report.fmt("  dependency scan for: {}\n", pool.get(pup::graph::expand_instruction(bs.graph, *parent, bs.path_cache, source_root_str, config_root_str)));
             }
-            if (!pup::is_empty(job_result.output)) {
-                auto output_sv = pool.get(job_result.output);
-                eprint("{}\n", output_sv);
-            }
+            report.append(pool.get(job_result.output));
+            write_variant_lines(Stream::Err, variant_name, report.view());
         }
 
         auto target_id = job_result.deps_for_command.value_or(job.id);
@@ -2454,7 +2464,6 @@ auto build_single_variant(
         }
 
         if (use_tty_progress) {
-            progress = pup::exec::job_completed(std::move(progress), job.id, job_result.success);
             auto output = pup::exec::render_tty(progress, variant_name);
             pup::exec::display_progress(output, prev_lines);
         }

@@ -549,3 +549,16 @@ TEST_CASE("render_tty prefixes percent and counts", "[exec][progress]")
     REQUIRE(sv(out.text).starts_with("[ 50% 2/4] "));
     REQUIRE(out.line_count == 1);
 }
+
+TEST_CASE("render_result prefixes a finished command with the percent complete", "[exec][progress]")
+{
+    REQUIRE(sv(render_result(0, 3, "echo a")) == "~ 0% echo a");
+    REQUIRE(sv(render_result(1, 3, "echo a")) == "~33% echo a");
+    REQUIRE(sv(render_result(2, 3, "echo a")) == "~66% echo a");
+    REQUIRE(sv(render_result(3, 3, "echo a")) == "100% echo a");
+}
+
+TEST_CASE("render_result without a known total is the text alone", "[exec][progress]")
+{
+    REQUIRE(sv(render_result(1, 0, "echo a")) == "echo a");
+}

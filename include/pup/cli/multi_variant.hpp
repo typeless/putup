@@ -55,6 +55,10 @@ auto write_variant_line(Stream stream, std::string_view variant_name, std::strin
     write_to(stream, line.view());
 }
 
+/// Write every line of `text` with a `[variant] ` prefix in a single write, so that a block of
+/// lines from one variant is never split by another's.
+auto write_variant_lines(Stream stream, std::string_view variant_name, std::string_view text) -> void;
+
 /// Print a `[variant] `-prefixed line to stdout.
 template<typename... Args>
 auto vprint(std::string_view variant_name, std::string_view pattern, Args const&... args) -> void

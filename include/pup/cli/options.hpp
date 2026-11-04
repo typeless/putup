@@ -29,6 +29,7 @@ struct Options {
     bool no_stat_cache = false;
     bool rerun = false;
     bool verbose = false;
+    bool quiet = false;
     bool dry_run = false;
     bool stat = false;
     bool all = false; // Force full project build (ignore cwd scoping)

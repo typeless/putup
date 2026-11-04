@@ -55,6 +55,10 @@ auto job_completed(ProgressState state, NodeId id, bool success) -> ProgressStat
 [[nodiscard]]
 auto render_tty(ProgressState const& state, std::string_view variant = {}) -> ProgressOutput;
 
+/// Render a finished command's line: "~NN% text", "100% text", or text alone when total is 0
+[[nodiscard]]
+auto render_result(std::size_t done, std::size_t total, std::string_view text) -> StringId;
+
 /// Format duration as M:SS
 [[nodiscard]]
 auto format_duration(std::chrono::milliseconds ms) -> StringId;

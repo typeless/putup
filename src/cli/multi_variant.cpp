@@ -5,6 +5,7 @@
 #include "pup/cli/context.hpp"
 #include "pup/cli/options.hpp"
 #include "pup/cli/target.hpp"
+#include "pup/core/buf.hpp"
 #include "pup/core/expected.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/layout.hpp"
@@ -204,6 +205,22 @@ auto for_each_variant(
     }
 
     return EXIT_SUCCESS;
+}
+
+auto write_variant_lines(Stream stream, std::string_view variant_name, std::string_view text) -> void
+{
+    auto block = Buf {};
+    while (!text.empty()) {
+        auto const end = text.find('\n');
+        auto const line = text.substr(0, end);
+        block += '[';
+        block.append(variant_name);
+        block.append("] ");
+        block.append(line);
+        block += '\n';
+        text.remove_prefix(end == std::string_view::npos ? text.size() : end + 1);
+    }
+    write_to(stream, block.view());
 }
 
 } // namespace pup::cli

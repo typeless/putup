@@ -164,14 +164,37 @@ SCENARIO("A rule's display text stands in for the command in build output", "[e2
 
         WHEN("the build reports each command it runs")
         {
-            auto result = f.build({ "-v" });
+            auto result = f.build({});
             REQUIRE(result.success());
 
             THEN("the annotation is what appears, in place of the command text")
             {
                 INFO("stdout: " << result.stdout_output);
-                REQUIRE(result.stdout_output.find("GREET the-file") != std::string::npos);
+                REQUIRE(result.stdout_output.find("[.] 100% GREET the-file\n") != std::string::npos);
                 REQUIRE(result.stdout_output.find("echo hi >") == std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("Verbose output names the command a display annotation stands in for", "[e2e][build][display]")
+{
+    GIVEN("a rule carrying a ^ text ^ display annotation")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": |> ^ GREET the-file^ echo hi > %o |> out.txt\n");
+        REQUIRE(f.init().success());
+
+        WHEN("the build runs with -v")
+        {
+            auto result = f.build({ "-v" });
+            REQUIRE(result.success());
+
+            THEN("the command text appears, in place of the annotation")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.stdout_output.find("[.] 100% echo hi > out.txt\n") != std::string::npos);
+                REQUIRE(result.stdout_output.find("GREET the-file") == std::string::npos);
             }
         }
     }
@@ -208,6 +231,53 @@ SCENARIO("A build whose output is not a terminal prints no progress counter", "[
                 REQUIRE(result.stdout_output.find("Build completed") != std::string::npos);
             }
 
+        }
+    }
+}
+
+SCENARIO("A build whose output is not a terminal names each command it runs with its percent complete", "[e2e][build][progress]")
+{
+    GIVEN("a project with three commands to run")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile",
+            ": |> echo a > %o |> a.txt\n"
+            ": |> echo b > %o |> b.txt\n"
+            ": |> echo c > %o |> c.txt\n");
+        REQUIRE(f.init().success());
+
+        WHEN("its stdout is a pipe rather than a terminal")
+        {
+            auto result = f.build({});
+            REQUIRE(result.success());
+
+            THEN("one line per command precedes the summary, each prefixed by the share of commands finished")
+            {
+                INFO("stdout: " << result.stdout_output);
+                auto reported = std::vector<std::string> {};
+                auto stream = std::istringstream { result.stdout_output };
+                for (auto line = std::string {}; std::getline(stream, line);) {
+                    if (line.empty() || line.find("Initialized pup in") != std::string::npos) {
+                        continue;
+                    }
+                    reported.push_back(line);
+                }
+                REQUIRE(reported.size() == 4);
+                REQUIRE(reported[0].starts_with("[.] ~33% echo "));
+                REQUIRE(reported[1].starts_with("[.] ~66% echo "));
+                REQUIRE(reported[2].starts_with("[.] 100% echo "));
+                REQUIRE(reported[3].starts_with("[.] Build completed: 3 commands in "));
+                auto commands = std::vector<std::string> { reported[0].substr(9), reported[1].substr(9), reported[2].substr(9) };
+                std::ranges::sort(commands);
+                REQUIRE(commands == std::vector<std::string> { "echo a > a.txt", "echo b > b.txt", "echo c > c.txt" });
+            }
+        }
+
+        WHEN("it is built with -q")
+        {
+            auto result = f.build({ "-q" });
+            REQUIRE(result.success());
+
             THEN("the summary is the only line the build reports")
             {
                 INFO("stdout: " << result.stdout_output);
@@ -221,6 +291,84 @@ SCENARIO("A build whose output is not a terminal prints no progress counter", "[
                 }
                 REQUIRE(reported.size() == 1);
                 REQUIRE(reported.front().starts_with("[.] Build completed: 3 commands in "));
+            }
+        }
+    }
+}
+
+SCENARIO("An incremental build's percent counts only the commands it runs", "[e2e][build][progress]")
+{
+    GIVEN("a built project of three commands")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("i1.txt", "1\n");
+        f.write_file("i2.txt", "2\n");
+        f.write_file("i3.txt", "3\n");
+        f.write_file("Tupfile", ": foreach i*.txt |> cp %f %o |> %B.out\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build({}).success());
+
+        WHEN("one input changes and the project is rebuilt")
+        {
+            f.write_file("i2.txt", "changed\n");
+            auto result = f.build({});
+            REQUIRE(result.success());
+
+            THEN("the one command it reruns is 100% of the build")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.stdout_output.find("[.] 100% cp i2.txt i2.out\n") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("A successful command's output appears under the line that names it", "[e2e][build][progress]")
+{
+    GIVEN("a rule that succeeds and writes to both streams")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": |> echo WARNING-TEXT; echo ERRTEXT 1>&2 |>\n");
+        REQUIRE(f.init().success());
+
+        for (auto const* flags : { "", "-q" }) {
+            WHEN(std::string { "it is built with flags '" } + flags + "'")
+            {
+                auto args = std::vector<std::string> {};
+                if (*flags != '\0') {
+                    args.emplace_back(flags);
+                }
+                auto result = f.build(args);
+                REQUIRE(result.success());
+
+                THEN("the command's line is followed by everything it wrote, each line prefixed")
+                {
+                    INFO("stdout: " << result.stdout_output);
+                    REQUIRE(result.stdout_output.find("[.] 100% echo WARNING-TEXT; echo ERRTEXT 1>&2\n[.] WARNING-TEXT\n[.] ERRTEXT\n[.] Build completed") != std::string::npos);
+                }
+            }
+        }
+    }
+}
+
+SCENARIO("A failed command's output follows its FAILED line without blank lines", "[e2e][build][progress]")
+{
+    GIVEN("a rule that writes to both streams and fails")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": |> echo OUT-TEXT; echo ERR-TEXT 1>&2; false |>\n");
+        REQUIRE(f.init().success());
+
+        WHEN("it is built")
+        {
+            auto result = f.build({});
+            REQUIRE_FALSE(result.success());
+
+            THEN("stderr holds the FAILED line, then each line it wrote, once")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.stderr_output.find("[.] FAILED: echo OUT-TEXT; echo ERR-TEXT 1>&2; false\n[.] OUT-TEXT\n[.] ERR-TEXT\n") != std::string::npos);
+                REQUIRE(result.stderr_output.find("ERR-TEXT\n\n") == std::string::npos);
             }
         }
     }
@@ -252,6 +400,12 @@ SCENARIO("A configure whose output is not a terminal prints no progress counter"
                 INFO("stdout: " << result.stdout_output);
                 REQUIRE(result.stdout_output.find("Configure completed") != std::string::npos);
                 REQUIRE(f.exists("build/tup.config"));
+            }
+
+            THEN("the config rule is named once, with its percent complete")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.stdout_output.find("[build] 100% echo CONFIG_X=y > ../build/configs/tup.config\n") != std::string::npos);
             }
         }
     }
@@ -303,7 +457,7 @@ SCENARIO("Percent flags inside display text expand against the rule", "[e2e][bui
 
         WHEN("the build reports the command it runs")
         {
-            auto result = f.build({ "-v" });
+            auto result = f.build({});
             REQUIRE(result.success());
 
             THEN("the flags render as the rule's own stem and output")
@@ -332,7 +486,7 @@ SCENARIO("A group flag inside display text is reported as written", "[e2e][build
 
         WHEN("the build reports the commands it runs")
         {
-            auto result = f.build({ "-v" });
+            auto result = f.build({});
             REQUIRE(result.success());
 
             THEN("every display keeps its group flag, and the command still reads the group's members")
@@ -459,7 +613,7 @@ SCENARIO("A bang macro's display wins over one written on the rule", "[e2e][buil
 
         WHEN("the build reports the command it runs")
         {
-            auto result = f.build({ "-v" });
+            auto result = f.build({});
             REQUIRE(result.success());
 
             THEN("the macro's display is used and the rule's is discarded")
@@ -1057,7 +1211,7 @@ SCENARIO("A group reference in the inputs section expands the same way at both s
 
         WHEN("the rule runs")
         {
-            auto const result = f.build({ "-v" });
+            auto const result = f.build({});
             REQUIRE(result.success());
 
             THEN("the displayed operand list and the executed operand list agree")
@@ -3076,6 +3230,32 @@ SCENARIO("A dep scan that prints anything but its rule fails the build", "[e2e][
             {
                 auto combined = result.stdout_output + result.stderr_output;
                 REQUIRE(combined.find("./tools/gcc -M f.c") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("A dep scan's rule is read, not printed", "[e2e][incremental][progress]")
+{
+    auto env = EnvGuard { "PUP_IMPLICIT_DEPS", "1" };
+
+    GIVEN("a compile whose headers are found by a dep scan")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("main.c", "int main(void) { return 0; }\n");
+        f.write_file("Tupfile", ": main.c |> gcc -c %f -o %o |> main.o\n");
+        REQUIRE(f.init().success());
+
+        WHEN("the build runs the scan and the compile")
+        {
+            auto result = f.build();
+            REQUIRE(result.success());
+
+            THEN("the scan's make rule appears in neither stream")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.stdout_output.find("main.o: ") == std::string::npos);
+                REQUIRE(result.stderr_output.find("main.o: ") == std::string::npos);
             }
         }
     }
@@ -6194,6 +6374,63 @@ SCENARIO("Variants built in parallel write each prefixed line whole", "[e2e][mul
                 }
                 CHECK(command_lines == 3000);
                 CHECK(variant_lines > command_lines);
+            }
+        }
+    }
+}
+
+SCENARIO("Variants built in parallel keep each command's output under its own line", "[e2e][multi-variant][progress]")
+{
+    GIVEN("two variants of a project whose commands write output, some of them failing")
+    {
+        auto f = E2EFixture { "multi_variant" };
+        auto tupfile = std::string {};
+        for (auto i = 0; i < 600; ++i) {
+            auto const n = std::to_string(i);
+            auto const ends = i % 10 == 0 ? std::string { "false" } : std::string { "true > %o" };
+            tupfile += ": |> echo out-" + n + "; echo err-" + n + " 1>&2; " + ends + " |> o" + n + ".txt\n";
+        }
+        f.write_file("Tupfile", tupfile);
+        f.mkdir("build-a");
+        f.mkdir("build-b");
+        f.write_file("build-a/tup.config", "");
+        f.write_file("build-b/tup.config", "");
+
+        WHEN("both are built at once, keeping going past failures")
+        {
+            auto result = f.pup({ "-k", "build-a", "build-b" });
+            REQUIRE_FALSE(result.success());
+
+            THEN("in each stream, every line carries its variant's prefix and output follows its command's line")
+            {
+                for (auto const* text : { &result.stdout_output, &result.stderr_output }) {
+                    auto in = std::istringstream { *text };
+                    auto previous = std::string {};
+                    auto output_lines = 0;
+                    auto line = std::string {};
+                    while (std::getline(in, line)) {
+                        if (line == "Building 2 variants in parallel:" || line == "  build-a" || line == "  build-b" || line == "2 of 2 variants failed") {
+                            continue;
+                        }
+                        INFO("line: " << line);
+                        INFO("previous: " << previous);
+                        auto const prefix = line.starts_with("[build-a] ") ? std::string { "[build-a] " }
+                            : line.starts_with("[build-b] ")            ? std::string { "[build-b] " }
+                                                                        : std::string {};
+                        CHECK_FALSE(prefix.empty());
+                        auto const body = line.substr(prefix.size());
+                        if (body.starts_with("out-") || body.starts_with("err-")) {
+                            ++output_lines;
+                            CHECK(previous.starts_with(prefix));
+                            auto const n = body.substr(4);
+                            auto const follows_own_command = previous.find("echo out-" + n + ";") != std::string::npos
+                                || previous == prefix + "out-" + n;
+                            CHECK(follows_own_command);
+                        }
+                        previous = line;
+                    }
+                    CHECK(output_lines > 0);
+                }
             }
         }
     }
@@ -13104,7 +13341,7 @@ SCENARIO("A compile-shaped rule with no dependency scan is reported", "[e2e][str
                 INFO("stdout: " << result.stdout_output);
                 REQUIRE(result.success());
                 REQUIRE(result.stdout_output.find("1 object file has no dependency scan") != std::string::npos);
-                REQUIRE(result.stdout_output.find("hidden.o") == std::string::npos);
+                REQUIRE(result.stdout_output.find("no dependency scan for") == std::string::npos);
             }
 
             THEN("the command it names is one putup accepts")

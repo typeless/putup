@@ -17,6 +17,7 @@
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/core/terminal.hpp"
+#include "pup/exec/progress_display.hpp"
 #include "pup/exec/scheduler.hpp"
 #include "pup/graph/dag.hpp"
 #include "pup/platform/file_io.hpp"
@@ -25,6 +26,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string_view>
+#include <utility>
 
 namespace pup::cli {
 
@@ -184,30 +186,45 @@ auto configure_single_variant(
 
     auto scheduler = pup::exec::Scheduler { sched_opts };
 
+    auto use_tty_progress = pup::stdout_is_tty() && !opts.verbose;
+    auto progress = pup::exec::ProgressState { .total = all_commands.size() };
+    auto prev_lines = std::size_t { 0 };
+
     scheduler.on_job_start([&](pup::exec::BuildJob const& job) {
-        if (opts.verbose || opts.dry_run) {
+        if (opts.dry_run) {
             auto display_sv = pool.get(job.display);
             print("[{}] {}\n", variant_name, display_sv);
         }
     });
 
     scheduler.on_job_complete([&](pup::exec::BuildJob const& job, pup::exec::JobResult const& job_result) {
+        progress = pup::exec::job_completed(std::move(progress), job.id, job_result.success);
+        auto const wrote_output = !pup::is_empty(job_result.output);
+        if (use_tty_progress) {
+            pup::exec::finalize_progress(prev_lines);
+        }
+        if (job_result.success && !opts.dry_run && (!opts.quiet || wrote_output)) {
+            auto const text = pool.get(opts.verbose ? job.command : job.display);
+            auto report = Buf {};
+            report.append(use_tty_progress ? text : pool.get(pup::exec::render_result(progress.completed + progress.failed, progress.total, text)));
+            report += '\n';
+            report.append(pool.get(job_result.output));
+            write_variant_lines(Stream::Out, variant_name, report.view());
+        }
         if (!job_result.success) {
-            // The command, not the display: configure's own echo shows the annotation, so this is the only line naming what actually ran.
-            eprint("[{}] FAILED: {}\n", variant_name, pool.get(job.command));
-            if (!pup::is_empty(job_result.output)) {
-                auto output_sv = pool.get(job_result.output);
-                eprint("[{}] {}\n", variant_name, output_sv);
-            }
+            auto report = Buf {};
+            report.fmt("FAILED: {}\n", pool.get(job.command));
+            report.append(pool.get(job_result.output));
+            write_variant_lines(Stream::Err, variant_name, report.view());
         }
     });
 
-    auto use_tty_progress = pup::stdout_is_tty() && !opts.verbose;
-
     scheduler.on_progress([&](std::size_t done, std::size_t total) {
+        progress.total = total;
         if (use_tty_progress) {
             print("\r[{}] [{}/{}] ", variant_name, done, total);
             flush(Stream::Out);
+            prev_lines = 1;
         }
     });
 

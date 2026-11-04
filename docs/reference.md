@@ -137,8 +137,18 @@ During builds, putup shows ninja-style progress output on TTY terminals:
 - Running jobs listed below, sorted by elapsed time (longest first)
 - Time format: `M:SS` (minutes:seconds)
 - Display updates in-place using terminal control sequences
+- Each finished command is named on its own line above the display, by its `^ text ^` annotation when it has one; any output it wrote follows that line, each line carrying the same `[variant] ` prefix
 
-When stdout is not a terminal — a pipe, a file, a CI log — no progress is printed; `-v` reports each command as it runs.
+When stdout is not a terminal — a pipe, a file, a CI log — the in-place display is off and each finished command's line carries the percent complete:
+
+```
+[.] ~33% CC src/parser.c
+[.] ~66% CC src/graph/builder.c
+[.] 100% LINK putup
+[.] Build completed: 3 commands in 2104ms
+```
+
+`-q` names only the commands that fail or write output; `-v` names each command by its full command line instead of its annotation.
 
 **Examples:**
 ```bash
@@ -618,7 +628,8 @@ putup show index "ar rcs"
 | | `--no-stat-cache` | Hash every file's contents; skip the size+mtime fast path (see §9.1). |
 | | `--rerun` | Re-execute commands even if up to date, scoped by path targets if given (e.g. re-running tests to check for flakes). Results are recorded normally. |
 | `-n` | `--dry-run` | Print commands without executing them. |
-| `-v` | `--verbose` | Verbose output: show parsing, change detection, etc. |
+| `-v` | `--verbose` | Verbose output: show parsing, change detection, etc.; name each finished command by its command line. |
+| `-q` | `--quiet` | Name only the commands that fail or write output. |
 | `-D VAR=val` | `--define` | Override CONFIG_ variable from CLI. |
 | `-S DIR` | | Source directory. Overrides auto-detection. |
 | `-C DIR` | `--config-dir` | Config directory (where Tupfiles live). |
@@ -2377,9 +2388,9 @@ Output includes:
 - Each Tupfile as it's parsed
 - Variables being set
 - Change detection decisions
-- Full commands as they execute (one per line)
+- Full commands, one line per finished command, in place of their display annotations
 
-Note: Verbose mode disables the ninja-style progress display, showing each command on its own line instead of updating in-place.
+Note: Verbose mode disables the ninja-style progress display; each command's line carries the percent complete instead.
 
 **Dry-run (`-n`)**
 

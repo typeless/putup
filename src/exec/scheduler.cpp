@@ -196,12 +196,9 @@ auto reject_unwritten_outputs(
         if (pup::platform::lexists(output_path)) {
             continue;
         }
-        if (!msg.empty()) {
-            msg.append('\n');
-        }
         msg.append("Error: expected to write to file '");
         msg.append(output_sv);
-        msg.append("'");
+        msg.append("'\n");
     }
     if (msg.empty()) {
         return;
@@ -210,7 +207,6 @@ auto reject_unwritten_outputs(
     if (!is_empty(result.output)) {
         auto combined = Buf {};
         combined.append(pool.get(result.output));
-        combined.append('\n');
         combined.append(msg.view());
         result.output = combined.intern(pool);
     } else {
@@ -533,14 +529,14 @@ auto reap_slot(JobSlot& slot, pup::platform::ProcessStatus const& status) -> Job
     );
 
     auto output_buf = Buf {};
-    if (!slot.stdout_buf.empty()) {
-        output_buf.append(slot.stdout_buf.view());
-    }
-    if (!slot.stderr_buf.empty()) {
-        if (!output_buf.empty()) {
+    for (auto const* stream : { &slot.stdout_buf, &slot.stderr_buf }) {
+        if (stream->empty()) {
+            continue;
+        }
+        output_buf.append(stream->view());
+        if (!stream->view().ends_with('\n')) {
             output_buf.append('\n');
         }
-        output_buf.append(slot.stderr_buf.view());
     }
     if (!output_buf.empty()) {
         result.output = pool.intern(output_buf.view());
@@ -664,6 +660,10 @@ auto Scheduler::build(
             pup::SteadyClock::now() - start_time
         );
         return impl_->stats;
+    }
+
+    if (impl_->on_progress) {
+        impl_->on_progress(0, impl_->stats.total_jobs);
     }
 
     auto exec_result = execute_parallel(jobs, state, ordering);
@@ -939,7 +939,7 @@ auto Scheduler::execute_parallel(
                     auto result = JobResult {
                         .id = job.id,
                         .success = false,
-                        .output = pool.intern("Failed to launch process"),
+                        .output = pool.intern("Failed to launch process\n"),
                     };
 
                     if (impl_->on_complete) {
@@ -1093,6 +1093,9 @@ auto Scheduler::execute_parallel(
             auto stdout_deps_cmd = std::optional<NodeId> {};
             auto scan_rejected = false;
             parse_stdout_depfile(job, slot.stdout_buf.view(), stdout_deps, stdout_deps_cmd, scan_rejected);
+            if (job.inject_implicit_deps && !scan_rejected && status.exit_code == 0) {
+                slot.stdout_buf.clear();
+            }
 
             auto result = reap_slot(slot, status);
             result.id = job.id;

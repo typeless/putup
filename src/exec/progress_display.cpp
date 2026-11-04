@@ -123,6 +123,19 @@ auto render_tty(ProgressState const& state, std::string_view variant) -> Progres
     return result;
 }
 
+auto render_result(std::size_t done, std::size_t total, std::string_view text) -> StringId
+{
+    auto out = Buf {};
+    if (total == 0) {
+        out.append(text);
+    } else if (done >= total) {
+        out.fmt("100% {}", text);
+    } else {
+        out.fmt("~{}% {}", Pad { done * 100 / total, 2, ' ' }, text);
+    }
+    return out.intern(global_pool());
+}
+
 auto format_duration(std::chrono::milliseconds ms) -> StringId
 {
     auto secs = static_cast<std::size_t>(ms.count() / 1000);

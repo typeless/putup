@@ -66,6 +66,8 @@ auto parse_args(int argc, char** argv) -> Options
             opts.version = true;
         } else if (arg == "-v" || arg == "--verbose") {
             opts.verbose = true;
+        } else if (arg == "-q" || arg == "--quiet") {
+            opts.quiet = true;
         } else if (arg == "-n" || arg == "--dry-run") {
             opts.dry_run = true;
         } else if (arg == "--stat") {
@@ -202,7 +204,8 @@ auto print_usage() -> void
           "  --no-stat-cache    Hash every file's contents (skip the size+mtime fast path)\n"
           "  --rerun            Re-execute up-to-date commands (scoped by targets if given)\n"
           "  -n, --dry-run      Print commands without executing\n"
-          "  -v, --verbose      Verbose output\n"
+          "  -v, --verbose      Name each command by its full command line\n"
+          "  -q, --quiet        Name only commands that fail or write output\n"
           "  -D, --define VAR=value\n"
           "                     Override config variable (-D VAR is shorthand for -D VAR=y)\n"
           "  -S DIR             Source directory (where source files live)\n"
