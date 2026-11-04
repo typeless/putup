@@ -12,8 +12,6 @@
 #include "pup/graph/topo.hpp"
 
 #include <algorithm>
-#include <array>
-#include <string>
 
 using namespace pup::graph;
 using pup::LinkType;
@@ -1799,6 +1797,17 @@ TEST_CASE("The build root cannot take the name of a source directory", "[graph]"
     REQUIRE(get_build_root_name(graph).empty());
 }
 
+TEST_CASE("In an in-tree build the build root's child by name is its source twin", "[graph]")
+{
+    auto bs = make_build_graph();
+    auto& graph = bs.graph;
+    auto const twin = ensure_file_node(graph, graph.paths.intern_path("a.c", pup::global_pool(), pup::PathId::BuildRoot), NodeType::File);
+    REQUIRE(twin.has_value());
+
+    REQUIRE(find_by_dir_name(graph, source_root(graph), "a.c") == twin->id());
+    REQUIRE(find_by_dir_name(graph, *find_file(graph, pup::BUILD_ROOT_ID), "a.c") == twin->id());
+}
+
 TEST_CASE("The empty fragment ensures the source root", "[graph]")
 {
     auto bs = make_build_graph();
@@ -2072,85 +2081,6 @@ TEST_CASE("files_for_each visits the file endpoints of matching edges in order",
     REQUIRE(visited.size() == 2);
     CHECK(visited[0] == *second);
     CHECK(visited[1] == *first);
-}
-
-TEST_CASE("A directory's child by name is the node its child path binds", "[graph]")
-{
-    auto const names = std::array<std::string_view, 6> { "a", "b", "build", "out", "$", "<a/b>" };
-    auto const types = std::array<NodeType, 3> { NodeType::File, NodeType::Directory, NodeType::Generated };
-
-    for (auto seed = std::uint64_t { 1 }; seed <= 200; ++seed) {
-        auto state = seed;
-        auto const next = [&](std::uint32_t bound) {
-            state = state * 6364136223846793005ULL + 1442695040888963407ULL;
-            return static_cast<std::uint32_t>(state >> 33) % bound;
-        };
-        auto bs = make_build_graph();
-        auto& g = bs.graph;
-        auto& pool = pup::global_pool();
-        auto ops = std::vector<std::string> {};
-
-        for (auto renames = next(3); renames > 0; --renames) {
-            auto const name = next(2) == 0 ? std::string_view {} : names[next(names.size())];
-            (void)set_build_root_name(g, name);
-            ops.push_back("rename " + std::string { name });
-        }
-        for (auto step = next(24); step > 0; --step) {
-            auto const type = types[next(types.size())];
-            if (next(2) == 0) {
-                auto const nodes = all_nodes(g);
-                auto parent = source_root(g);
-                if (!nodes.empty() && next(3) != 0) {
-                    if (auto const file = find_file(g, nodes[next(nodes.size())])) {
-                        parent = *file;
-                    }
-                }
-                auto const name = names[next(names.size())];
-                (void)add_file_node(g, FileNode { .type = type, .name = intern(name), .parent_dir = parent.id() });
-                ops.push_back("add " + std::to_string(parent.index()) + "/" + std::string { name });
-            } else {
-                auto path = std::string { names[next(names.size())] };
-                for (auto depth = next(3); depth > 0; --depth) {
-                    path += "/";
-                    path += names[next(names.size())];
-                }
-                auto const roots = std::array<pup::PathId, 3> { pup::PathId::Ungrounded, pup::PathId::SourceRoot, pup::PathId::BuildRoot };
-                auto const root = roots[next(roots.size())];
-                (void)ensure_file_node(g, g.paths.intern_path(path, pool, root), type);
-                ops.push_back("ensure " + std::to_string(pup::to_underlying(root)) + ":" + path);
-            }
-        }
-
-        auto dirs = std::vector<FileId> { source_root(g) };
-        for (auto id : all_nodes(g)) {
-            if (auto const file = find_file(g, id)) {
-                dirs.push_back(*file);
-            }
-        }
-        for (auto dir : dirs) {
-            if (dir.id() == pup::BUILD_ROOT_ID && get_build_root_name(g).empty()) {
-                continue;
-            }
-            auto const dir_path = get_file_node(g, dir.id())->path_id;
-            for (auto name : names) {
-                auto by_path = std::optional<pup::NodeId> {};
-                auto const name_id = pool.find(name);
-                if (auto const child = is_empty(name_id) ? std::nullopt : g.paths.find(dir_path, name_id)) {
-                    if (auto const* bound = g.path_to_node.find(pup::to_underlying(*child))) {
-                        by_path = pup::NodeId { *bound };
-                    }
-                }
-                auto ops_text = std::string {};
-                for (auto const& op : ops) {
-                    ops_text += op + "; ";
-                }
-                INFO("seed " << seed << " ops: " << ops_text << " dir " << dir.index() << " name " << name);
-                auto const by_name = find_by_dir_name(g, dir, name);
-                auto const shown = [](std::optional<pup::NodeId> id) { return id ? static_cast<long>(pup::node_id::index(*id)) : -1L; };
-                CHECK(shown(by_name) == shown(by_path));
-            }
-        }
-    }
 }
 
 TEST_CASE("An id that names no node resolves to nothing", "[graph]")

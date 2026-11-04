@@ -653,8 +653,7 @@ struct Graph {
     // Order-only edges use LinkType::OrderOnly in the unified edges vector
 
     // Node lookup indices
-    Vec<SortedPairVec> dir_children;  // Per-directory name -> NodeId (indexed by parent dir)
-    SortedPairVec path_to_node;      // PathId -> NodeId; in-tree, a build-root path resolves to its source twin's node
+    SortedPairVec path_to_node;      // PathId -> NodeId, the only path binding; in-tree, a build-root path resolves to its source twin's node
     StringPool command_strings;               // Interned expanded command strings
     SortedPairVec command_index;              // StringId(command) -> NodeId
 
@@ -678,7 +677,7 @@ class BuildGraph {
 
 **Path storage model**: Nodes store only their basename in `name`. Full paths are reconstructed by walking the `parent_dir` chain via `get_full_path()`, which caches results for efficiency.
 
-**Node creation**: All file/directory/ghost/generated nodes are created through `ensure_file_node(graph, path_id, type)`, which takes a grounded `PathId` and walks the PathPool trie to create intermediate directory nodes as needed. It deduplicates via `path_to_node` (PathId→NodeId map) and handles type upgrades (Ghost→Generated). The builder's `resolve_input_node` performs filesystem probing and heuristics to determine the correct root (SourceRoot vs BuildRoot) and NodeType, then delegates to `ensure_file_node` for actual node creation. Membership of `NodeType::Generated` is not only a classification others copy: two sites branch on it as *evidence* — grounding, where `is_seeded_generated` decides which root an input path binds to, and admission, where change detection decides which recorded entries it watches. Any change to what `Generated` means has to re-derive both, or a path silently changes which node it resolves to (#386).
+**Node creation**: All file/directory/ghost/generated nodes are created through `ensure_file_node(graph, path_id, type)`, which takes a grounded `PathId` and walks the PathPool trie to create intermediate directory nodes as needed. It deduplicates via `path_to_node` (PathId→NodeId map) and handles type upgrades (Ghost→Generated). `path_to_node` is the only table that binds a path to a node: `find_by_dir_name(parent, name)` answers the binding of the child path `PathPool::find(parent's path_id, name)`, `add_file_node` refuses a path already bound there, and `set_build_root_name` binds the build root's source-relative name there. So in-tree, a child of the build-root node is its source twin. The builder's `resolve_input_node` performs filesystem probing and heuristics to determine the correct root (SourceRoot vs BuildRoot) and NodeType, then delegates to `ensure_file_node` for actual node creation. Membership of `NodeType::Generated` is not only a classification others copy: two sites branch on it as *evidence* — grounding, where `is_seeded_generated` decides which root an input path binds to, and admission, where change detection decides which recorded entries it watches. Any change to what `Generated` means has to re-derive both, or a path silently changes which node it resolves to (#386).
 
 **Graph operations:**
 

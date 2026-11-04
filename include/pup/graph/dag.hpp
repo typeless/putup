@@ -101,8 +101,6 @@ struct Graph {
     NodeIdArenaIndex edges_to_index;
     NodeIdArenaIndex edges_from_index;
 
-    Vec<SortedPairVec> dir_children; ///< Per-directory name→NodeId index (indexed by parent dir)
-
     mutable PathPool paths;     ///< Interning trie of (parent PathId, basename StringId) entries
     SortedPairVec path_to_node; ///< Resolve: PathId → NodeId; in-tree, a build-root path resolves to its source twin's node
 

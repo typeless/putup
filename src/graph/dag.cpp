@@ -38,7 +38,6 @@ auto make_graph() -> Graph
     auto graph = Graph {};
 
     graph.files.resize(2);
-    graph.dir_children.resize(2);
     graph.files[0] = FileNode {
         .id = SOURCE_ROOT_ID,
         .type = NodeType::Directory,
@@ -155,18 +154,13 @@ auto add_file_node(Graph& graph, FileNode node) -> Result<FileId>
         return make_error<FileId>(ErrorCode::InvalidNodeId, err.view());
     }
     auto const parent_path = parent->path_id;
-    auto const parent_idx = node_id::index(node.parent_dir);
     if (!is_empty(node.name)) {
         node.path_id = graph.paths.intern(parent_path, node.name);
     }
 
     auto const names_a_path = !is_empty(node.name) && is_path_addressable(node.type);
     if (names_a_path) {
-        auto const* occupant = graph.path_to_node.find(to_underlying(node.path_id));
-        if (!occupant && parent_idx < graph.dir_children.size()) {
-            occupant = graph.dir_children[parent_idx].find(to_underlying(node.name));
-        }
-        if (occupant) {
+        if (auto const* occupant = graph.path_to_node.find(to_underlying(node.path_id))) {
             auto const existing = find_file(graph, NodeId { *occupant });
             if (!existing) {
                 return make_error<FileId>(ErrorCode::InvalidNodeId, "Path index names no file node");
@@ -190,13 +184,8 @@ auto add_file_node(Graph& graph, FileNode node) -> Result<FileId>
     auto const idx = node_id::index(id);
     if (idx >= graph.files.size()) {
         graph.files.resize(idx + 1);
-        graph.dir_children.resize(idx + 1);
     }
     graph.files[idx] = node;
-
-    if (names_a_path) {
-        graph.dir_children[parent_idx].insert(to_underlying(graph.files[idx].name), id);
-    }
 
     return FileId { static_cast<std::uint32_t>(idx) };
 }
@@ -508,10 +497,11 @@ auto find_by_dir_name(Graph const& graph, FileId parent_dir, std::string_view na
     if (is_empty(name_id)) {
         return std::nullopt;
     }
-    if (parent_dir.index() >= graph.dir_children.size()) {
+    auto const child = graph.paths.find(file_at(graph, parent_dir).path_id, name_id);
+    if (!child) {
         return std::nullopt;
     }
-    auto const* found = graph.dir_children[parent_dir.index()].find(to_underlying(name_id));
+    auto const* found = graph.path_to_node.find(to_underlying(*child));
     if (!found) {
         return std::nullopt;
     }
@@ -698,14 +688,12 @@ auto set_build_root_name(Graph& graph, std::string_view name) -> Result<void>
 
     auto const old_name = graph.files[BUILD_ROOT_ID].name;
     if (!is_empty(old_name)) {
-        graph.dir_children[0].remove(to_underlying(old_name));
         graph.path_to_node.remove(to_underlying(graph.paths.intern(PathId::SourceRoot, old_name)));
     }
 
     graph.files[BUILD_ROOT_ID].name = name_id;
 
     if (!is_empty(name_id)) {
-        graph.dir_children[0].insert(to_underlying(name_id), BUILD_ROOT_ID);
         graph.path_to_node.insert(to_underlying(name_path), BUILD_ROOT_ID);
     }
     graph.path_to_node.insert(to_underlying(PathId::BuildRoot), is_empty(name_id) ? SOURCE_ROOT_ID : BUILD_ROOT_ID);
