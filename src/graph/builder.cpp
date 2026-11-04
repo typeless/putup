@@ -694,33 +694,6 @@ auto are_guards_mutually_exclusive(
     return false;
 }
 
-/// Format a conditional expression as a string for the condition node
-auto format_condition_expr(parser::EvalContext& eval, parser::Conditional const& cond) -> StringId
-{
-    auto buf = Buf {};
-    switch (cond.kind) {
-    case parser::Conditional::Kind::Ifdef:
-        buf.fmt("ifdef({})", str(cond.var_name));
-        break;
-    case parser::Conditional::Kind::Ifndef:
-        buf.fmt("ifndef({})", str(cond.var_name));
-        break;
-    case parser::Conditional::Kind::Ifeq: {
-        auto lhs = parser::expand(eval, cond.lhs).value_or(StringId::Empty);
-        auto rhs = parser::expand(eval, cond.rhs).value_or(StringId::Empty);
-        buf.fmt("ifeq({},{})", str(lhs), str(rhs));
-        break;
-    }
-    case parser::Conditional::Kind::Ifneq: {
-        auto lhs = parser::expand(eval, cond.lhs).value_or(StringId::Empty);
-        auto rhs = parser::expand(eval, cond.rhs).value_or(StringId::Empty);
-        buf.fmt("ifneq({},{})", str(lhs), str(rhs));
-        break;
-    }
-    }
-    return buf.intern(global_pool());
-}
-
 /// One entry of a rule's expanded input list; not every entry names a file.
 struct RuleInput {
     enum class Kind { File,
@@ -1927,9 +1900,7 @@ auto process_conditional(
         return {};
     }
 
-    auto cond_expr = format_condition_expr(*ctx.eval, cond);
     auto cond_node = ConditionNode {
-        .expression = cond_expr,
         .current_value = condition_true,
     };
 

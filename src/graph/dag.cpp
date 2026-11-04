@@ -76,13 +76,6 @@ auto validate_node_id(Graph const& graph, NodeId id) -> bool
         }
         return graph.conditions[idx].id == id;
     }
-    if (node_id::is_phi(id)) {
-        auto idx = node_id::index(id);
-        if (idx == 0 || idx >= graph.phi_nodes.size()) {
-            return false;
-        }
-        return graph.phi_nodes[idx].id == id;
-    }
     auto idx = node_id::index(id);
     if (idx >= graph.files.size()) {
         return false;
@@ -388,12 +381,6 @@ auto get<NodeType>(Graph const& graph, NodeId id) -> NodeType
 }
 
 template<>
-auto get<NodeFlags>(Graph const& graph, NodeId id) -> NodeFlags
-{
-    return read_file_field(graph, id, &FileNode::flags, NodeFlags::None);
-}
-
-template<>
 auto get<Hash256>(Graph const& graph, NodeId id) -> Hash256
 {
     return read_file_field(graph, id, &FileNode::content_hash, Hash256 {});
@@ -468,40 +455,6 @@ auto get_condition_node(Graph& graph, NodeId id) -> ConditionNode*
 {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast) - Scott Meyers const_cast pattern
     return const_cast<ConditionNode*>(get_condition_node(std::as_const(graph), id));
-}
-
-auto add_phi_node(Graph& graph, PhiNode node) -> Result<NodeId>
-{
-    auto const id = graph.next_phi_id;
-    graph.next_phi_id = node_id::make_phi(node_id::index(graph.next_phi_id) + 1);
-    node.id = id;
-
-    auto const idx = node_id::index(id);
-    if (idx >= graph.phi_nodes.size()) {
-        graph.phi_nodes.resize(idx + 1);
-    }
-    graph.phi_nodes[idx] = std::move(node);
-
-    return id;
-}
-
-auto get_phi_node(Graph const& graph, NodeId id) -> PhiNode const*
-{
-    if (!node_id::is_phi(id)) {
-        return nullptr;
-    }
-    auto const idx = node_id::index(id);
-    if (idx == 0 || idx >= graph.phi_nodes.size()) {
-        return nullptr;
-    }
-    auto const& node = graph.phi_nodes[idx];
-    return node.id == id ? &node : nullptr;
-}
-
-auto get_phi_node(Graph& graph, NodeId id) -> PhiNode*
-{
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast) - Scott Meyers const_cast pattern
-    return const_cast<PhiNode*>(get_phi_node(std::as_const(graph), id));
 }
 
 auto is_guard_satisfied(Graph const& graph, NodeId id) -> bool
@@ -678,62 +631,6 @@ auto all_nodes(Graph const& graph) -> Vec<NodeId>
     for (auto i = std::size_t { 1 }; i < graph.commands.size(); ++i) {
         auto const id = node_id::make_command(i);
         if (graph.commands[i].id == id) {
-            result.push_back(id);
-        }
-    }
-    return result;
-}
-
-auto root_nodes(Graph const& graph) -> Vec<NodeId>
-{
-    auto has_inputs = [&](NodeId id) {
-        return graph.edges_to_index.contains(id);
-    };
-
-    auto result = Vec<NodeId> {};
-    for (auto i = NodeId { 1 }; i < graph.files.size(); ++i) {
-        auto const& node = graph.files[i];
-        if (node.id == i && !has_inputs(i)) {
-            result.push_back(i);
-        }
-    }
-    for (auto i = std::size_t { 1 }; i < graph.commands.size(); ++i) {
-        auto const id = node_id::make_command(i);
-        auto const& node = graph.commands[i];
-        if (node.id == id && !has_inputs(id)) {
-            result.push_back(id);
-        }
-    }
-    return result;
-}
-
-auto leaf_nodes(Graph const& graph) -> Vec<NodeId>
-{
-    auto has_outputs = [&](NodeId id) {
-        auto s = graph.edges_from_index.get_slice(id);
-        if (s.length == 0) {
-            return false;
-        }
-        auto span = graph.edge_arena.slice(s);
-        for (auto idx : span) {
-            if (graph.edges[idx].type != LinkType::Sticky) {
-                return true;
-            }
-        }
-        return false;
-    };
-
-    auto result = Vec<NodeId> {};
-    for (auto i = NodeId { 1 }; i < graph.files.size(); ++i) {
-        auto const& node = graph.files[i];
-        if (node.id == i && !has_outputs(i)) {
-            result.push_back(i);
-        }
-    }
-    for (auto i = std::size_t { 1 }; i < graph.commands.size(); ++i) {
-        auto const id = node_id::make_command(i);
-        auto const& node = graph.commands[i];
-        if (node.id == id && !has_outputs(id)) {
             result.push_back(id);
         }
     }

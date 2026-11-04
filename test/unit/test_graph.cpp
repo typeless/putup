@@ -225,22 +225,6 @@ TEST_CASE("BuildGraph basic operations", "[graph]")
         auto generated = nodes_of_type(g, NodeType::Generated);
         REQUIRE(generated.size() == 1);
     }
-
-    SECTION("root and leaf nodes")
-    {
-        auto id1 = add_file_node(g, FileNode { .name = intern("a.c") });
-        auto id2 = add_command_node(g, CommandNode { .instruction = pup::test::instruction("") });
-        auto id3 = add_file_node(g, FileNode { .type = NodeType::Generated, .name = intern("a.o") });
-
-        (void)add_edge(g, *id1, *id2);
-        (void)add_edge(g, *id2, *id3);
-
-        auto roots = root_nodes(g);
-        // Root nodes include BUILD_ROOT_ID (which has no inputs) plus a.c
-        REQUIRE(roots.size() == 2);
-        // One of the roots should be the file we added
-        REQUIRE(std::ranges::find(roots, *id1) != roots.end());
-    }
 }
 
 TEST_CASE("Topological sort", "[graph]")
@@ -425,7 +409,6 @@ TEST_CASE("get<T> template accessor for unique-return-type properties", "[graph]
 
     auto dir = add_file_node(g, FileNode { .type = NodeType::Directory, .name = intern("src") });
     auto file = add_file_node(g, FileNode {
-        .flags = pup::NodeFlags::Modified,
         .name = intern("main.c"),
         .parent_dir = *dir,
         .content_hash = hash,
@@ -440,13 +423,6 @@ TEST_CASE("get<T> template accessor for unique-return-type properties", "[graph]
         CHECK(get<NodeType>(g, *file) == NodeType::File);
         CHECK(get<NodeType>(g, *dir) == NodeType::Directory);
         CHECK(get<NodeType>(g, *cmd) == NodeType::Command);
-    }
-
-    SECTION("get<NodeFlags>")
-    {
-        CHECK(get<pup::NodeFlags>(g, *file) == pup::NodeFlags::Modified);
-        CHECK(get<pup::NodeFlags>(g, *dir) == pup::NodeFlags::None);
-        CHECK(get<pup::NodeFlags>(g, *cmd) == pup::NodeFlags::None);
     }
 
     SECTION("get<Hash256>")
@@ -663,38 +639,6 @@ TEST_CASE("Unified edge storage for order-only edges", "[graph]")
         auto deps = get_order_only_dependents(g, *group_id);
         REQUIRE(deps.size() == 1);
         REQUIRE(deps[0] == *cmd_id);
-    }
-
-    SECTION("root_nodes excludes nodes with only order-only inputs")
-    {
-        auto roots = root_nodes(g);
-        // cmd has inputs (normal + order-only), so it's not a root
-        REQUIRE(std::ranges::find(roots, *cmd_id) == roots.end());
-        // group1 has no inputs, so it IS a root
-        REQUIRE(std::ranges::find(roots, *group_id) != roots.end());
-        // input.c has no inputs, so it IS a root
-        REQUIRE(std::ranges::find(roots, *input_id) != roots.end());
-    }
-
-    SECTION("root_nodes excludes command with only order-only input")
-    {
-        auto bs2 = make_build_graph();
-        auto& g2 = bs2.graph;
-
-        auto grp = add_file_node(g2, FileNode { .type = NodeType::Group, .name = intern("<order>") });
-        auto cmd = add_command_node(g2, CommandNode { .instruction = pup::test::instruction("touch") });
-        auto out = add_file_node(g2, FileNode { .type = NodeType::Generated, .name = intern("stamp") });
-
-        REQUIRE(grp.has_value());
-        REQUIRE(cmd.has_value());
-        REQUIRE(out.has_value());
-
-        (void)add_edge(g2, *grp, *cmd, LinkType::OrderOnly);
-        (void)add_edge(g2, *cmd, *out);
-
-        auto roots = root_nodes(g2);
-        REQUIRE(std::ranges::find(roots, *cmd) == roots.end());
-        REQUIRE(std::ranges::find(roots, *grp) != roots.end());
     }
 }
 

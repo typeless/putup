@@ -612,7 +612,6 @@ auto serialize_graph_nodes(
         }
 
         auto type = pup::graph::get<pup::NodeType>(g, id);
-        auto node_flags = pup::graph::get<pup::NodeFlags>(g, id);
 
         switch (type) {
         case pup::NodeType::File:
@@ -624,7 +623,7 @@ auto serialize_graph_nodes(
                     .parent_id = pup::graph::get_parent_dir(g, id),
                     .src_id = 0,
                     .type = type,
-                    .flags = node_flags,
+                    .flags = pup::NodeFlags::None,
                     .name = pup::graph::get<pup::graph::Name>(g, id),
                     .path = pup::StringId::Empty,
                     .size = 0,
@@ -680,8 +679,8 @@ auto serialize_graph_nodes(
 
             auto& pool = pup::global_pool();
             auto entry_flags = std::binary_search(deleted_stale.begin(), deleted_stale.end(), pool.intern(node_path), pup::handle_less)
-                ? node_flags | pup::NodeFlags::AbsenceRouted
-                : node_flags;
+                ? pup::NodeFlags::AbsenceRouted
+                : pup::NodeFlags::None;
             auto entry = pup::index::FileEntry {
                 .id = id,
                 .parent_id = pup::graph::get_parent_dir(g, id),
@@ -707,7 +706,7 @@ auto serialize_graph_nodes(
                 .parent_id = pup::graph::get_parent_dir(g, id),
                 .src_id = 0,
                 .type = type,
-                .flags = node_flags,
+                .flags = pup::NodeFlags::None,
                 .name = pup::graph::get<pup::graph::Name>(g, id),
                 .path = pool.intern(node_path),
                 .size = 0,
@@ -750,7 +749,7 @@ auto serialize_graph_nodes(
                 .parent_id = pup::graph::get_parent_dir(g, id),
                 .src_id = 0,
                 .type = recorded_type,
-                .flags = node_flags,
+                .flags = pup::NodeFlags::None,
                 .name = pup::graph::get<pup::graph::Name>(g, id),
                 .path = path_id,
                 .size = file_size,
@@ -768,7 +767,7 @@ auto serialize_graph_nodes(
                 .parent_id = pup::graph::get_parent_dir(g, id),
                 .src_id = 0,
                 .type = type,
-                .flags = node_flags,
+                .flags = pup::NodeFlags::None,
                 .name = pup::graph::get<pup::graph::Name>(g, id),
                 .path = pup::StringId::Empty,
                 .size = 0,

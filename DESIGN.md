@@ -145,7 +145,7 @@ enum class NodeType : std::uint8_t {
     GeneratedDir,   // Auto-created directory
     Root,           // Project root
     Condition,      // Conditional guard (ifeq/ifdef)
-    Phi             // Merges outputs from conditional branches
+    Phi             // Reserved index-format value; no node of this type is built
 };
 ```
 
@@ -558,7 +558,6 @@ class StringPool {
 struct FileNode {
     NodeId id;
     NodeType type;          // File, Directory, Generated, Ghost, Group, Variable, etc.
-    NodeFlags flags;        // Modified, Created, Deleted, etc.
     StringId name;          // Basename only (interned, tup-style identification)
     NodeId parent_dir;      // Parent directory node (used with name for lookup)
     Hash256 content_hash;   // Content hash for files (directories have zero hash)
@@ -598,21 +597,7 @@ struct CommandNode {
 /// Type is determined by node_id::is_condition(), not a stored field.
 struct ConditionNode {
     NodeId id = 0;
-    StringId expression = StringId::Empty;     // String representation of condition
-    bool current_value = false;                // Evaluated at graph time
-    std::optional<NodeId> config_var_dep = {}; // Config var this depends on (if any)
-};
-
-/// Phi node - merges outputs from conditional branches
-/// Created when same output name appears in both branches of a conditional.
-/// Type is determined by node_id::is_phi(), not a stored field.
-struct PhiNode {
-    NodeId id = 0;
-    StringId name = StringId::Empty;       // Canonical output name
-    NodeId parent_dir = 0;                 // Parent directory
-    NodeId condition;                      // The condition determining which output
-    NodeId then_output;                    // Output when condition is true
-    NodeId else_output;                    // Output when condition is false
+    bool current_value = false; // Evaluated at graph time
 };
 
 struct Edge {
@@ -627,7 +612,7 @@ exactly one kind — mixed-flag junk states are unrepresentable:
 - File IDs: 1, 2, 3, ... (tag 0)
 - Command IDs: 0x40000001, 0x40000002, ... (tag 1)
 - Condition IDs: 0x80000001, ... (tag 2)
-- Phi IDs: 0xC0000001, ... (tag 3)
+- Phi IDs: 0xC0000001, ... (tag 3; reserved so every tag value names a kind, no phi node is stored)
 
 The `node_id` namespace provides type detection and ID construction:
 
@@ -658,9 +643,7 @@ struct Graph {
     Vec<CommandNode> commands;        // Command nodes only
     Vec<Edge> edges;                  // Central edge storage
 
-    // Phi-node model structures
     Vec<ConditionNode> conditions;    // Conditional guards
-    Vec<PhiNode> phi_nodes;           // Output merges from conditional branches
 
     // Edge indices: NodeId -> ArenaSlice (indices into edges vector)
     Arena32 edge_arena;
@@ -679,7 +662,6 @@ struct Graph {
     NodeId next_file_id = 2;                               // Starts at 2 (BUILD_ROOT is 1)
     NodeId next_command_id = node_id::make_command(1);     // First command ID
     NodeId next_condition_id = node_id::make_condition(1); // First condition ID
-    NodeId next_phi_id = node_id::make_phi(1);             // First phi ID
 };
 
 // Path cache is stored externally in BuildGraph for const-correctness
@@ -718,11 +700,9 @@ auto nodes_of_type(Graph const&, type) -> Vec<NodeId>;
 auto get_file_node(Graph&, id) -> FileNode*;           // nullptr for command IDs
 auto get_command_node(Graph&, id) -> CommandNode*;     // nullptr for file IDs
 auto get_condition_node(Graph&, id) -> ConditionNode*; // nullptr for non-condition IDs
-auto get_phi_node(Graph&, id) -> PhiNode*;             // nullptr for non-phi IDs
 
-// Phi-node model helpers
+// Condition helpers
 auto add_condition_node(Graph&, ConditionNode) -> Result<NodeId>;
-auto add_phi_node(Graph&, PhiNode) -> Result<NodeId>;
 auto is_guard_satisfied(Graph const&, NodeId) -> bool;
 
 // String access helpers (resolve StringId -> string_view)
@@ -2023,11 +2003,11 @@ endif
 
 **Graph structure:**
 ```
-foo.c ─────┬─→ [cmd1: gcc -g]  ─→ app@DEBUG=y ──┐
-           │       ↑ guard                      │
-           │   DEBUG=y                          ├─→ φ(app) ─→ downstream
-           │                                    │
-           └─→ [cmd2: gcc -O2] ─→ app@DEBUG=n ──┘
+foo.c ─────┬─→ [cmd1: gcc -g]  ──┐
+           │       ↑ guard       │
+           │   DEBUG=y           ├─→ app ─→ downstream
+           │                     │
+           └─→ [cmd2: gcc -O2] ──┘
                    ↑ guard
                DEBUG=n
 ```
@@ -2036,7 +2016,7 @@ foo.c ─────┬─→ [cmd1: gcc -g]  ─→ app@DEBUG=y ──┐
 
 1. **Both branches always in graph** - Stable structure across condition toggles
 2. **Commands are guarded** - Have `Guard{condition, polarity}` entries
-3. **Phi-nodes merge outputs** - Represent the "canonical" file for downstream consumers
+3. **Exclusive branches share an output node** - Two commands may name the same output when their guards cannot both hold (`are_guards_mutually_exclusive`); downstream consumers see one node. No separate phi node is stored.
 4. **Execution filters by guard** - Scheduler checks `guard_active` before running
 5. **Index stays constant** - No churn when toggling configurations
 

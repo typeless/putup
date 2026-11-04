@@ -1498,8 +1498,8 @@ TEST_CASE("graph-to-index roundtrip holds for randomized graphs", "[index]")
             file_ids.push_back(*id);
         }
 
-        auto false_cond = pup::graph::add_condition_node(g, pup::graph::ConditionNode { .expression = intern("cond_off"), .current_value = false });
-        auto true_cond = pup::graph::add_condition_node(g, pup::graph::ConditionNode { .expression = intern("cond_on"), .current_value = true });
+        auto false_cond = pup::graph::add_condition_node(g, pup::graph::ConditionNode { .current_value = false });
+        auto true_cond = pup::graph::add_condition_node(g, pup::graph::ConditionNode { .current_value = true });
         REQUIRE(false_cond.has_value());
         REQUIRE(true_cond.has_value());
 

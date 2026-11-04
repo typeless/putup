@@ -43,7 +43,6 @@ struct Edge {
 struct FileNode {
     NodeId id = 0;
     NodeType type = NodeType::File;
-    NodeFlags flags = NodeFlags::None;
 
     StringId name = StringId::Empty; ///< Basename only (interned, tup-style identification)
     NodeId parent_dir = 0;           ///< Parent directory node (used with name for lookup)
@@ -85,32 +84,17 @@ struct CommandNode {
 };
 
 /// Condition node - represents an ifeq/ifdef/ifneq/ifndef condition
-/// Used for phi-node model: both branches are in graph, guards determine which executes
+/// Both branches are in the graph; guards determine which executes
 struct ConditionNode {
     NodeId id = 0;
-    StringId expression = StringId::Empty;     ///< String representation of condition
-    bool current_value = false;                ///< Evaluated at graph time
-    std::optional<NodeId> config_var_dep = {}; ///< Config var this depends on (if any)
-};
-
-/// Phi node - merges outputs from conditional branches
-/// When multiple commands produce the same output from different branches,
-/// the phi node resolves to the active branch's output
-struct PhiNode {
-    NodeId id = 0;
-    StringId name = StringId::Empty; ///< Canonical output name
-    NodeId parent_dir = 0;           ///< Parent directory
-    NodeId condition;                ///< The condition determining which output to use
-    NodeId then_output;              ///< Output when condition is true
-    NodeId else_output;              ///< Output when condition is false
+    bool current_value = false; ///< Evaluated at graph time
 };
 
 /// Build graph - DAG of nodes and edges (plain data struct)
 struct Graph {
     StableVec<FileNode> files;           ///< Files, directories, groups (non-command nodes)
     StableVec<CommandNode> commands;     ///< Command nodes only
-    StableVec<ConditionNode> conditions; ///< Condition nodes (for phi-node model)
-    StableVec<PhiNode> phi_nodes;        ///< Phi nodes (merge conditional outputs)
+    StableVec<ConditionNode> conditions; ///< Condition nodes
     Vec<Edge> edges;                     ///< Central edge storage (single source of truth)
 
     Arena32 edge_arena;
@@ -125,7 +109,6 @@ struct Graph {
     NodeId next_file_id = 2;                               ///< Next file node ID (starts at 2, BUILD_ROOT is 1)
     NodeId next_command_id = node_id::make_command(1);     ///< Next command node ID
     NodeId next_condition_id = node_id::make_condition(1); ///< Next condition node ID
-    NodeId next_phi_id = node_id::make_phi(1);             ///< Next phi node ID
 };
 
 /// Add a file node to the graph
@@ -146,8 +129,8 @@ auto add_command_node(Graph& graph, CommandNode node) -> Result<NodeId>;
 [[nodiscard]]
 auto add_edge(Graph& graph, NodeId from, NodeId to, LinkType type = LinkType::Normal) -> Result<void>;
 
-/// Role tags for scalar-property access via get<Tag>. The five tags that
-/// are also concrete types (NodeType, NodeFlags, Hash256, OutputAction,
+/// Role tags for scalar-property access via get<Tag>. The four tags that
+/// are also concrete types (NodeType, Hash256, OutputAction,
 /// SourcePosition) identify themselves by their return type. The four below
 /// are pure role tags whose storage type is StringId.
 struct Name { };
@@ -162,10 +145,6 @@ struct get_storage;
 template<>
 struct get_storage<NodeType> {
     using type = NodeType;
-};
-template<>
-struct get_storage<NodeFlags> {
-    using type = NodeFlags;
 };
 template<>
 struct get_storage<Hash256> {
@@ -403,10 +382,6 @@ auto edge_count(Graph const& graph) -> std::size_t;
 /// Get all node IDs
 [[nodiscard]]
 auto all_nodes(Graph const& graph) -> Vec<NodeId>;
-
-/// Get root nodes (nodes with no inputs)
-[[nodiscard]]
-auto root_nodes(Graph const& graph) -> Vec<NodeId>;
 
 /// Materialize a PathId to its display string. For BuildRoot-grounded paths,
 /// prepends the build root name (e.g., "build/gcc/foo.o").
