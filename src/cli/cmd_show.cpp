@@ -29,6 +29,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -148,19 +149,19 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
     print("{}\n\n", script_prologue);
 
     auto output_dirs = Vec<StringId> {};
-    for (auto id : graph::all_nodes(ctx.graph().graph)) {
-        auto node_type = graph::get<pup::NodeType>(ctx.graph().graph, id);
+    for (auto file : graph::file_ids(ctx.graph().graph)) {
+        auto node_type = graph::get<pup::NodeType>(ctx.graph().graph, file);
         if (node_type != pup::NodeType::Generated && node_type != pup::NodeType::File) {
             continue;
         }
 
-        auto node_path_id = graph::get_full_path(ctx.graph().graph, id);
+        auto node_path_id = graph::get_full_path(ctx.graph().graph, file);
         auto node_path = global_pool().get(node_path_id);
         if (node_path.empty()) {
             continue;
         }
 
-        auto inputs = graph::get_inputs(ctx.graph().graph, id);
+        auto inputs = graph::get_inputs(ctx.graph().graph, file.id());
         for (auto input_id : inputs) {
             if (node_id::is_command(input_id)) {
                 auto parent = pup::path::parent(node_path);
@@ -188,10 +189,13 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
         print("\n");
     }
 
-    for (auto id : topo.order) {
-        if (!node_id::is_command(id)) {
+    for (auto node : topo.order) {
+        if (!node_id::is_command(node)) {
             continue;
         }
+        auto const command = graph::find_command(ctx.graph().graph, node);
+        assert(command);
+        auto const id = *command;
         if (graph::get<graph::OutputAction>(ctx.graph().graph, id) == graph::OutputAction::InjectImplicitDeps) {
             continue;
         }
@@ -243,7 +247,7 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
     auto& index = *index_result;
 
     if (opts.summary) {
-        auto commands = graph::nodes_of_type(ctx.graph().graph, pup::NodeType::Command);
+        auto commands = graph::command_ids(ctx.graph().graph);
         print("[{}] Tupfiles: {}\n", variant_name, ctx.parsed_dirs().size());
         print("[{}] Nodes: {}\n", variant_name, graph::node_count(ctx.graph().graph));
         print("[{}] Edges: {}\n", variant_name, graph::edge_count(ctx.graph().graph));
@@ -274,7 +278,15 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
 
     auto const inactive_outputs = graph::collect_inactive_outputs(ctx.graph().graph);
     auto is_gated_off = [&](NodeId id) {
-        return inactive_outputs.contains(id) || !graph::is_guard_satisfied(ctx.graph().graph, id);
+        if (inactive_outputs.contains(id)) {
+            return true;
+        }
+        if (!node_id::is_command(id)) {
+            return false;
+        }
+        auto const command = graph::find_command(ctx.graph().graph, id);
+        assert(command);
+        return !graph::is_guard_satisfied(ctx.graph().graph, *command);
     };
     auto declared_nodes = pup::NodeIdMap32 {};
     for (auto id : graph::all_nodes(ctx.graph().graph)) {
@@ -285,9 +297,13 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
 
         auto get_label = [&]() -> std::string_view {
             if (node_id::is_command(id)) {
-                return pool.get(graph::command_label(ctx.graph().graph, id));
+                auto const command = graph::find_command(ctx.graph().graph, id);
+                assert(command);
+                return pool.get(graph::command_label(ctx.graph().graph, *command));
             }
-            return pool.get(graph::get_full_path(ctx.graph().graph, id));
+            auto const file = graph::find_file(ctx.graph().graph, id);
+            assert(file);
+            return pool.get(graph::get_full_path(ctx.graph().graph, *file));
         };
         auto label = escape_dot_label(get_label());
 
@@ -363,16 +379,20 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
     auto& ctx = *result;
 
     print("[\n");
-    auto commands = graph::nodes_of_type(ctx.graph().graph, pup::NodeType::Command);
     auto first = true;
 
-    for (auto id : commands) {
+    for (auto id : graph::command_ids(ctx.graph().graph)) {
         if (!graph::is_guard_satisfied(ctx.graph().graph, id)) {
             continue;
         }
         auto source_file = std::string_view {};
-        for (auto input_id : graph::get_inputs(ctx.graph().graph, id)) {
-            auto input_path_id = graph::get_full_path(ctx.graph().graph, input_id);
+        for (auto input_id : graph::get_inputs(ctx.graph().graph, id.id())) {
+            if (!node_id::is_file(input_id)) {
+                continue;
+            }
+            auto const input = graph::find_file(ctx.graph().graph, input_id);
+            assert(input);
+            auto input_path_id = graph::get_full_path(ctx.graph().graph, *input);
             auto sv = pool.get(input_path_id);
             if (sv.empty()) {
                 continue;
@@ -384,8 +404,13 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
         }
 
         auto output_file = std::string_view {};
-        for (auto output_id : graph::get_outputs(ctx.graph().graph, id)) {
-            auto output_path_id = graph::get_full_path(ctx.graph().graph, output_id);
+        for (auto output_id : graph::get_outputs(ctx.graph().graph, id.id())) {
+            if (!node_id::is_file(output_id)) {
+                continue;
+            }
+            auto const output = graph::find_file(ctx.graph().graph, output_id);
+            assert(output);
+            auto output_path_id = graph::get_full_path(ctx.graph().graph, *output);
             auto sv = pool.get(output_path_id);
             if (sv.empty()) {
                 continue;

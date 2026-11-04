@@ -120,7 +120,7 @@ constexpr NodeId BUILD_ROOT_ID = 1;    // Parent of Generated/Ghost nodes (varia
 
 Both roots are live Directory nodes, built by `make_graph` at `files[0]` and `files[1]`, so
 a lookup that lands on a root reads a real node. Top-level source files have parent=0. The
-node enumerators (`all_nodes`, `nodes_of_type`) start at 1 and the index has no entry for
+node enumerators (`all_nodes`, `file_ids`) start at 1 and the index has no entry for
 the source root, so a parent id of 0 means the source root on both sides. There is no
 "no node" id: a field that may name no node is `std::optional<NodeId>`. For variant builds,
 Generated/Ghost nodes are stored under `BUILD_ROOT_ID` at source-relative paths.
@@ -683,43 +683,60 @@ class BuildGraph {
 **Graph operations:**
 
 ```cpp
-// Free functions (functional style)
-auto add_file_node(Graph&, FileNode) -> Result<NodeId>;
-auto ensure_file_node(Graph&, PathId, NodeType) -> Result<NodeId>; // Primary creation path
-auto add_command_node(Graph&, CommandNode) -> Result<NodeId>;
-auto add_edge(Graph&, from, to, type) -> Result<void>;
-auto get_full_path(Graph const&, id) -> StringId;
-auto find_by_dir_name(Graph const&, parent_id, name) -> std::optional<NodeId>;
-auto find_by_path(Graph const&, path) -> std::optional<NodeId>;
-auto get_inputs(Graph const&, id) -> Vec<NodeId>;
-auto get_outputs(Graph const&, id) -> Vec<NodeId>;
-auto get_sticky_outputs(Graph const&, id) -> Vec<NodeId>;  // Tupfile/config deps
-auto nodes_of_type(Graph const&, type) -> Vec<NodeId>;
+// Live-node handles. Only the graph mints them, so every accessor that takes one
+// is total: there is no "no node" answer to confuse with a real one.
+class FileId;     // index(), id() -> NodeId, operator==
+class CommandId;  // index(), id() -> NodeId, operator==
 
-// Type-specific accessors
-auto get_file_node(Graph&, id) -> FileNode*;           // nullptr for command IDs
-auto get_command_node(Graph&, id) -> CommandNode*;     // nullptr for file IDs
-auto get_condition_node(Graph&, id) -> ConditionNode*; // nullptr for non-condition IDs
+// Creation returns a handle
+auto add_file_node(Graph&, FileNode) -> Result<FileId>;
+auto ensure_file_node(Graph&, PathId, NodeType) -> Result<FileId>; // Primary creation path
+auto add_command_node(Graph&, CommandNode) -> Result<CommandId>;
+auto add_edge(Graph&, NodeId from, NodeId to, type) -> Result<void>;
 
-// Condition helpers
+// Resolving an untrusted NodeId (edge endpoint, path_to_node hit, index id) is the
+// only way from a NodeId to a handle: nullopt for another kind, an out-of-range
+// index, or a slot holding another id.
+auto find_file(Graph const&, NodeId) -> std::optional<FileId>;
+auto find_command(Graph const&, NodeId) -> std::optional<CommandId>;
+auto source_root(Graph const&) -> FileId;
+
+// Enumeration over the dense live slots, from index 1 (the source root is skipped)
+auto file_ids(Graph const&) -> HandleRange<FileId>;
+auto command_ids(Graph const&) -> HandleRange<CommandId>;
+auto all_nodes(Graph const&) -> Vec<NodeId>;  // mixed kinds: topological sort, graph export
+
+// Field accessors: file tags take FileId, command tags take CommandId
+auto get<NodeType | Hash256 | Name>(Graph const&, FileId);
+auto get<OutputAction | SourcePosition | Display | SourceDir | InstructionPattern>(Graph const&, CommandId);
+auto view<Inputs | OrderOnlyInputs | Outputs | ExportedVars>(Graph const&, CommandId);
+auto get_parent_dir(Graph const&, FileId) -> FileId;
+auto get_full_path(Graph const&, FileId, PathCache&) -> std::string_view;
+auto get_full_path(Graph const&, FileId) -> StringId;
+auto find_by_dir_name(Graph const&, FileId parent, name) -> std::optional<NodeId>;
+auto get_parent_command(Graph const&, CommandId) -> std::optional<CommandId>;
+auto is_stdout_capture(Graph const&, CommandId) -> bool;
+auto is_guard_satisfied(Graph const&, CommandId) -> bool;
+auto expand_instruction(Graph const&, CommandId, PathCache&) -> StringId;
+auto expand_instruction(Graph const&, CommandId) -> StringId;
+auto command_label(Graph const&, CommandId, PathCache&) -> StringId;
+auto compute_command_key(Graph const&, CommandId, PathCache&) -> Hash256;
+auto compute_command_signature(Graph const&, CommandId, PathCache&) -> Hash256;
+
+// Edge queries stay on NodeId: an edge joins nodes of any kind
+auto get_inputs(Graph const&, NodeId) -> Vec<NodeId>;
+auto get_outputs(Graph const&, NodeId) -> Vec<NodeId>;
+auto edges_where(Graph const&, NodeId, EdgeDirection, LinkTypeMask) -> Vec<NodeId>;
+
+// Internal, declared locally by builder.cpp and white-box tests
+auto get_file_node(Graph&, NodeId) -> FileNode*;           // nullptr unless find_file resolves
+auto get_command_node(Graph&, NodeId) -> CommandNode*;     // nullptr unless find_command resolves
+auto get_condition_node(Graph&, NodeId) -> ConditionNode*; // nullptr for non-condition IDs
 auto add_condition_node(Graph&, ConditionNode) -> Result<NodeId>;
-auto is_guard_satisfied(Graph const&, NodeId) -> bool;
-
-// String access helpers (resolve StringId -> string_view)
-auto get_name(Graph const&, id) -> std::string_view;
-auto get_display_str(Graph const&, id) -> std::string_view;
-auto get_source_dir(Graph const&, id) -> std::string_view;
-auto get_instruction_pattern(Graph const&, id) -> std::string_view;
-auto expand_instruction(Graph const&, id, PathCache&) -> StringId;
-auto expand_instruction(Graph const&, id) -> StringId;
-
-// Command index for find_by_command() lookups
-auto build_command_index(Graph&, PathCache&) -> void;
 
 // Build root management (for variant builds)
 auto set_build_root_name(Graph&, name) -> void;
 auto get_build_root_name(Graph const&) -> std::string_view;
-auto is_under_build_root(Graph const&, id) -> bool;
 ```
 
 ### Topological Sort

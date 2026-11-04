@@ -1324,11 +1324,12 @@ namespace {
 auto node_label(pup::graph::Graph const& g, pup::NodeId id) -> std::string
 {
     if (node_id::is_command(id)) {
-        return "C:" + std::string(sv(pup::graph::get<pup::graph::InstructionPattern>(g, id)));
+        return "C:" + std::string(sv(pup::graph::get<pup::graph::InstructionPattern>(g, pup::graph::find_command(g, id).value())));
     }
-    auto type = pup::graph::get<NodeType>(g, id);
+    auto const file = pup::graph::find_file(g, id).value();
+    auto type = pup::graph::get<NodeType>(g, file);
     return "F" + std::to_string(static_cast<int>(type)) + ":"
-        + std::string(sv(pup::graph::get<pup::graph::Name>(g, id)));
+        + std::string(sv(pup::graph::get<pup::graph::Name>(g, file)));
 }
 
 auto entry_label(Index const& idx, pup::NodeId id) -> std::string
@@ -1346,7 +1347,7 @@ auto entry_label(Index const& idx, pup::NodeId id) -> std::string
 auto sorted_edge_labels_of_graph(pup::graph::Graph const& g) -> std::vector<std::string>
 {
     auto touches_inactive_command = [&g](pup::NodeId id) {
-        return node_id::is_command(id) && !pup::graph::is_guard_satisfied(g, id);
+        return node_id::is_command(id) && !pup::graph::is_guard_satisfied(g, pup::graph::find_command(g, id).value());
     };
     auto labels = std::vector<std::string> {};
     for (auto const& edge : g.edges) {
@@ -1384,12 +1385,10 @@ auto require_graph_index_roundtrip(pup::graph::BuildGraph const& bs, std::string
     auto cmd_remap = pup::cli::serialize_command_nodes(bs, index, path_to_id);
     pup::cli::serialize_edges(bs, index, cmd_remap);
 
-    auto live_file_nodes = std::size_t { 0 };
+    auto live_file_nodes = pup::graph::file_ids(bs.graph).size();
     auto active_commands = std::size_t { 0 };
-    for (auto id : pup::graph::all_nodes(bs.graph)) {
-        if (!node_id::is_command(id)) {
-            ++live_file_nodes;
-        } else if (pup::graph::is_guard_satisfied(bs.graph, id)) {
+    for (auto id : pup::graph::command_ids(bs.graph)) {
+        if (pup::graph::is_guard_satisfied(bs.graph, id)) {
             ++active_commands;
         }
     }
@@ -1454,11 +1453,11 @@ TEST_CASE("graph-to-index roundtrip keeps every node and edge endpoint", "[index
     REQUIRE(out.has_value());
     REQUIRE(cmd.has_value());
 
-    REQUIRE(pup::graph::add_edge(g, *src, *cmd).has_value());
-    REQUIRE(pup::graph::add_edge(g, *ghost, *cmd).has_value());
-    REQUIRE(pup::graph::add_edge(g, *var, *cmd, LinkType::Sticky).has_value());
-    REQUIRE(pup::graph::add_edge(g, *cmd, *out).has_value());
-    REQUIRE(pup::graph::add_edge(g, *out, *group, LinkType::Group).has_value());
+    REQUIRE(pup::graph::add_edge(g, src->id(), cmd->id()).has_value());
+    REQUIRE(pup::graph::add_edge(g, ghost->id(), cmd->id()).has_value());
+    REQUIRE(pup::graph::add_edge(g, var->id(), cmd->id(), LinkType::Sticky).has_value());
+    REQUIRE(pup::graph::add_edge(g, cmd->id(), out->id()).has_value());
+    REQUIRE(pup::graph::add_edge(g, out->id(), group->id(), LinkType::Group).has_value());
 
     require_graph_index_roundtrip(bs, "pup_test_rt_types");
 }
@@ -1495,7 +1494,7 @@ TEST_CASE("graph-to-index roundtrip holds for randomized graphs", "[index]")
             auto name = (rng() % 8 == 0) ? pup::StringId::Empty : intern("n" + std::to_string(i));
             auto id = pup::graph::add_file_node(g, pup::graph::FileNode { .type = type, .name = name });
             REQUIRE(id.has_value());
-            file_ids.push_back(*id);
+            file_ids.push_back(id->id());
         }
 
         auto false_cond = pup::graph::add_condition_node(g, pup::graph::ConditionNode { .current_value = false });
@@ -1519,7 +1518,7 @@ TEST_CASE("graph-to-index roundtrip holds for randomized graphs", "[index]")
             }
             auto id = pup::graph::add_command_node(g, pup::graph::CommandNode { .instruction = pup::test::instruction("cmd" + std::to_string(i)), .guards = std::move(guards) });
             REQUIRE(id.has_value());
-            cmd_ids.push_back(*id);
+            cmd_ids.push_back(id->id());
         }
 
         auto edge_count = std::size_t { rng() % 30 };
@@ -2399,17 +2398,17 @@ SCENARIO("A recorded command and a graph command expand a template the same way"
         REQUIRE(src_dir.has_value());
         REQUIRE(build_dir.has_value());
 
-        auto foo_c = graph::add_file_node(g, graph::FileNode { .name = intern("foo.c"), .parent_dir = *src_dir });
-        auto bar_c = graph::add_file_node(g, graph::FileNode { .name = intern("bar.c"), .parent_dir = *src_dir });
-        auto dotfile = graph::add_file_node(g, graph::FileNode { .name = intern(".bashrc"), .parent_dir = *src_dir });
+        auto foo_c = graph::add_file_node(g, graph::FileNode { .name = intern("foo.c"), .parent_dir = src_dir->id() });
+        auto bar_c = graph::add_file_node(g, graph::FileNode { .name = intern("bar.c"), .parent_dir = src_dir->id() });
+        auto dotfile = graph::add_file_node(g, graph::FileNode { .name = intern(".bashrc"), .parent_dir = src_dir->id() });
         auto foo_o = graph::add_file_node(
-            g, graph::FileNode { .type = NodeType::Generated, .name = intern("foo.o"), .parent_dir = *build_dir }
+            g, graph::FileNode { .type = NodeType::Generated, .name = intern("foo.o"), .parent_dir = build_dir->id() }
         );
         auto foo_d = graph::add_file_node(
-            g, graph::FileNode { .type = NodeType::Generated, .name = intern("foo.d"), .parent_dir = *build_dir }
+            g, graph::FileNode { .type = NodeType::Generated, .name = intern("foo.d"), .parent_dir = build_dir->id() }
         );
         auto noext = graph::add_file_node(
-            g, graph::FileNode { .type = NodeType::Generated, .name = intern("image"), .parent_dir = *build_dir }
+            g, graph::FileNode { .type = NodeType::Generated, .name = intern("image"), .parent_dir = build_dir->id() }
         );
         REQUIRE(foo_c.has_value());
         REQUIRE(bar_c.has_value());
@@ -2468,31 +2467,31 @@ SCENARIO("A recorded command and a graph command expand a template the same way"
         };
 
         auto const cases = std::vector<Operands> {
-            { "two inputs one output", { *foo_c, *bar_c }, { *foo_o }, { 3, 4 }, { 6 }, intern("src"), 1 },
-            { "a dotfile as the first input", { *dotfile, *foo_c }, { *foo_o }, { 5, 3 }, { 6 }, intern("src"), 1 },
-            { "an output with no extension", { *foo_c }, { *noext }, { 3 }, { 8 }, intern("src"), 1 },
-            { "two outputs", { *foo_c }, { *foo_o, *foo_d }, { 3 }, { 6, 7 }, intern("src"), 1 },
-            { "no inputs", {}, { *foo_o }, {}, { 6 }, intern("src"), 1 },
-            { "no outputs", { *foo_c }, {}, { 3 }, {}, intern("src"), 1 },
-            { "a command at the project root", { *foo_c }, { *foo_o }, { 3 }, { 6 }, StringId::Empty, 0 },
+            { "two inputs one output", { foo_c->id(), bar_c->id() }, { foo_o->id() }, { 3, 4 }, { 6 }, intern("src"), 1 },
+            { "a dotfile as the first input", { dotfile->id(), foo_c->id() }, { foo_o->id() }, { 5, 3 }, { 6 }, intern("src"), 1 },
+            { "an output with no extension", { foo_c->id() }, { noext->id() }, { 3 }, { 8 }, intern("src"), 1 },
+            { "two outputs", { foo_c->id() }, { foo_o->id(), foo_d->id() }, { 3 }, { 6, 7 }, intern("src"), 1 },
+            { "no inputs", {}, { foo_o->id() }, {}, { 6 }, intern("src"), 1 },
+            { "no outputs", { foo_c->id() }, {}, { 3 }, {}, intern("src"), 1 },
+            { "a command at the project root", { foo_c->id() }, { foo_o->id() }, { 3 }, { 6 }, StringId::Empty, 0 },
             { "one token owning two inputs",
-                { *foo_c, *bar_c }, { *foo_o }, { 3, 4 }, { 6 }, intern("src"), 1,
+                { foo_c->id(), bar_c->id() }, { foo_o->id() }, { 3, 4 }, { 6 }, intern("src"), 1,
                 { 1, 1 }, 1, {}, 0 },
             { "a leading token that owns nothing",
-                { *foo_c, *bar_c }, { *foo_o }, { 3, 4 }, { 6 }, intern("src"), 1,
+                { foo_c->id(), bar_c->id() }, { foo_o->id() }, { 3, 4 }, { 6 }, intern("src"), 1,
                 { 2, 3 }, 3, {}, 0 },
             { "a trailing token that owns nothing",
-                { *foo_c }, { *foo_o }, { 3 }, { 6 }, intern("src"), 1,
+                { foo_c->id() }, { foo_o->id() }, { 3 }, { 6 }, intern("src"), 1,
                 { 1 }, 3, {}, 0 },
             { "one token owning two outputs",
-                { *foo_c }, { *foo_o, *foo_d }, { 3 }, { 6, 7 }, intern("src"), 1,
+                { foo_c->id() }, { foo_o->id(), foo_d->id() }, { 3 }, { 6, 7 }, intern("src"), 1,
                 {}, 0, { 2, 2 }, 2 },
             { "an order-only input beside the inputs",
-                { *foo_c }, { *foo_o }, { 3 }, { 6 }, intern("src"), 1,
-                {}, 0, {}, 0, { *bar_c }, { 4 } },
+                { foo_c->id() }, { foo_o->id() }, { 3 }, { 6 }, intern("src"), 1,
+                {}, 0, {}, 0, { bar_c->id() }, { 4 } },
             { "one token owning two order-only inputs and a trailing token owning none",
-                { *foo_c }, { *foo_o }, { 3 }, { 6 }, intern("src"), 1,
-                {}, 0, {}, 0, { *bar_c, *dotfile }, { 4, 5 }, { 1, 1 }, 2 },
+                { foo_c->id() }, { foo_o->id() }, { 3 }, { 6 }, intern("src"), 1,
+                {}, 0, {}, 0, { bar_c->id(), dotfile->id() }, { 4, 5 }, { 1, 1 }, 2 },
         };
 
         auto const templates = std::vector<std::string_view> {
@@ -2534,7 +2533,7 @@ SCENARIO("A recorded command and a graph command expand a template the same way"
                     REQUIRE(cmd_id.has_value());
 
                     auto record = index::CommandEntry {
-                        .id = *cmd_id,
+                        .id = cmd_id->id(),
                         .dir_id = operands.dir_id,
                         .instruction_pattern = render_instruction(pup::test::instruction(tmpl)),
                     };

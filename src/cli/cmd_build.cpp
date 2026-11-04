@@ -35,6 +35,7 @@
 #include "pup/platform/file_io.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
@@ -237,8 +238,8 @@ auto collect_inactive_output_paths(pup::graph::BuildGraph const& state) -> Vec<S
     auto const inactive_outputs = pup::graph::collect_inactive_outputs(g);
 
     auto result = Vec<StringId> {};
-    for (auto id : pup::graph::all_nodes(g)) {
-        if (!inactive_outputs.contains(id)) {
+    for (auto id : pup::graph::file_ids(g)) {
+        if (!inactive_outputs.contains(id.id())) {
             continue;
         }
         auto node_path = pup::graph::get_full_path(g, id, state.path_cache);
@@ -606,11 +607,7 @@ auto serialize_graph_nodes(
     auto index = pup::index::Index {};
     auto path_to_id = PathIdMap {};
 
-    for (auto id : pup::graph::all_nodes(g)) {
-        if (pup::node_id::is_command(id)) {
-            continue;
-        }
-
+    for (auto id : pup::graph::file_ids(g)) {
         auto type = pup::graph::get<pup::NodeType>(g, id);
 
         switch (type) {
@@ -619,8 +616,8 @@ auto serialize_graph_nodes(
             auto node_path = pup::graph::get_full_path(g, id, state.path_cache);
             if (node_path.empty()) {
                 auto entry = pup::index::FileEntry {
-                    .id = id,
-                    .parent_id = pup::graph::get_parent_dir(g, id),
+                    .id = id.id(),
+                    .parent_id = pup::graph::get_parent_dir(g, id).id(),
                     .src_id = 0,
                     .type = type,
                     .flags = pup::NodeFlags::None,
@@ -682,8 +679,8 @@ auto serialize_graph_nodes(
                 ? pup::NodeFlags::AbsenceRouted
                 : pup::NodeFlags::None;
             auto entry = pup::index::FileEntry {
-                .id = id,
-                .parent_id = pup::graph::get_parent_dir(g, id),
+                .id = id.id(),
+                .parent_id = pup::graph::get_parent_dir(g, id).id(),
                 .src_id = 0,
                 .type = type,
                 .flags = entry_flags,
@@ -702,8 +699,8 @@ auto serialize_graph_nodes(
             auto& pool = pup::global_pool();
 
             auto entry = pup::index::FileEntry {
-                .id = id,
-                .parent_id = pup::graph::get_parent_dir(g, id),
+                .id = id.id(),
+                .parent_id = pup::graph::get_parent_dir(g, id).id(),
                 .src_id = 0,
                 .type = type,
                 .flags = pup::NodeFlags::None,
@@ -745,8 +742,8 @@ auto serialize_graph_nodes(
             }
 
             auto entry = pup::index::FileEntry {
-                .id = id,
-                .parent_id = pup::graph::get_parent_dir(g, id),
+                .id = id.id(),
+                .parent_id = pup::graph::get_parent_dir(g, id).id(),
                 .src_id = 0,
                 .type = recorded_type,
                 .flags = pup::NodeFlags::None,
@@ -763,8 +760,8 @@ auto serialize_graph_nodes(
         case pup::NodeType::Group:
         case pup::NodeType::Root: {
             auto entry = pup::index::FileEntry {
-                .id = id,
-                .parent_id = pup::graph::get_parent_dir(g, id),
+                .id = id.id(),
+                .parent_id = pup::graph::get_parent_dir(g, id).id(),
                 .src_id = 0,
                 .type = type,
                 .flags = pup::NodeFlags::None,
@@ -802,10 +799,7 @@ auto serialize_command_nodes(
     auto const& g = state.graph;
     auto remap = pup::NodeIdMap32 {};
     auto next_position = std::uint32_t { 1 };
-    for (auto id : pup::graph::all_nodes(g)) {
-        if (!pup::node_id::is_command(id)) {
-            continue;
-        }
+    for (auto id : pup::graph::command_ids(g)) {
         if (!pup::graph::is_guard_satisfied(g, id)) {
             continue;
         }
@@ -831,13 +825,13 @@ auto serialize_command_nodes(
             .env = pup::StringId::Empty,
             .key = pup::graph::compute_command_key(g, id, state.path_cache),
             .signature = pup::graph::compute_command_signature(g, id, state.path_cache),
-            .must_rerun = must_rerun_cmds.contains(id),
+            .must_rerun = must_rerun_cmds.contains(id.id()),
             .inputs = std::move(inputs),
             .order_only_inputs = std::move(order_only_inputs),
             .outputs = std::move(outputs),
         };
         index.add_command(std::move(entry));
-        remap.set(id, next_position);
+        remap.set(id.id(), next_position);
         ++next_position;
     }
     return remap;
@@ -881,10 +875,8 @@ namespace {
 auto compute_next_id(pup::graph::BuildGraph const& state) -> pup::NodeId
 {
     auto max_file_id = pup::NodeId { 0 };
-    for (auto id : pup::graph::all_nodes(state.graph)) {
-        if (!pup::node_id::is_command(id) && id > max_file_id) {
-            max_file_id = id;
-        }
+    for (auto id : pup::graph::file_ids(state.graph)) {
+        max_file_id = std::max(max_file_id, id.id());
     }
     return pup::NodeId { max_file_id + 1 };
 }
@@ -1025,11 +1017,16 @@ auto sort_lookup(CommandLookup& lookup) -> void
     std::sort(lookup.by_key.begin(), lookup.by_key.end(), [](auto const& a, auto const& b) { return pup::hash_less(a.first, b.first); });
 }
 
-auto graph_command_address(pup::graph::BuildGraph const& state, pup::NodeId id) -> CommandAddress
+auto graph_command_address(pup::graph::BuildGraph const& state, pup::graph::CommandId id) -> CommandAddress
 {
     auto address = CommandAddress {};
-    for (auto output_id : pup::graph::get_outputs(state.graph, id)) {
-        auto path_sv = pup::graph::get_full_path(state.graph, output_id, state.path_cache);
+    for (auto output_id : pup::graph::get_outputs(state.graph, id.id())) {
+        if (!pup::node_id::is_file(output_id)) {
+            continue;
+        }
+        auto const output = pup::graph::find_file(state.graph, output_id);
+        assert(output);
+        auto path_sv = pup::graph::get_full_path(state.graph, *output, state.path_cache);
         if (!path_sv.empty()) {
             address.outputs.push_back(pup::global_pool().intern(path_sv));
         }
@@ -1056,16 +1053,16 @@ auto index_command_address(pup::index::Index const& idx, pup::index::CommandEntr
 auto graph_command_lookup(pup::graph::BuildGraph const& state) -> CommandLookup
 {
     auto lookup = CommandLookup {};
-    for (auto id : pup::graph::all_nodes(state.graph)) {
-        if (!pup::node_id::is_command(id) || !pup::graph::is_guard_satisfied(state.graph, id)) {
+    for (auto id : pup::graph::command_ids(state.graph)) {
+        if (!pup::graph::is_guard_satisfied(state.graph, id)) {
             continue;
         }
         auto address = graph_command_address(state, id);
         for (auto path : address.outputs) {
-            lookup.by_output.emplace_back(path, id);
+            lookup.by_output.emplace_back(path, id.id());
         }
         if (address.outputs.empty()) {
-            lookup.by_key.emplace_back(address.key, id);
+            lookup.by_key.emplace_back(address.key, id.id());
         }
     }
     sort_lookup(lookup);
@@ -1515,7 +1512,12 @@ auto propagate_command_effect(
 {
     auto has_output_path = false;
     for (auto output_id : pup::graph::get_outputs(state.graph, cmd_id)) {
-        auto output_path_sv = pup::graph::get_full_path(state.graph, output_id, state.path_cache);
+        if (!pup::node_id::is_file(output_id)) {
+            continue;
+        }
+        auto const output = pup::graph::find_file(state.graph, output_id);
+        assert(output);
+        auto output_path_sv = pup::graph::get_full_path(state.graph, *output, state.path_cache);
         if (output_path_sv.empty()) {
             continue;
         }
@@ -1604,7 +1606,12 @@ auto build_index(
     }
     for (auto graph_cmd_id : executed_cmds) {
         for (auto output_id : pup::graph::get_outputs(state.graph, graph_cmd_id)) {
-            auto output_path_sv = pup::graph::get_full_path(state.graph, output_id, state.path_cache);
+            if (!pup::node_id::is_file(output_id)) {
+                continue;
+            }
+            auto const output = pup::graph::find_file(state.graph, output_id);
+            assert(output);
+            auto output_path_sv = pup::graph::get_full_path(state.graph, *output, state.path_cache);
             if (!output_path_sv.empty()) {
                 carried.refreshed.push_back(pup::global_pool().intern(output_path_sv));
             }
@@ -1700,7 +1707,9 @@ auto validate_output_targets(
             veprint(variant_name, "Error: {} is not in build graph\n", target_sv);
             return std::nullopt;
         }
-        if (pup::graph::get<pup::NodeType>(state.graph, *node_id) != pup::NodeType::Generated) {
+        auto const target = pup::graph::find_file(state.graph, *node_id);
+        assert(target);
+        if (pup::graph::get<pup::NodeType>(state.graph, *target) != pup::NodeType::Generated) {
             veprint(variant_name, "Error: {} is not a build output\n", target_sv);
             return std::nullopt;
         }
@@ -1743,12 +1752,17 @@ auto reject_shadowed_sources(
     auto const known = prior.kind == pup::index::PriorPaths::Kind::Known;
     auto shadowed = pup::Vec<StringId> {};
 
-    for (auto cmd_id : pup::graph::all_nodes(g)) {
-        if (!pup::node_id::is_command(cmd_id) || !pup::graph::is_guard_satisfied(g, cmd_id)) {
+    for (auto cmd_id : pup::graph::command_ids(g)) {
+        if (!pup::graph::is_guard_satisfied(g, cmd_id)) {
             continue;
         }
-        for (auto id : pup::graph::get_outputs(g, cmd_id)) {
-            auto full_path_sv = pup::graph::get_full_path(g, id, state.path_cache);
+        for (auto id : pup::graph::get_outputs(g, cmd_id.id())) {
+            if (!pup::node_id::is_file(id)) {
+                continue;
+            }
+            auto const output = pup::graph::find_file(g, id);
+            assert(output);
+            auto full_path_sv = pup::graph::get_full_path(g, *output, state.path_cache);
             if (full_path_sv.empty()) {
                 continue;
             }
@@ -1817,10 +1831,21 @@ auto reject_unresolved_ghosts(
     auto& pool = pup::global_pool();
     auto build_root_name = pup::graph::get_build_root_name(g);
 
-    for (auto id : pup::graph::nodes_of_type(g, pup::NodeType::Ghost)) {
+    for (auto id : pup::graph::file_ids(g)) {
+        if (pup::graph::get<pup::NodeType>(g, id) != pup::NodeType::Ghost) {
+            continue;
+        }
         auto consumed = false;
         pup::graph::edges_for_each(
-            g, id, pup::graph::EdgeDirection::Forward, pup::graph::edge_mask::consumers, [&](pup::NodeId consumer) { consumed = consumed || pup::graph::is_guard_satisfied(g, consumer); }
+            g, id.id(), pup::graph::EdgeDirection::Forward, pup::graph::edge_mask::consumers, [&](pup::NodeId consumer) {
+                if (!pup::node_id::is_command(consumer)) {
+                    consumed = true;
+                    return;
+                }
+                auto const command = pup::graph::find_command(g, consumer);
+                assert(command);
+                consumed = consumed || pup::graph::is_guard_satisfied(g, *command);
+            }
         );
         if (!consumed) {
             continue;
@@ -1865,10 +1890,7 @@ auto detect_new_commands(
 
     auto const old_lookup = index_command_lookup(idx);
 
-    for (auto id : pup::graph::all_nodes(g)) {
-        if (!pup::node_id::is_command(id)) {
-            continue;
-        }
+    for (auto id : pup::graph::command_ids(g)) {
         if (!pup::graph::is_guard_satisfied(g, id)) {
             continue;
         }
@@ -1880,7 +1902,7 @@ auto detect_new_commands(
         auto signature = pup::graph::compute_command_signature(g, id, state.path_cache);
         auto must_rerun = previous != nullptr && previous->must_rerun;
         if (must_rerun) {
-            result.must_rerun.push_back(id);
+            result.must_rerun.push_back(id.id());
         }
         if (previous && !must_rerun && pup::hash_equal(previous->signature, signature)) {
             continue;
@@ -1890,7 +1912,7 @@ auto detect_new_commands(
             result.changed_outputs.push_back(path_id);
         }
         if (address.outputs.empty()) {
-            result.forced_cmds.push_back(id);
+            result.forced_cmds.push_back(id.id());
         }
         if (verbose) {
             auto display_sv = pup::global_pool().get(pup::graph::command_label(g, id, state.path_cache));
@@ -1920,10 +1942,7 @@ auto reconcile_input_set(
 
     auto graph_paths = pup::Vec<StringId> {};
     auto new_sources = pup::Vec<StringId> {};
-    for (auto id : pup::graph::all_nodes(g)) {
-        if (pup::node_id::is_command(id)) {
-            continue;
-        }
+    for (auto id : pup::graph::file_ids(g)) {
         auto path_sv = pup::graph::get_full_path(g, id, state.path_cache);
         if (path_sv.empty()) {
             continue;
@@ -1961,8 +1980,10 @@ auto reconcile_input_set(
             idx, join, pup::NodeId { file->id }, pup::graph::edge_mask::parsed_consumers, [&](pup::NodeId cmd_node_id) {
                 orphaned.push_back(cmd_node_id);
                 if (verbose) {
+                    auto const command = pup::graph::find_command(g, cmd_node_id);
+                    assert(command);
                     vprint(
-                        variant_name, "  Removed input: {} ({})\n", pup::global_pool().get(path_id), pup::global_pool().get(pup::graph::command_label(g, cmd_node_id, state.path_cache))
+                        variant_name, "  Removed input: {} ({})\n", pup::global_pool().get(path_id), pup::global_pool().get(pup::graph::command_label(g, *command, state.path_cache))
                     );
                 }
             }
@@ -2159,7 +2180,7 @@ auto build_single_variant(
     auto& ctx = *result;
     auto const refused_dir_count = std::size_t { ctx.refused_dirs().size() };
     auto& bs = ctx.graph();
-    auto num_commands = std::size_t { pup::graph::nodes_of_type(bs.graph, pup::NodeType::Command).size() };
+    auto num_commands = pup::graph::command_ids(bs.graph).size();
 
     if (auto unscanned = check_unscanned_compiles(bs.graph, bs.path_cache); !unscanned.empty()) {
         vprint(
@@ -2331,8 +2352,8 @@ auto build_single_variant(
         }
 
         if (opts.rerun) {
-            for (auto id : pup::graph::all_nodes(bs.graph)) {
-                if (!pup::node_id::is_command(id) || !pup::graph::is_guard_satisfied(bs.graph, id)) {
+            for (auto id : pup::graph::command_ids(bs.graph)) {
+                if (!pup::graph::is_guard_satisfied(bs.graph, id)) {
                     continue;
                 }
                 if (!scopes.empty()) {
@@ -2341,7 +2362,7 @@ auto build_single_variant(
                         continue;
                     }
                 }
-                forced_cmds.push_back(id);
+                forced_cmds.push_back(id.id());
             }
         }
 
@@ -2407,7 +2428,9 @@ auto build_single_variant(
             }
             veprint(variant_name, "FAILED: {}\n", pool.get(job.command));
             if (job.parent_command) {
-                veprint(variant_name, "  dependency scan for: {}\n", pool.get(pup::graph::expand_instruction(bs.graph, *job.parent_command, bs.path_cache, source_root_str, config_root_str)));
+                auto const parent = pup::graph::find_command(bs.graph, *job.parent_command);
+                assert(parent);
+                veprint(variant_name, "  dependency scan for: {}\n", pool.get(pup::graph::expand_instruction(bs.graph, *parent, bs.path_cache, source_root_str, config_root_str)));
             }
             if (!pup::is_empty(job_result.output)) {
                 auto output_sv = pool.get(job_result.output);
@@ -2492,18 +2515,19 @@ auto build_single_variant(
 
     if (!config_cmds.empty()) {
         auto non_config = pup::NodeIdMap32 {};
-        for (auto id : pup::graph::all_nodes(bs.graph)) {
-            if (node_id::is_command(id) && !config_cmd_ids.contains(id)) {
-                non_config.set(id, 1);
+        for (auto cmd : pup::graph::command_ids(bs.graph)) {
+            if (!config_cmd_ids.contains(cmd.id())) {
+                non_config.set(cmd.id(), 1);
             }
         }
         filter.intersect_with(std::move(non_config));
     }
 
-    for (auto id : pup::graph::all_nodes(bs.graph)) {
-        if (!node_id::is_command(id) || !pup::graph::is_guard_satisfied(bs.graph, id)) {
+    for (auto cmd : pup::graph::command_ids(bs.graph)) {
+        if (!pup::graph::is_guard_satisfied(bs.graph, cmd)) {
             continue;
         }
+        auto const id = cmd.id();
         if (auto const* intended = filter.ptr(); intended != nullptr && !intended->contains(id)) {
             continue;
         }

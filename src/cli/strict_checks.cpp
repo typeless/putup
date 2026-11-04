@@ -13,6 +13,7 @@
 #include "pup/platform/file_io.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <cstddef>
 #include <string_view>
 #include <variant>
@@ -142,16 +143,19 @@ auto check_unscanned_compiles(
     }
 
     auto& pool = global_pool();
-    auto commands = graph::nodes_of_type(graph, NodeType::Command);
-
-    for (auto id : commands) {
+    for (auto id : graph::command_ids(graph)) {
         if (graph::get_parent_command(graph, id)) {
             continue;
         }
 
         auto objects = Vec<StringId> {};
-        for (auto out_id : graph::get_outputs(graph, id)) {
-            auto full = graph::get_full_path(graph, out_id);
+        for (auto out_id : graph::get_outputs(graph, id.id())) {
+            if (!node_id::is_file(out_id)) {
+                continue;
+            }
+            auto const out = graph::find_file(graph, out_id);
+            assert(out);
+            auto full = graph::get_full_path(graph, *out);
             if (auto ext = pup::path::extension(pool.get(full)); ext == ".o" || ext == ".obj") {
                 objects.push_back(full);
             }
@@ -177,7 +181,7 @@ auto check_unscanned_compiles(
         // The production predicate itself, not a re-derivation of it: whatever the build
         // would generate here is what decides whether this rule's headers get recorded.
         auto cmd_info = graph::CommandInfo {};
-        cmd_info.node_id = id;
+        cmd_info.node_id = id.id();
         cmd_info.command = text;
         cmd_info.working_dir = source_dir;
 

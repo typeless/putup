@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "graph_support.hpp"
 #include "e2e_fixture.hpp"
 #include "temp_root.hpp"
 
@@ -374,15 +375,15 @@ TEST_CASE("GraphBuilder bin group reference {name}", "[e2e][builder][group]")
     REQUIRE(result.has_value());
 
     // Verify the link command has both .o files as inputs
-    auto commands = nodes_of_type(bs.graph,NodeType::Command);
+    auto commands = pup::test::commands_of(bs.graph);
     auto link_cmd_count = 0;
     for (auto id : commands) {
         auto cmd_str = expand_instruction(bs.graph, id);
         if (sv(cmd_str).find("-o app") != std::string_view::npos) {
-            auto inputs = get_inputs(bs.graph, id);
+            auto inputs = get_inputs(bs.graph, id.id());
             auto o_count = 0;
             for (auto input_id : inputs) {
-                if (sv(get_full_path(bs.graph, input_id)).find(".o") != std::string::npos) {
+                if (sv(get_full_path(bs.graph, find_file(bs.graph, input_id).value())).find(".o") != std::string::npos) {
                     ++o_count;
                 }
             }
@@ -435,7 +436,7 @@ TEST_CASE("GraphBuilder glob expansion - filesystem", "[e2e][builder][glob]")
     REQUIRE(result.has_value());
 
     // Should have 2 compile commands (foo.c and bar.c)
-    auto commands = nodes_of_type(bs.graph,NodeType::Command);
+    auto commands = pup::test::commands_of(bs.graph);
     REQUIRE(commands.size() == 2);
 }
 
@@ -480,7 +481,7 @@ TEST_CASE("GraphBuilder glob expansion - generated files", "[e2e][builder][glob]
     REQUIRE(r1.has_value());
 
     // Verify generated files exist in graph
-    auto generated = nodes_of_type(bs.graph,NodeType::Generated);
+    auto generated = pup::test::files_of_type(bs.graph, NodeType::Generated);
     REQUIRE(generated.size() == 2);
 }
 
@@ -573,12 +574,12 @@ TEST_CASE("GraphBuilder exclusion patterns - explicit file", "[e2e][builder][exc
     REQUIRE(result.has_value());
 
     // Count .o outputs - baz.c should be excluded
-    auto commands = nodes_of_type(bs.graph,NodeType::Command);
+    auto commands = pup::test::commands_of(bs.graph);
     auto compile_count = 0;
     auto has_baz = false;
     for (auto id : commands) {
-        for (auto out_id : get_outputs(bs.graph, id)) {
-            auto path = sv(get_full_path(bs.graph, out_id));
+        for (auto out_id : get_outputs(bs.graph, id.id())) {
+            auto path = sv(get_full_path(bs.graph, find_file(bs.graph, out_id).value()));
             if (path.find(".o") != std::string::npos) {
                 ++compile_count;
                 if (path.find("baz.o") != std::string::npos) {
@@ -636,13 +637,13 @@ TEST_CASE("GraphBuilder exclusion patterns - glob pattern", "[e2e][builder][excl
     REQUIRE(result.has_value());
 
     // Count .o outputs - test_*.c should be excluded
-    auto commands = nodes_of_type(bs.graph,NodeType::Command);
+    auto commands = pup::test::commands_of(bs.graph);
     auto compile_count = 0;
     auto has_test = false;
     for (auto id : commands) {
-        auto outputs = get_outputs(bs.graph,id);
+        auto outputs = get_outputs(bs.graph, id.id());
         for (auto out_id : outputs) {
-            auto path = sv(get_full_path(bs.graph, out_id));
+            auto path = sv(get_full_path(bs.graph, find_file(bs.graph, out_id).value()));
             if (path.find(".o") != std::string::npos) {
                 ++compile_count;
                 if (path.find("test_") != std::string::npos) {
@@ -705,13 +706,13 @@ TEST_CASE("GraphBuilder caret exclusion patterns for foreach", "[e2e][builder][e
     REQUIRE(result.has_value());
 
     // Count .o outputs - helper_impl.c should be excluded
-    auto commands = nodes_of_type(bs.graph,NodeType::Command);
+    auto commands = pup::test::commands_of(bs.graph);
     auto compile_count = 0;
     auto has_helper = false;
     for (auto id : commands) {
-        auto outputs = get_outputs(bs.graph,id);
+        auto outputs = get_outputs(bs.graph, id.id());
         for (auto out_id : outputs) {
-            auto path = sv(get_full_path(bs.graph, out_id));
+            auto path = sv(get_full_path(bs.graph, find_file(bs.graph, out_id).value()));
             if (path.find(".o") != std::string::npos) {
                 ++compile_count;
                 if (path.find("helper_impl") != std::string::npos) {
@@ -792,10 +793,10 @@ TEST_CASE("GraphBuilder cross-directory order-only group with relative path", "[
 
     // Verify the kernel.o command has an order-only dependency on config.h
     auto found = false;
-    for (auto id : nodes_of_type(bs.graph,NodeType::Command)) {
+    for (auto id : pup::test::commands_of(bs.graph)) {
         auto cmd_str = expand_instruction(bs.graph, id);
         if (sv(cmd_str).find("compile kernel.c") != std::string_view::npos) {
-            auto order_only = get_order_only(bs.graph,id);
+            auto order_only = get_order_only(bs.graph, id.id());
             // Should have config.h as order-only
             found = !order_only.empty();
             break;
@@ -868,13 +869,13 @@ TEST_CASE("GraphBuilder a bare group reference names the group of the referencin
     REQUIRE(resolve_result.has_value());
 
     auto member_names = std::vector<std::string_view> {};
-    for (auto id : nodes_of_type(bs.graph, NodeType::Command)) {
+    for (auto id : pup::test::commands_of(bs.graph)) {
         if (sv(expand_instruction(bs.graph, id)).find("compile") == std::string_view::npos) {
             continue;
         }
-        for (auto group_id : get_order_only(bs.graph, id)) {
+        for (auto group_id : get_order_only(bs.graph, id.id())) {
             for (auto member : get_inputs(bs.graph, group_id)) {
-                member_names.push_back(sv(get<Name>(bs.graph, member)));
+                member_names.push_back(sv(get<Name>(bs.graph, find_file(bs.graph, member).value())));
             }
         }
     }
@@ -920,7 +921,7 @@ TEST_CASE("GraphBuilder variant output mapping", "[e2e][builder][variant]")
     REQUIRE(result.has_value());
 
     // Verify output is in variant directory
-    auto generated = nodes_of_type(bs.graph,NodeType::Generated);
+    auto generated = pup::test::files_of_type(bs.graph, NodeType::Generated);
     REQUIRE(generated.size() == 1);
 
     // Output should be under build-variant/src/main.o or absolute path
@@ -971,7 +972,7 @@ TEST_CASE("GraphBuilder deep directory with parent references", "[e2e][builder][
     REQUIRE(result.has_value());
 
     // Verify the header was resolved correctly
-    auto files = nodes_of_type(bs.graph,NodeType::File);
+    auto files = pup::test::files_of_type(bs.graph, NodeType::File);
     auto found_header = false;
     for (auto id : files) {
         auto path = sv(get_full_path(bs.graph, id));
@@ -1019,20 +1020,20 @@ TEST_CASE("GraphBuilder directory node creation", "[e2e][builder][dir-nodes]")
     REQUIRE(result.has_value());
 
     // Find the helpers.c file node
-    auto files = nodes_of_type(bs.graph,NodeType::File);
-    NodeId helpers_id = 0;
+    auto files = pup::test::files_of_type(bs.graph, NodeType::File);
+    auto helpers_id = std::optional<FileId> {};
     for (auto id : files) {
         if (sv(get_full_path(bs.graph, id)).find("helpers.c") != std::string::npos) {
             helpers_id = id;
             break;
         }
     }
-    REQUIRE(helpers_id != 0);
+    REQUIRE(helpers_id.has_value());
 
     // Verify the node has name and parent_dir set
-    CHECK(sv(get<Name>(bs.graph, helpers_id)) == "helpers.c");
-    auto helpers_parent_dir_id = get_parent_dir(bs.graph, helpers_id);
-    CHECK(helpers_parent_dir_id != 0); // Not root
+    CHECK(sv(get<Name>(bs.graph, *helpers_id)) == "helpers.c");
+    auto helpers_parent_dir_id = get_parent_dir(bs.graph, *helpers_id);
+    CHECK(helpers_parent_dir_id != source_root(bs.graph)); // Not root
 
     // Verify the parent directory node exists
     CHECK(get<NodeType>(bs.graph, helpers_parent_dir_id) == NodeType::Directory);
@@ -1041,7 +1042,7 @@ TEST_CASE("GraphBuilder directory node creation", "[e2e][builder][dir-nodes]")
     // Verify we can find the file via (parent_dir, name)
     auto found = find_by_dir_name(bs.graph, helpers_parent_dir_id, "helpers.c");
     REQUIRE(found.has_value());
-    CHECK(*found == helpers_id);
+    CHECK(*found == helpers_id->id());
 }
 
 // =============================================================================
@@ -1090,21 +1091,21 @@ TEST_CASE("GraphBuilder out-of-tree build outputs use relative paths", "[e2e][bu
     REQUIRE(result.has_value());
 
     // Find the output node
-    auto generated = nodes_of_type(bs.graph,NodeType::Generated);
+    auto generated = pup::test::files_of_type(bs.graph, NodeType::Generated);
     REQUIRE(generated.size() >= 1);
 
-    NodeId output_id = 0;
+    auto output_id = std::optional<FileId> {};
     for (auto id : generated) {
         if (sv(get<Name>(bs.graph, id)) == "main.o") {
             output_id = id;
             break;
         }
     }
-    REQUIRE(output_id != 0);
+    REQUIRE(output_id.has_value());
 
     // The full path is source-root-relative: "src/main.o"
     // Variant mapping (to "build-variant/src/main.o") is applied at command expansion time
-    auto full_path = get_full_path(bs.graph, output_id);
+    auto full_path = get_full_path(bs.graph, *output_id);
     CHECK(sv(full_path) == "src/main.o");
 
     // It should NOT be an absolute path
@@ -1157,18 +1158,18 @@ TEST_CASE("GraphBuilder out-of-tree cross-directory generated file reference", "
     REQUIRE(r1.has_value());
 
     // Find the generated boot.hex node
-    auto generated = nodes_of_type(bs.graph,NodeType::Generated);
-    NodeId boot_hex_id = 0;
+    auto generated = pup::test::files_of_type(bs.graph, NodeType::Generated);
+    auto boot_hex_id = std::optional<FileId> {};
     for (auto id : generated) {
         if (sv(get<Name>(bs.graph, id)) == "boot.hex") {
             boot_hex_id = id;
             break;
         }
     }
-    REQUIRE(boot_hex_id != 0);
+    REQUIRE(boot_hex_id.has_value());
 
     // The output path is source-root-relative: "boot/boot.hex"
-    auto boot_hex_path = get_full_path(bs.graph, boot_hex_id);
+    auto boot_hex_path = get_full_path(bs.graph, *boot_hex_id);
     CHECK(sv(boot_hex_path) == "boot/boot.hex");
 
     // Second Tupfile: output/hex/Tupfile references ../../boot/boot.hex (source-relative)
@@ -1189,8 +1190,8 @@ TEST_CASE("GraphBuilder out-of-tree cross-directory generated file reference", "
     REQUIRE(r2.has_value());
 
     // Find the command node
-    auto commands = nodes_of_type(bs.graph,NodeType::Command);
-    NodeId srec_cmd_id = 0;
+    auto commands = pup::test::commands_of(bs.graph);
+    auto srec_cmd_id = std::optional<CommandId> {};
     for (auto id : commands) {
         auto cmd_str = expand_instruction(bs.graph, id);
         if (sv(cmd_str).find("srec_cat") != std::string_view::npos) {
@@ -1198,14 +1199,14 @@ TEST_CASE("GraphBuilder out-of-tree cross-directory generated file reference", "
             break;
         }
     }
-    REQUIRE(srec_cmd_id != 0);
+    REQUIRE(srec_cmd_id.has_value());
 
     // The srec_cat command should have boot.hex as an input
     // This verifies that the input path resolved to the same node as the output
-    auto inputs = get_inputs(bs.graph, srec_cmd_id);
+    auto inputs = get_inputs(bs.graph, srec_cmd_id->id());
     bool found_boot_hex = false;
     for (auto input_id : inputs) {
-        if (input_id == boot_hex_id) {
+        if (input_id == boot_hex_id->id()) {
             found_boot_hex = true;
             break;
         }
@@ -1262,18 +1263,18 @@ TEST_CASE("GraphBuilder TUP_VARIANT_OUTPUTDIR matches tup behavior", "[e2e][buil
     REQUIRE(result.has_value());
 
     // Find the output node
-    auto generated = nodes_of_type(bs.graph,NodeType::Generated);
-    NodeId output_id = 0;
+    auto generated = pup::test::files_of_type(bs.graph, NodeType::Generated);
+    auto output_id = std::optional<FileId> {};
     for (auto id : generated) {
         if (sv(get<Name>(bs.graph, id)) == "out.txt") {
             output_id = id;
             break;
         }
     }
-    REQUIRE(output_id != 0);
+    REQUIRE(output_id.has_value());
 
     // Output is stored at variant-mapped path (via walk_to_file_node with variant_output_dir)
-    auto full_path = get_full_path(bs.graph, output_id);
+    auto full_path = get_full_path(bs.graph, *output_id);
     CHECK(sv(full_path) == "build/sub/dir/out.txt");
 }
 
@@ -1318,7 +1319,7 @@ TEST_CASE("GraphBuilder path simplification at root", "[e2e][builder][paths]")
     auto result = add_tupfile(bs, tupfile, ctx, builder_state);
     REQUIRE(result.has_value());
 
-    auto commands = nodes_of_type(bs.graph,NodeType::Command);
+    auto commands = pup::test::commands_of(bs.graph);
     REQUIRE(!commands.empty());
 
     // At root, paths should be direct (no ../ prefixes)
@@ -1367,7 +1368,7 @@ TEST_CASE("GraphBuilder path simplification in subdirectory commands", "[e2e][bu
     REQUIRE(result.has_value());
 
     // Find the command node
-    auto commands = nodes_of_type(bs.graph,NodeType::Command);
+    auto commands = pup::test::commands_of(bs.graph);
     REQUIRE(!commands.empty());
 
     // Command should use "add.c" not "../../src/lib/add.c"
@@ -1420,7 +1421,7 @@ TEST_CASE("GraphBuilder path simplification - cross-directory reference", "[e2e]
     REQUIRE(result.has_value());
 
     // Find the command node
-    auto commands = nodes_of_type(bs.graph,NodeType::Command);
+    auto commands = pup::test::commands_of(bs.graph);
     REQUIRE(!commands.empty());
 
     // Local file should be simplified, cross-directory uses root-relative path
@@ -1477,7 +1478,7 @@ TEST_CASE("GraphBuilder path simplification in variant build", "[e2e][builder][p
     auto result = add_tupfile(bs, tupfile, ctx, builder_state);
     REQUIRE(result.has_value());
 
-    auto commands = nodes_of_type(bs.graph,NodeType::Command);
+    auto commands = pup::test::commands_of(bs.graph);
     REQUIRE(!commands.empty());
 
     auto cmd_str = expand_instruction(bs.graph, commands[0]);
@@ -1538,19 +1539,19 @@ TEST_CASE("GraphBuilder output filename starting with dotdot is not parent refer
     REQUIRE(result.has_value());
 
     // Find the output node
-    auto generated = nodes_of_type(bs.graph,NodeType::Generated);
-    NodeId output_id = 0;
+    auto generated = pup::test::files_of_type(bs.graph, NodeType::Generated);
+    auto output_id = std::optional<FileId> {};
     for (auto id : generated) {
         if (sv(get<Name>(bs.graph, id)) == "..hidden") {
             output_id = id;
             break;
         }
     }
-    REQUIRE(output_id != 0);
+    REQUIRE(output_id.has_value());
 
     // In variant build, output goes to build/src/..hidden
     // The key check is that "..hidden" is treated as a literal filename, not "../hidden"
-    auto full_path = get_full_path(bs.graph, output_id);
+    auto full_path = get_full_path(bs.graph, *output_id);
     INFO("Full path: " << std::string { sv(full_path) });
     CHECK(sv(full_path) == "build/src/..hidden");
 }
@@ -1800,7 +1801,7 @@ namespace {
 auto names_of_type(pup::graph::BuildGraph const& bs, NodeType type) -> std::vector<std::string>
 {
     auto names = std::vector<std::string> {};
-    for (auto id : nodes_of_type(bs.graph, type)) {
+    for (auto id : pup::test::files_of_type(bs.graph, type)) {
         names.emplace_back(sv(get<Name>(bs.graph, id)));
     }
     return names;
@@ -2240,7 +2241,7 @@ TEST_CASE("GraphBuilder records a backslash output as two components on Windows 
 
     REQUIRE(add_tupfile(bs, parse_result.tupfile, ctx, builder_state).has_value());
 
-    auto generated = nodes_of_type(bs.graph, NodeType::Generated);
+    auto generated = pup::test::files_of_type(bs.graph, NodeType::Generated);
     REQUIRE(generated.size() == 1);
 #ifdef _WIN32
     CHECK(sv(get_full_path(bs.graph, generated[0])) == "sub/gen.txt");
@@ -2277,7 +2278,7 @@ TEST_CASE("GraphBuilder accepts a parent reference that stays inside the tree", 
     REQUIRE(result.has_value());
 
     // The name the record carries, which is what a cross-check against the source list compares.
-    auto generated = nodes_of_type(bs.graph, NodeType::Generated);
+    auto generated = pup::test::files_of_type(bs.graph, NodeType::Generated);
     REQUIRE(generated.size() == 1);
     CHECK(sv(get<Name>(bs.graph, generated[0])) == "gen.txt");
     CHECK(sv(get_full_path(bs.graph, generated[0])) == "gen.txt");
@@ -2328,7 +2329,7 @@ TEST_CASE("GraphBuilder records each command at the line of the rule that declar
 
     auto rule_lines = std::vector<std::uint32_t> {};
     auto scans = 0;
-    for (auto id : nodes_of_type(bs.graph, NodeType::Command)) {
+    for (auto id : pup::test::commands_of(bs.graph)) {
         auto const location = get<SourcePosition>(bs.graph, id);
         CHECK(sv(location.file) == tupfile);
         auto const parent = get_parent_command(bs.graph, id);
@@ -2342,4 +2343,38 @@ TEST_CASE("GraphBuilder records each command at the line of the rule that declar
     std::ranges::sort(rule_lines);
     REQUIRE(rule_lines == std::vector<std::uint32_t> { 2, 4 });
     REQUIRE(scans == 2);
+}
+
+TEST_CASE("A dependency-scan command whose output edge reaches its parent command has a signature", "[builder]")
+{
+    auto env = pup::test::EnvGuard { "PUP_IMPLICIT_DEPS", "1" };
+    auto registry = pup::cli::make_scanner_registry();
+    REQUIRE(registry.has_value());
+
+    auto fixture = BuilderTestFixture {};
+    fixture.create_file("a.c");
+
+    auto bs = make_build_graph();
+    auto vars = VarDb {};
+    auto ctx = EvalContext { .vars = &vars };
+    auto builder_state = make_builder(BuilderOptions {
+        .source_root = intern(fixture.root_str()),
+        .config_root = intern(fixture.root_str()),
+        .output_root = pup::StringId::Empty,
+        .config_path = pup::StringId::Empty,
+        .expand_globs = false,
+        .validate_inputs = false,
+        .scanner_registry = &*registry,
+    });
+
+    auto parse_result = parse_tupfile(": a.c |> gcc -c a.c -o a.o |> a.o\n", fixture.tupfile_path(""));
+    REQUIRE(parse_result.success());
+    REQUIRE(add_tupfile(bs, parse_result.tupfile, ctx, builder_state).has_value());
+
+    auto signatures = std::vector<pup::Hash256> {};
+    for (auto id : pup::test::commands_of(bs.graph)) {
+        signatures.push_back(compute_command_signature(bs.graph, id, bs.path_cache));
+    }
+    REQUIRE(signatures.size() == 2);
+    REQUIRE(signatures[0] != signatures[1]);
 }

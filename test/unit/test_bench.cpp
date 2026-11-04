@@ -5,6 +5,7 @@
 // Run with: ./build/test/unit/pup_test "[.benchmark]"
 
 #include "catch_amalgamated.hpp"
+#include "graph_support.hpp"
 #include "instruction_support.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/graph/dag.hpp"
@@ -20,14 +21,12 @@ using pup::NodeType;
 
 namespace {
 
-auto collect_node_ids(Graph const& graph) -> std::vector<pup::NodeId>
+auto collect_file_ids(Graph const& graph) -> std::vector<FileId>
 {
-    auto ids = std::vector<pup::NodeId> {};
-    for (auto id : nodes_of_type(graph, NodeType::File))
+    auto ids = std::vector<FileId> {};
+    for (auto id : pup::test::files_of_type(graph, NodeType::File))
         ids.push_back(id);
-    for (auto id : nodes_of_type(graph, NodeType::Command))
-        ids.push_back(id);
-    for (auto id : nodes_of_type(graph, NodeType::Generated))
+    for (auto id : pup::test::files_of_type(graph, NodeType::Generated))
         ids.push_back(id);
     return ids;
 }
@@ -58,9 +57,9 @@ auto generate_order_only_graph(
         snprintf(buf, sizeof(buf), "gcc_%zu", i);
         auto cmd = add_command_node(graph, CommandNode {
             .instruction = pup::test::instruction(buf) });
-        (void)add_edge(graph, *header, *cmd, LinkType::OrderOnly);
+        (void)add_edge(graph, header->id(), cmd->id(), LinkType::OrderOnly);
     }
-    return { std::move(bs), *header };
+    return { std::move(bs), header->id() };
 }
 
 auto generate_wide_graph_with_order_only(std::size_t width, std::size_t depth) -> BuildGraph
@@ -84,12 +83,12 @@ auto generate_wide_graph_with_order_only(std::size_t width, std::size_t depth) -
 
             // Connect to previous in chain
             if (prev)
-                (void)add_edge(graph, *prev, node);
+                (void)add_edge(graph, *prev, node.id());
 
             // Add order-only dep on shared header
-            (void)add_edge(graph, shared, node, LinkType::OrderOnly);
+            (void)add_edge(graph, shared.id(), node.id(), LinkType::OrderOnly);
 
-            prev = node;
+            prev = node.id();
         }
     }
     return bs;
@@ -107,12 +106,11 @@ TEST_CASE("Benchmark: get_node lookup scaling", "[.benchmark][graph]")
     BENCHMARK_ADVANCED("1k nodes - all lookups")(Catch::Benchmark::Chronometer meter)
     {
         auto bs = generate_linear_graph(1000);
-        auto ids = collect_node_ids(bs.graph);
+        auto ids = collect_file_ids(bs.graph);
         meter.measure([&] {
             auto sum = std::size_t { 0 };
             for (auto id : ids) {
-                if (!pup::node_id::is_command(id))
-                    sum += pup::global_pool().get(get_full_path(bs.graph, id)).size();
+                sum += pup::global_pool().get(get_full_path(bs.graph, id)).size();
             }
             return sum;
         });
@@ -121,12 +119,11 @@ TEST_CASE("Benchmark: get_node lookup scaling", "[.benchmark][graph]")
     BENCHMARK_ADVANCED("10k nodes - all lookups")(Catch::Benchmark::Chronometer meter)
     {
         auto bs = generate_linear_graph(10000);
-        auto ids = collect_node_ids(bs.graph);
+        auto ids = collect_file_ids(bs.graph);
         meter.measure([&] {
             auto sum = std::size_t { 0 };
             for (auto id : ids) {
-                if (!pup::node_id::is_command(id))
-                    sum += pup::global_pool().get(get_full_path(bs.graph, id)).size();
+                sum += pup::global_pool().get(get_full_path(bs.graph, id)).size();
             }
             return sum;
         });
@@ -135,12 +132,11 @@ TEST_CASE("Benchmark: get_node lookup scaling", "[.benchmark][graph]")
     BENCHMARK_ADVANCED("20k nodes - all lookups")(Catch::Benchmark::Chronometer meter)
     {
         auto bs = generate_linear_graph(20000);
-        auto ids = collect_node_ids(bs.graph);
+        auto ids = collect_file_ids(bs.graph);
         meter.measure([&] {
             auto sum = std::size_t { 0 };
             for (auto id : ids) {
-                if (!pup::node_id::is_command(id))
-                    sum += pup::global_pool().get(get_full_path(bs.graph, id)).size();
+                sum += pup::global_pool().get(get_full_path(bs.graph, id)).size();
             }
             return sum;
         });

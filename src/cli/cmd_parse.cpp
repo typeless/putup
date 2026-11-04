@@ -13,7 +13,6 @@
 #include "pup/core/print.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/string_pool.hpp"
-#include "pup/core/types.hpp"
 #include "pup/core/vec.hpp"
 #include "pup/graph/dag.hpp"
 #include "pup/parser/ast.hpp"
@@ -88,9 +87,9 @@ auto parse_single_variant(Options const& opts, std::string_view variant_name) ->
         }
     }
 
-    auto commands = pup::graph::nodes_of_type(ctx.graph().graph, pup::NodeType::Command);
+    auto commands = pup::graph::command_ids(ctx.graph().graph);
 
-    if (opts.verbose && !commands.empty()) {
+    if (opts.verbose && commands.size() != 0) {
         print("[{}] Commands:\n", variant_name);
         auto cache = pup::graph::PathCache {};
         for (auto id : commands) {

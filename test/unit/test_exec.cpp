@@ -203,8 +203,8 @@ TEST_CASE("Scheduler basic operation", "[exec]")
             .name = intern("output.txt"),
         });
 
-        (void)graph::add_edge(bs.graph, *input_id, *cmd_id);
-        (void)graph::add_edge(bs.graph, *cmd_id, *output_id);
+        (void)graph::add_edge(bs.graph, input_id->id(), cmd_id->id());
+        (void)graph::add_edge(bs.graph, cmd_id->id(), output_id->id());
 
         auto opts = SchedulerOptions {
             .jobs = 1,
@@ -242,10 +242,10 @@ TEST_CASE("Scheduler parallel dependencies", "[exec]")
         auto a_o = graph::add_file_node(bs.graph, graph::FileNode { .type = NodeType::Generated, .name = intern("a.o") });
         auto b_o = graph::add_file_node(bs.graph, graph::FileNode { .type = NodeType::Generated, .name = intern("b.o") });
 
-        (void)graph::add_edge(bs.graph, *a_c, *cmd1);
-        (void)graph::add_edge(bs.graph, *cmd1, *a_o);
-        (void)graph::add_edge(bs.graph, *b_c, *cmd2);
-        (void)graph::add_edge(bs.graph, *cmd2, *b_o);
+        (void)graph::add_edge(bs.graph, a_c->id(), cmd1->id());
+        (void)graph::add_edge(bs.graph, cmd1->id(), a_o->id());
+        (void)graph::add_edge(bs.graph, b_c->id(), cmd2->id());
+        (void)graph::add_edge(bs.graph, cmd2->id(), b_o->id());
 
         auto opts = SchedulerOptions { .jobs = 4, .dry_run = true };
         auto scheduler = Scheduler { opts };
@@ -271,10 +271,10 @@ TEST_CASE("Scheduler parallel dependencies", "[exec]")
         });
         auto a_out = graph::add_file_node(bs.graph, graph::FileNode { .type = NodeType::Generated, .name = intern("a.out") });
 
-        (void)graph::add_edge(bs.graph, *a_c, *compile_cmd);
-        (void)graph::add_edge(bs.graph, *compile_cmd, *a_o);
-        (void)graph::add_edge(bs.graph, *a_o, *link_cmd);
-        (void)graph::add_edge(bs.graph, *link_cmd, *a_out);
+        (void)graph::add_edge(bs.graph, a_c->id(), compile_cmd->id());
+        (void)graph::add_edge(bs.graph, compile_cmd->id(), a_o->id());
+        (void)graph::add_edge(bs.graph, a_o->id(), link_cmd->id());
+        (void)graph::add_edge(bs.graph, link_cmd->id(), a_out->id());
 
         auto opts = SchedulerOptions { .jobs = 4, .dry_run = true };
         auto scheduler = Scheduler { opts };
@@ -309,13 +309,13 @@ TEST_CASE("Scheduler parallel dependencies", "[exec]")
         });
         auto app = graph::add_file_node(bs.graph, graph::FileNode { .type = NodeType::Generated, .name = intern("app") });
 
-        (void)graph::add_edge(bs.graph, *a_c, *cmd1);
-        (void)graph::add_edge(bs.graph, *a_c, *cmd2);
-        (void)graph::add_edge(bs.graph, *cmd1, *main_o);
-        (void)graph::add_edge(bs.graph, *cmd2, *main_opt_o);
-        (void)graph::add_edge(bs.graph, *main_o, *link_cmd);
-        (void)graph::add_edge(bs.graph, *main_opt_o, *link_cmd);
-        (void)graph::add_edge(bs.graph, *link_cmd, *app);
+        (void)graph::add_edge(bs.graph, a_c->id(), cmd1->id());
+        (void)graph::add_edge(bs.graph, a_c->id(), cmd2->id());
+        (void)graph::add_edge(bs.graph, cmd1->id(), main_o->id());
+        (void)graph::add_edge(bs.graph, cmd2->id(), main_opt_o->id());
+        (void)graph::add_edge(bs.graph, main_o->id(), link_cmd->id());
+        (void)graph::add_edge(bs.graph, main_opt_o->id(), link_cmd->id());
+        (void)graph::add_edge(bs.graph, link_cmd->id(), app->id());
 
         auto opts = SchedulerOptions { .jobs = 4, .dry_run = true };
         auto scheduler = Scheduler { opts };
@@ -342,12 +342,12 @@ TEST_CASE("Scheduler parallel dependencies", "[exec]")
         auto out2 = graph::add_file_node(bs.graph, graph::FileNode { .type = NodeType::Generated, .name = intern("lib_opt.o") });
         auto out3 = graph::add_file_node(bs.graph, graph::FileNode { .type = NodeType::Generated, .name = intern("lib_size.o") });
 
-        (void)graph::add_edge(bs.graph, *src, *cmd1);
-        (void)graph::add_edge(bs.graph, *src, *cmd2);
-        (void)graph::add_edge(bs.graph, *src, *cmd3);
-        (void)graph::add_edge(bs.graph, *cmd1, *out1);
-        (void)graph::add_edge(bs.graph, *cmd2, *out2);
-        (void)graph::add_edge(bs.graph, *cmd3, *out3);
+        (void)graph::add_edge(bs.graph, src->id(), cmd1->id());
+        (void)graph::add_edge(bs.graph, src->id(), cmd2->id());
+        (void)graph::add_edge(bs.graph, src->id(), cmd3->id());
+        (void)graph::add_edge(bs.graph, cmd1->id(), out1->id());
+        (void)graph::add_edge(bs.graph, cmd2->id(), out2->id());
+        (void)graph::add_edge(bs.graph, cmd3->id(), out3->id());
 
         auto opts = SchedulerOptions { .jobs = 4, .dry_run = true };
         auto scheduler = Scheduler { opts };
@@ -374,10 +374,10 @@ TEST_CASE("Scheduler parallel dependencies", "[exec]")
         });
         auto program = graph::add_file_node(bs.graph, graph::FileNode { .type = NodeType::Generated, .name = intern("program") });
 
-        (void)graph::add_edge(bs.graph, *a_o, *link_cmd);
-        (void)graph::add_edge(bs.graph, *b_o, *link_cmd);
-        (void)graph::add_edge(bs.graph, *c_o, *link_cmd);
-        (void)graph::add_edge(bs.graph, *link_cmd, *program);
+        (void)graph::add_edge(bs.graph, a_o->id(), link_cmd->id());
+        (void)graph::add_edge(bs.graph, b_o->id(), link_cmd->id());
+        (void)graph::add_edge(bs.graph, c_o->id(), link_cmd->id());
+        (void)graph::add_edge(bs.graph, link_cmd->id(), program->id());
 
         auto opts = SchedulerOptions { .jobs = 4, .dry_run = true };
         auto scheduler = Scheduler { opts };
@@ -416,8 +416,8 @@ TEST_CASE("Scheduler exported_vars", "[exec]")
             .name = intern(pup::test::temp_path("test_output.txt").string()),
         });
 
-        (void)graph::add_edge(bs.graph, *input_id, *cmd_id);
-        (void)graph::add_edge(bs.graph, *cmd_id, *output_id);
+        (void)graph::add_edge(bs.graph, input_id->id(), cmd_id->id());
+        (void)graph::add_edge(bs.graph, cmd_id->id(), output_id->id());
 
         auto captured_output = std::string {};
         auto opts = SchedulerOptions { .jobs = 1 };
@@ -466,8 +466,8 @@ TEST_CASE("Scheduler exported_vars", "[exec]")
             .name = intern(pup::test::temp_path("test_export_order.txt").string()),
         });
 
-        (void)graph::add_edge(bs.graph, *input_id, *cmd_id);
-        (void)graph::add_edge(bs.graph, *cmd_id, *output_id);
+        (void)graph::add_edge(bs.graph, input_id->id(), cmd_id->id());
+        (void)graph::add_edge(bs.graph, cmd_id->id(), output_id->id());
 
         auto captured_output = std::string {};
         auto opts = SchedulerOptions { .jobs = 1 };
@@ -509,8 +509,8 @@ TEST_CASE("Scheduler exported_vars", "[exec]")
             .name = intern(pup::test::temp_path("test_output2.txt").string()),
         });
 
-        (void)graph::add_edge(bs.graph, *input_id, *cmd_id);
-        (void)graph::add_edge(bs.graph, *cmd_id, *output_id);
+        (void)graph::add_edge(bs.graph, input_id->id(), cmd_id->id());
+        (void)graph::add_edge(bs.graph, cmd_id->id(), output_id->id());
 
         auto captured_output = std::string {};
         auto opts = SchedulerOptions { .jobs = 1 };

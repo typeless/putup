@@ -111,19 +111,169 @@ struct Graph {
     NodeId next_condition_id = node_id::make_condition(1); ///< Next condition node ID
 };
 
+template<typename Handle>
+class HandleRange;
+
+class FileId;
+class CommandId;
+
+/// Every live file node except the source root, in slot order
+[[nodiscard]]
+auto file_ids(Graph const& graph) -> HandleRange<FileId>;
+
+/// Every live command node, in slot order
+[[nodiscard]]
+auto command_ids(Graph const& graph) -> HandleRange<CommandId>;
+
+/// A live file node of a graph. Only the graph mints one, so an accessor taking it has no miss path.
+class FileId {
+public:
+    [[nodiscard]]
+    auto index() const -> std::uint32_t
+    {
+        return m_index;
+    }
+
+    [[nodiscard]]
+    auto id() const -> NodeId
+    {
+        return NodeId { m_index };
+    }
+
+    auto operator==(FileId const& other) const -> bool = default;
+
+private:
+    explicit FileId(std::uint32_t index)
+        : m_index(index)
+    {
+    }
+
+    std::uint32_t m_index;
+
+    friend class HandleRange<FileId>;
+    friend auto add_file_node(Graph& graph, FileNode node) -> Result<FileId>;
+    friend auto find_file(Graph const& graph, NodeId id) -> std::optional<FileId>;
+    friend auto get_parent_dir(Graph const& graph, FileId id) -> FileId;
+    friend auto source_root(Graph const& graph) -> FileId;
+};
+
+/// A live command node of a graph. Only the graph mints one, so an accessor taking it has no miss path.
+class CommandId {
+public:
+    [[nodiscard]]
+    auto index() const -> std::uint32_t
+    {
+        return m_index;
+    }
+
+    [[nodiscard]]
+    auto id() const -> NodeId
+    {
+        return node_id::make_command(m_index);
+    }
+
+    auto operator==(CommandId const& other) const -> bool = default;
+
+private:
+    explicit CommandId(std::uint32_t index)
+        : m_index(index)
+    {
+    }
+
+    std::uint32_t m_index;
+
+    friend class HandleRange<CommandId>;
+    friend auto add_command_node(Graph& graph, CommandNode node) -> Result<CommandId>;
+    friend auto find_command(Graph const& graph, NodeId id) -> std::optional<CommandId>;
+};
+
+/// The dense live slots of one node kind, as handles.
+template<typename Handle>
+class HandleRange {
+public:
+    class Iterator {
+    public:
+        auto operator*() const -> Handle
+        {
+            return Handle { m_index };
+        }
+
+        auto operator++() -> Iterator&
+        {
+            ++m_index;
+            return *this;
+        }
+
+        auto operator==(Iterator const& other) const -> bool = default;
+
+    private:
+        explicit Iterator(std::uint32_t index)
+            : m_index(index)
+        {
+        }
+
+        std::uint32_t m_index;
+
+        friend class HandleRange;
+    };
+
+    [[nodiscard]]
+    auto begin() const -> Iterator
+    {
+        return Iterator { m_first };
+    }
+
+    [[nodiscard]]
+    auto end() const -> Iterator
+    {
+        return Iterator { m_last };
+    }
+
+    [[nodiscard]]
+    auto size() const -> std::size_t
+    {
+        return m_last - m_first;
+    }
+
+private:
+    HandleRange(std::uint32_t first, std::uint32_t last)
+        : m_first(first)
+        , m_last(last)
+    {
+    }
+
+    std::uint32_t m_first;
+    std::uint32_t m_last;
+
+    friend auto file_ids(Graph const& graph) -> HandleRange<FileId>;
+    friend auto command_ids(Graph const& graph) -> HandleRange<CommandId>;
+};
+
+/// Resolve an untrusted id to a live file node; nullopt for another kind, an out-of-range index, or a slot holding another id
+[[nodiscard]]
+auto find_file(Graph const& graph, NodeId id) -> std::optional<FileId>;
+
+/// Resolve an untrusted id to a live command node; nullopt for another kind, an out-of-range index, or a slot holding another id
+[[nodiscard]]
+auto find_command(Graph const& graph, NodeId id) -> std::optional<CommandId>;
+
+/// The source root directory node
+[[nodiscard]]
+auto source_root(Graph const& graph) -> FileId;
+
 /// Add a file node to the graph
 [[nodiscard]]
-auto add_file_node(Graph& graph, FileNode node) -> Result<NodeId>;
+auto add_file_node(Graph& graph, FileNode node) -> Result<FileId>;
 
 /// Create or find a file node from a PathId, walking the PathPool trie.
 /// Creates intermediate directory nodes as needed.
 /// Handles type upgrade (Ghost/File -> Generated).
 [[nodiscard]]
-auto ensure_file_node(Graph& graph, PathId path_id, NodeType type) -> Result<NodeId>;
+auto ensure_file_node(Graph& graph, PathId path_id, NodeType type) -> Result<FileId>;
 
 /// Add a command node to the graph
 [[nodiscard]]
-auto add_command_node(Graph& graph, CommandNode node) -> Result<NodeId>;
+auto add_command_node(Graph& graph, CommandNode node) -> Result<CommandId>;
 
 /// Add an edge between nodes
 [[nodiscard]]
@@ -138,41 +288,49 @@ struct Display { };
 struct SourceDir { };
 struct InstructionPattern { };
 
-/// Storage type each get<Tag> maps to.
+/// Storage and handle type each get<Tag> maps to.
 template<typename Tag>
 struct get_storage;
 
 template<>
 struct get_storage<NodeType> {
     using type = NodeType;
+    using handle = FileId;
 };
 template<>
 struct get_storage<Hash256> {
     using type = Hash256;
+    using handle = FileId;
 };
 template<>
 struct get_storage<OutputAction> {
     using type = OutputAction;
+    using handle = CommandId;
 };
 template<>
 struct get_storage<SourcePosition> {
     using type = SourcePosition;
+    using handle = CommandId;
 };
 template<>
 struct get_storage<Name> {
     using type = StringId;
+    using handle = FileId;
 };
 template<>
 struct get_storage<Display> {
     using type = StringId;
+    using handle = CommandId;
 };
 template<>
 struct get_storage<SourceDir> {
     using type = StringId;
+    using handle = CommandId;
 };
 template<>
 struct get_storage<InstructionPattern> {
     using type = StringId;
+    using handle = CommandId;
 };
 
 /// Generic scalar-property accessor. Specialized per tag out-of-line in
@@ -180,7 +338,7 @@ struct get_storage<InstructionPattern> {
 /// can wrap the result in global_pool().get(...).
 template<typename Tag>
 [[nodiscard]]
-auto get(Graph const& graph, NodeId id) -> typename get_storage<Tag>::type;
+auto get(Graph const& graph, typename get_storage<Tag>::handle id) -> typename get_storage<Tag>::type;
 
 /// Role tags for composite-property access via view<Tag>.
 struct Inputs { };
@@ -188,25 +346,29 @@ struct OrderOnlyInputs { };
 struct Outputs { };
 struct ExportedVars { };
 
-/// Storage type each view<Tag> maps to.
+/// Storage and handle type each view<Tag> maps to.
 template<typename Tag>
 struct view_storage;
 
 template<>
 struct view_storage<Inputs> {
     using type = TokenList<NodeId>;
+    using handle = CommandId;
 };
 template<>
 struct view_storage<OrderOnlyInputs> {
     using type = TokenList<NodeId>;
+    using handle = CommandId;
 };
 template<>
 struct view_storage<Outputs> {
     using type = TokenList<NodeId>;
+    using handle = CommandId;
 };
 template<>
 struct view_storage<ExportedVars> {
     using type = SortedIdVec;
+    using handle = CommandId;
 };
 
 /// Composite-property accessor returning a range-like const reference.
@@ -215,23 +377,23 @@ struct view_storage<ExportedVars> {
 /// natural access pattern.
 template<typename Tag>
 [[nodiscard]]
-auto view(Graph const& graph, NodeId id) -> typename view_storage<Tag>::type const&;
+auto view(Graph const& graph, typename view_storage<Tag>::handle id) -> typename view_storage<Tag>::type const&;
 
 /// Get the parent directory node of a file node
 [[nodiscard]]
-auto get_parent_dir(Graph const& graph, NodeId id) -> NodeId;
+auto get_parent_dir(Graph const& graph, FileId id) -> FileId;
 
 /// Get the parent command for InjectImplicitDeps commands
 [[nodiscard]]
-auto get_parent_command(Graph const& graph, NodeId id) -> std::optional<NodeId>;
+auto get_parent_command(Graph const& graph, CommandId id) -> std::optional<CommandId>;
 
 /// Check if a command captures stdout (generated rule with Stdout output type)
 [[nodiscard]]
-auto is_stdout_capture(Graph const& graph, NodeId id) -> bool;
+auto is_stdout_capture(Graph const& graph, CommandId id) -> bool;
 
 /// Check if all guards on a command are satisfied
 [[nodiscard]]
-auto is_guard_satisfied(Graph const& graph, NodeId id) -> bool;
+auto is_guard_satisfied(Graph const& graph, CommandId id) -> bool;
 
 /// Collect the nodes that guard-unsatisfied commands declare as outputs and no satisfied command produces
 [[nodiscard]]
@@ -241,13 +403,9 @@ auto collect_inactive_outputs(Graph const& graph) -> NodeIdMap32;
 [[nodiscard]]
 auto find_by_dir_name(
     Graph const& graph,
-    NodeId parent_dir,
+    FileId parent_dir,
     std::string_view name
 ) -> std::optional<NodeId>;
-
-/// Get all nodes of a given type
-[[nodiscard]]
-auto nodes_of_type(Graph const& graph, NodeType type) -> Vec<NodeId>;
 
 /// Edge traversal direction
 enum class EdgeDirection : std::uint8_t {
@@ -391,12 +549,12 @@ auto materialize_path(Graph const& graph, PathId path_id) -> StringId;
 /// Reconstruct full path from (parent_dir, name) chain
 /// Uses provided cache for efficiency.
 [[nodiscard]]
-auto get_full_path(Graph const& graph, NodeId id, PathCache& cache) -> std::string_view;
+auto get_full_path(Graph const& graph, FileId id, PathCache& cache) -> std::string_view;
 
 /// Reconstruct full path without caching (convenience overload)
 /// Note: Creates temporary cache - prefer the cached version for repeated calls.
 [[nodiscard]]
-auto get_full_path(Graph const& graph, NodeId id) -> StringId;
+auto get_full_path(Graph const& graph, FileId id) -> StringId;
 
 /// Clear the entire path cache
 auto clear_path_cache(PathCache& cache) -> void;
@@ -404,7 +562,7 @@ auto clear_path_cache(PathCache& cache) -> void;
 /// Expand instruction pattern into full command string by substituting
 /// operand paths (%f, %o, %b, %B, %e, %d, %O, %Nf, %No) from the graph.
 [[nodiscard]]
-auto expand_instruction(Graph const& graph, NodeId cmd_id, PathCache& cache) -> StringId;
+auto expand_instruction(Graph const& graph, CommandId cmd_id, PathCache& cache) -> StringId;
 
 /// Expand instruction with canonical path resolution for symlinked source trees.
 /// When source_root is provided, build-tree paths are computed relative to the
@@ -414,7 +572,7 @@ auto expand_instruction(Graph const& graph, NodeId cmd_id, PathCache& cache) -> 
 [[nodiscard]]
 auto expand_instruction(
     Graph const& graph,
-    NodeId cmd_id,
+    CommandId cmd_id,
     PathCache& cache,
     std::string_view source_root,
     std::string_view config_root = {}
@@ -422,26 +580,26 @@ auto expand_instruction(
 
 /// Expand instruction pattern (convenience overload, creates temporary cache)
 [[nodiscard]]
-auto expand_instruction(Graph const& graph, NodeId cmd_id) -> StringId;
+auto expand_instruction(Graph const& graph, CommandId cmd_id) -> StringId;
 
 /// How to name a command in a message: its `^ ^` text if it has one, else what it will run.
 /// Never empty — a rule without an annotation still has to be identifiable, and every caller
 /// answering that for itself is how four of them came to print nothing at all (#229). The
 /// overloads mirror expand_instruction's because the fallback is what it computes.
 [[nodiscard]]
-auto command_label(Graph const& graph, NodeId cmd_id, PathCache& cache) -> StringId;
+auto command_label(Graph const& graph, CommandId cmd_id, PathCache& cache) -> StringId;
 
 [[nodiscard]]
 auto command_label(
     Graph const& graph,
-    NodeId cmd_id,
+    CommandId cmd_id,
     PathCache& cache,
     std::string_view source_root,
     std::string_view config_root = {}
 ) -> StringId;
 
 [[nodiscard]]
-auto command_label(Graph const& graph, NodeId cmd_id) -> StringId;
+auto command_label(Graph const& graph, CommandId cmd_id) -> StringId;
 
 /// What the command will do, for deciding whether it must re-run: the fully-expanded
 /// command text plus the values (content hashes) of every Variable node it depends on
@@ -451,7 +609,7 @@ auto command_label(Graph const& graph, NodeId cmd_id) -> StringId;
 /// Not a cross-build key. Editing a recipe changes the signature and must not make the
 /// rule a different rule; that is what compute_command_key answers.
 [[nodiscard]]
-auto compute_command_signature(Graph const& graph, NodeId cmd_id, PathCache& cache) -> Hash256;
+auto compute_command_signature(Graph const& graph, CommandId cmd_id, PathCache& cache) -> Hash256;
 
 /// Which rule this is, for joining a command against the previous build. A command that
 /// produces files is keyed by the files themselves — output ownership is unique among
@@ -459,7 +617,7 @@ auto compute_command_signature(Graph const& graph, NodeId cmd_id, PathCache& cac
 /// key is the fallback for output-less commands, which have nothing else to be named by.
 /// It deliberately excludes variable values: a var change means re-run, not a new rule.
 [[nodiscard]]
-auto compute_command_key(Graph const& graph, NodeId cmd_id, PathCache& cache) -> Hash256;
+auto compute_command_key(Graph const& graph, CommandId cmd_id, PathCache& cache) -> Hash256;
 
 /// Set the build root name (relative path from source root to build root)
 /// For in-tree builds, this should be empty. For variant builds, e.g. "build".

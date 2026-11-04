@@ -10,6 +10,7 @@
 #include "pup/core/vec.hpp"
 #include "pup/graph/dag.hpp"
 #include "pup/platform/file_io.hpp"
+#include <cassert>
 #include <string_view>
 
 namespace pup::cli {
@@ -31,12 +32,15 @@ auto find_config_commands(
     auto result = Vec<ConfigCommand> {};
     auto const& g = state.graph;
 
-    for (auto id : graph::all_nodes(g)) {
-        if (!node_id::is_command(id)) {
-            continue;
-        }
+    for (auto cmd : graph::command_ids(g)) {
+        auto const id = cmd.id();
         for (auto output_id : graph::get_outputs(g, id)) {
-            auto path = graph::get_full_path(g, output_id, state.path_cache);
+            if (!node_id::is_file(output_id)) {
+                continue;
+            }
+            auto const output = graph::find_file(g, output_id);
+            assert(output);
+            auto path = graph::get_full_path(g, *output, state.path_cache);
             if (is_config_output(path)) {
                 auto full_path_sv = global_pool().get(pup::path::join(source_root, path));
                 result.push_back({
@@ -66,9 +70,9 @@ auto collect_command_dependencies(
         }
     };
 
-    for (auto id : graph::all_nodes(g)) {
-        if (node_id::is_command(id) && commands.contains(id)) {
-            try_add(id);
+    for (auto cmd : graph::command_ids(g)) {
+        if (commands.contains(cmd.id())) {
+            try_add(cmd.id());
         }
     }
 
@@ -98,7 +102,9 @@ auto collect_command_dependencies(
         };
 
         for (auto oo_id : graph::get_order_only(g, cmd_id)) {
-            if (graph::get<NodeType>(g, oo_id) == NodeType::Group) {
+            auto const oo_file = graph::find_file(g, oo_id);
+            assert(oo_file || !node_id::is_file(oo_id));
+            if (oo_file && graph::get<NodeType>(g, *oo_file) == NodeType::Group) {
                 for (auto member_id : graph::get_inputs(g, oo_id)) {
                     add_producers(member_id);
                 }

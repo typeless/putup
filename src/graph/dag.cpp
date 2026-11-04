@@ -60,14 +60,61 @@ auto make_graph() -> Graph
     return graph;
 }
 
+auto find_file(Graph const& graph, NodeId id) -> std::optional<FileId>
+{
+    if (!node_id::is_file(id)) {
+        return std::nullopt;
+    }
+    auto const idx = node_id::index(id);
+    if (idx >= graph.files.size() || graph.files[idx].id != id) {
+        return std::nullopt;
+    }
+    return FileId { static_cast<std::uint32_t>(idx) };
+}
+
+auto find_command(Graph const& graph, NodeId id) -> std::optional<CommandId>
+{
+    if (!node_id::is_command(id)) {
+        return std::nullopt;
+    }
+    auto const idx = node_id::index(id);
+    if (idx == 0 || idx >= graph.commands.size() || graph.commands[idx].id != id) {
+        return std::nullopt;
+    }
+    return CommandId { static_cast<std::uint32_t>(idx) };
+}
+
+auto source_root(Graph const&) -> FileId
+{
+    return FileId { SOURCE_ROOT_ID };
+}
+
+auto file_ids(Graph const& graph) -> HandleRange<FileId>
+{
+    return HandleRange<FileId> { 1, static_cast<std::uint32_t>(graph.files.size()) };
+}
+
+auto command_ids(Graph const& graph) -> HandleRange<CommandId>
+{
+    return HandleRange<CommandId> { 1, static_cast<std::uint32_t>(std::max(graph.commands.size(), std::size_t { 1 })) };
+}
+
+namespace {
+
+auto file_at(Graph const& graph, FileId id) -> FileNode const&
+{
+    return graph.files[id.index()];
+}
+
+auto command_at(Graph const& graph, CommandId id) -> CommandNode const&
+{
+    return graph.commands[id.index()];
+}
+
 auto validate_node_id(Graph const& graph, NodeId id) -> bool
 {
     if (node_id::is_command(id)) {
-        auto idx = node_id::index(id);
-        if (idx == 0 || idx >= graph.commands.size()) {
-            return false;
-        }
-        return graph.commands[idx].id == id;
+        return find_command(graph, id).has_value();
     }
     if (node_id::is_condition(id)) {
         auto idx = node_id::index(id);
@@ -76,18 +123,24 @@ auto validate_node_id(Graph const& graph, NodeId id) -> bool
         }
         return graph.conditions[idx].id == id;
     }
-    auto idx = node_id::index(id);
-    if (idx >= graph.files.size()) {
-        return false;
-    }
-    return graph.files[idx].id == id;
+    return find_file(graph, id).has_value();
 }
 
-auto add_file_node(Graph& graph, FileNode node) -> Result<NodeId>
+auto promote_to_generated(Graph& graph, FileId id) -> void
+{
+    auto& node = graph.files[id.index()];
+    if (node.type == NodeType::Ghost || node.type == NodeType::File) {
+        node.type = NodeType::Generated;
+    }
+}
+
+}
+
+auto add_file_node(Graph& graph, FileNode node) -> Result<FileId>
 {
     auto const* parent = get_file_node(std::as_const(graph), node.parent_dir);
     if (!parent) {
-        return make_error<NodeId>(ErrorCode::InvalidNodeId, "Invalid parent directory node ID");
+        return make_error<FileId>(ErrorCode::InvalidNodeId, "Invalid parent directory node ID");
     }
     if (parent->type != NodeType::Directory && parent->type != NodeType::GeneratedDir) {
         auto const parent_spelling = global_pool().get(materialize_path(graph, parent->path_id));
@@ -99,7 +152,7 @@ auto add_file_node(Graph& graph, FileNode node) -> Result<NodeId>
             node_type_name(parent->type),
             parent_spelling
         );
-        return make_error<NodeId>(ErrorCode::InvalidNodeId, err.view());
+        return make_error<FileId>(ErrorCode::InvalidNodeId, err.view());
     }
     auto const parent_path = parent->path_id;
     auto const parent_idx = node_id::index(node.parent_dir);
@@ -114,14 +167,17 @@ auto add_file_node(Graph& graph, FileNode node) -> Result<NodeId>
             occupant = graph.dir_children[parent_idx].find(to_underlying(node.name));
         }
         if (occupant) {
-            auto const* existing = get_file_node(std::as_const(graph), *occupant);
+            auto const existing = find_file(graph, NodeId { *occupant });
+            if (!existing) {
+                return make_error<FileId>(ErrorCode::InvalidNodeId, "Path index names no file node");
+            }
             auto err = Buf {};
             err.fmt(
                 "Unable to create '{}' because a {} already occupies that path",
                 global_pool().get(materialize_path(graph, node.path_id)),
-                node_type_name(existing ? existing->type : node.type)
+                node_type_name(file_at(graph, *existing).type)
             );
-            return make_error<NodeId>(ErrorCode::DuplicateNode, err.view());
+            return make_error<FileId>(ErrorCode::DuplicateNode, err.view());
         }
     }
 
@@ -142,25 +198,36 @@ auto add_file_node(Graph& graph, FileNode node) -> Result<NodeId>
         graph.dir_children[parent_idx].insert(to_underlying(graph.files[idx].name), id);
     }
 
-    return id;
+    return FileId { static_cast<std::uint32_t>(idx) };
 }
 
-auto ensure_file_node(Graph& graph, PathId path_id, NodeType type) -> Result<NodeId>
+auto ensure_file_node(Graph& graph, PathId path_id, NodeType type) -> Result<FileId>
 {
+    auto const resolve_hit = [&](NodeId hit) -> Result<FileId> {
+        auto const file = find_file(graph, hit);
+        if (!file) {
+            return make_error<FileId>(ErrorCode::InvalidNodeId, "Path index names no file node");
+        }
+        if (type == NodeType::Generated) {
+            promote_to_generated(graph, *file);
+        }
+        return *file;
+    };
+
     if (is_root(path_id)) {
         auto const* root = graph.path_to_node.find(to_underlying(path_id));
-        return root ? NodeId { *root } : SOURCE_ROOT_ID;
+        if (!root) {
+            return source_root(graph);
+        }
+        auto const file = find_file(graph, NodeId { *root });
+        if (!file) {
+            return make_error<FileId>(ErrorCode::InvalidNodeId, "Path index names no file node");
+        }
+        return *file;
     }
 
-    auto const* existing = graph.path_to_node.find(to_underlying(path_id));
-    if (existing) {
-        if (type == NodeType::Generated) {
-            auto* node = get_file_node(graph, *existing);
-            if (node && (node->type == NodeType::Ghost || node->type == NodeType::File)) {
-                node->type = NodeType::Generated;
-            }
-        }
-        return *existing;
+    if (auto const* existing = graph.path_to_node.find(to_underlying(path_id))) {
+        return resolve_hit(NodeId { *existing });
     }
 
     if (!graph.paths.is_grounded(path_id)) {
@@ -168,26 +235,14 @@ auto ensure_file_node(Graph& graph, PathId path_id, NodeType type) -> Result<Nod
         if (auto const* hit = graph.path_to_node.find(to_underlying(build_id))) {
             auto const hit_id = NodeId { *hit };
             graph.path_to_node.insert(to_underlying(path_id), hit_id);
-            if (type == NodeType::Generated) {
-                auto* node = get_file_node(graph, hit_id);
-                if (node && (node->type == NodeType::Ghost || node->type == NodeType::File)) {
-                    node->type = NodeType::Generated;
-                }
-            }
-            return hit_id;
+            return resolve_hit(hit_id);
         }
 
         auto source_id = graph.paths.ground(path_id, PathId::SourceRoot);
         if (auto const* hit = graph.path_to_node.find(to_underlying(source_id))) {
             auto const hit_id = NodeId { *hit };
             graph.path_to_node.insert(to_underlying(path_id), hit_id);
-            if (type == NodeType::Generated) {
-                auto* node = get_file_node(graph, hit_id);
-                if (node && (node->type == NodeType::Ghost || node->type == NodeType::File)) {
-                    node->type = NodeType::Generated;
-                }
-            }
-            return hit_id;
+            return resolve_hit(hit_id);
         }
 
         auto root = (type == NodeType::File || type == NodeType::Directory)
@@ -205,28 +260,22 @@ auto ensure_file_node(Graph& graph, PathId path_id, NodeType type) -> Result<Nod
     auto name = graph.paths.name(path_id);
     if (auto found = find_by_dir_name(graph, *parent_result, global_pool().get(name))) {
         graph.path_to_node.insert(to_underlying(path_id), *found);
-        if (type == NodeType::Generated) {
-            auto* node = get_file_node(graph, *found);
-            if (node && (node->type == NodeType::Ghost || node->type == NodeType::File)) {
-                node->type = NodeType::Generated;
-            }
-        }
-        return *found;
+        return resolve_hit(*found);
     }
 
     auto node = FileNode {
         .type = type,
         .name = name,
-        .parent_dir = *parent_result,
+        .parent_dir = parent_result->id(),
     };
     auto added = add_file_node(graph, std::move(node));
     if (added) {
-        graph.path_to_node.insert(to_underlying(path_id), *added);
+        graph.path_to_node.insert(to_underlying(path_id), added->id());
     }
     return added;
 }
 
-auto add_command_node(Graph& graph, CommandNode node) -> Result<NodeId>
+auto add_command_node(Graph& graph, CommandNode node) -> Result<CommandId>
 {
     auto const id = graph.next_command_id;
     graph.next_command_id = node_id::make_command(node_id::index(graph.next_command_id) + 1);
@@ -238,7 +287,7 @@ auto add_command_node(Graph& graph, CommandNode node) -> Result<NodeId>
     }
     graph.commands[idx] = std::move(node);
 
-    return id;
+    return CommandId { static_cast<std::uint32_t>(idx) };
 }
 
 auto add_edge(Graph& graph, NodeId from, NodeId to, LinkType type) -> Result<void>
@@ -275,15 +324,8 @@ auto get_file_node(Graph& graph, NodeId id) -> FileNode*
 
 auto get_file_node(Graph const& graph, NodeId id) -> FileNode const*
 {
-    if (node_id::is_command(id)) {
-        return nullptr;
-    }
-    auto const idx = node_id::index(id);
-    if (idx >= graph.files.size()) {
-        return nullptr;
-    }
-    auto const& node = graph.files[idx];
-    return node.id == id ? &node : nullptr;
+    auto const file = find_file(graph, id);
+    return file ? &file_at(graph, *file) : nullptr;
 }
 
 auto get_command_node(Graph& graph, NodeId id) -> CommandNode*
@@ -294,133 +336,102 @@ auto get_command_node(Graph& graph, NodeId id) -> CommandNode*
 
 auto get_command_node(Graph const& graph, NodeId id) -> CommandNode const*
 {
-    if (!node_id::is_command(id)) {
-        return nullptr;
+    auto const command = find_command(graph, id);
+    return command ? &command_at(graph, *command) : nullptr;
+}
+
+auto get_parent_dir(Graph const& graph, FileId id) -> FileId
+{
+    return FileId { static_cast<std::uint32_t>(node_id::index(file_at(graph, id).parent_dir)) };
+}
+
+template<>
+auto view<Inputs>(Graph const& graph, CommandId id) -> TokenList<NodeId> const&
+{
+    return command_at(graph, id).inputs;
+}
+
+template<>
+auto view<OrderOnlyInputs>(Graph const& graph, CommandId id) -> TokenList<NodeId> const&
+{
+    return command_at(graph, id).order_only_inputs;
+}
+
+template<>
+auto view<Outputs>(Graph const& graph, CommandId id) -> TokenList<NodeId> const&
+{
+    return command_at(graph, id).outputs;
+}
+
+template<>
+auto view<ExportedVars>(Graph const& graph, CommandId id) -> SortedIdVec const&
+{
+    return command_at(graph, id).exported_vars;
+}
+
+auto get_parent_command(Graph const& graph, CommandId id) -> std::optional<CommandId>
+{
+    auto const& parent = command_at(graph, id).parent_command;
+    if (!parent) {
+        return std::nullopt;
     }
-    auto const idx = node_id::index(id);
-    if (idx == 0 || idx >= graph.commands.size()) {
-        return nullptr;
-    }
-    auto const& node = graph.commands[idx];
-    return node.id == id ? &node : nullptr;
+    auto const command = find_command(graph, *parent);
+    assert(command);
+    return command;
 }
 
-auto get_parent_dir(Graph const& graph, NodeId id) -> NodeId
+auto is_stdout_capture(Graph const& graph, CommandId id) -> bool
 {
-    auto const* node = get_file_node(graph, id);
-    return node ? node->parent_dir : NodeId { 0 };
+    auto const& generated = command_at(graph, id).generated_output;
+    return generated && generated->type == GeneratedOutput::Type::Stdout;
 }
 
 template<>
-auto view<Inputs>(Graph const& graph, NodeId id) -> TokenList<NodeId> const&
+auto get<NodeType>(Graph const& graph, FileId id) -> NodeType
 {
-    static auto const empty = TokenList<NodeId> {};
-    auto const* node = get_command_node(graph, id);
-    return node ? node->inputs : empty;
+    return file_at(graph, id).type;
 }
 
 template<>
-auto view<OrderOnlyInputs>(Graph const& graph, NodeId id) -> TokenList<NodeId> const&
+auto get<Hash256>(Graph const& graph, FileId id) -> Hash256
 {
-    static auto const empty = TokenList<NodeId> {};
-    auto const* node = get_command_node(graph, id);
-    return node ? node->order_only_inputs : empty;
+    return file_at(graph, id).content_hash;
 }
 
 template<>
-auto view<Outputs>(Graph const& graph, NodeId id) -> TokenList<NodeId> const&
+auto get<OutputAction>(Graph const& graph, CommandId id) -> OutputAction
 {
-    static auto const empty = TokenList<NodeId> {};
-    auto const* node = get_command_node(graph, id);
-    return node ? node->outputs : empty;
+    return command_at(graph, id).output_action;
 }
 
 template<>
-auto view<ExportedVars>(Graph const& graph, NodeId id) -> SortedIdVec const&
+auto get<SourcePosition>(Graph const& graph, CommandId id) -> SourcePosition
 {
-    static auto const empty = SortedIdVec {};
-    auto const* node = get_command_node(graph, id);
-    return node ? node->exported_vars : empty;
-}
-
-auto get_parent_command(Graph const& graph, NodeId id) -> std::optional<NodeId>
-{
-    auto const* node = get_command_node(graph, id);
-    return node ? node->parent_command : std::nullopt;
-}
-
-auto is_stdout_capture(Graph const& graph, NodeId id) -> bool
-{
-    auto const* node = get_command_node(graph, id);
-    return node && node->generated_output && node->generated_output->type == GeneratedOutput::Type::Stdout;
-}
-
-namespace {
-template<typename T>
-auto read_file_field(Graph const& g, NodeId id, T FileNode::*field, T def) -> T
-{
-    auto const* node = get_file_node(g, id);
-    return node ? node->*field : def;
-}
-
-template<typename T>
-auto read_command_field(Graph const& g, NodeId id, T CommandNode::*field, T def) -> T
-{
-    auto const* node = get_command_node(g, id);
-    return node ? node->*field : def;
-}
+    return command_at(graph, id).rule_location;
 }
 
 template<>
-auto get<NodeType>(Graph const& graph, NodeId id) -> NodeType
+auto get<Name>(Graph const& graph, FileId id) -> StringId
 {
-    if (node_id::is_command(id)) {
-        return NodeType::Command;
-    }
-    return read_file_field(graph, id, &FileNode::type, NodeType::File);
+    return file_at(graph, id).name;
 }
 
 template<>
-auto get<Hash256>(Graph const& graph, NodeId id) -> Hash256
+auto get<Display>(Graph const& graph, CommandId id) -> StringId
 {
-    return read_file_field(graph, id, &FileNode::content_hash, Hash256 {});
+    return command_at(graph, id).display;
 }
 
 template<>
-auto get<OutputAction>(Graph const& graph, NodeId id) -> OutputAction
+auto get<SourceDir>(Graph const& graph, CommandId id) -> StringId
 {
-    return read_command_field(graph, id, &CommandNode::output_action, OutputAction::Normal);
+    return command_at(graph, id).source_dir;
 }
 
 template<>
-auto get<SourcePosition>(Graph const& graph, NodeId id) -> SourcePosition
+auto get<InstructionPattern>(Graph const& graph, CommandId id) -> StringId
 {
-    return read_command_field(graph, id, &CommandNode::rule_location, SourcePosition {});
-}
-
-template<>
-auto get<Name>(Graph const& graph, NodeId id) -> StringId
-{
-    return read_file_field(graph, id, &FileNode::name, StringId::Empty);
-}
-
-template<>
-auto get<Display>(Graph const& graph, NodeId id) -> StringId
-{
-    return read_command_field(graph, id, &CommandNode::display, StringId::Empty);
-}
-
-template<>
-auto get<SourceDir>(Graph const& graph, NodeId id) -> StringId
-{
-    return read_command_field(graph, id, &CommandNode::source_dir, StringId::Empty);
-}
-
-template<>
-auto get<InstructionPattern>(Graph const& graph, NodeId id) -> StringId
-{
-    auto const* cmd = get_command_node(graph, id);
-    return cmd ? render_instruction(cmd->instruction) : StringId::Empty;
+    return render_instruction(command_at(graph, id).instruction);
 }
 
 auto add_condition_node(Graph& graph, ConditionNode node) -> Result<NodeId>
@@ -457,13 +468,9 @@ auto get_condition_node(Graph& graph, NodeId id) -> ConditionNode*
     return const_cast<ConditionNode*>(get_condition_node(std::as_const(graph), id));
 }
 
-auto is_guard_satisfied(Graph const& graph, NodeId id) -> bool
+auto is_guard_satisfied(Graph const& graph, CommandId id) -> bool
 {
-    auto const* cmd = get_command_node(graph, id);
-    if (!cmd) {
-        return true;
-    }
-    for (auto const& guard : cmd->guards) {
+    for (auto const& guard : command_at(graph, id).guards) {
         auto const* cond = get_condition_node(graph, guard.condition);
         if (!cond) {
             return false;
@@ -479,12 +486,9 @@ auto collect_inactive_outputs(Graph const& graph) -> NodeIdMap32
 {
     auto produced_by_active = NodeIdMap32 {};
     auto declared_by_inactive = NodeIdMap32 {};
-    for (auto id : all_nodes(graph)) {
-        if (!node_id::is_command(id)) {
-            continue;
-        }
+    for (auto id : command_ids(graph)) {
         auto& outputs = is_guard_satisfied(graph, id) ? produced_by_active : declared_by_inactive;
-        for (auto output_id : get_outputs(graph, id)) {
+        for (auto output_id : get_outputs(graph, id.id())) {
             outputs.set(output_id, 1);
         }
     }
@@ -497,18 +501,17 @@ auto collect_inactive_outputs(Graph const& graph) -> NodeIdMap32
     return result;
 }
 
-auto find_by_dir_name(Graph const& graph, NodeId parent_dir, std::string_view name)
+auto find_by_dir_name(Graph const& graph, FileId parent_dir, std::string_view name)
     -> std::optional<NodeId>
 {
     auto name_id = global_pool().find(name);
     if (is_empty(name_id)) {
         return std::nullopt;
     }
-    auto const parent_idx = node_id::index(parent_dir);
-    if (parent_idx >= graph.dir_children.size()) {
+    if (parent_dir.index() >= graph.dir_children.size()) {
         return std::nullopt;
     }
-    auto const* found = graph.dir_children[parent_idx].find(to_underlying(name_id));
+    auto const* found = graph.dir_children[parent_dir.index()].find(to_underlying(name_id));
     if (!found) {
         return std::nullopt;
     }
@@ -522,7 +525,7 @@ auto resolve_file_path(
     Graph const& graph,
     std::string_view path,
     StringPool const& pool
-) -> std::optional<NodeId>
+) -> std::optional<FileId>
 {
     if (path.empty()) {
         return std::nullopt;
@@ -538,38 +541,22 @@ auto resolve_file_path(
     }
 
     if (auto pid = graph.paths.find_path(build_lookup, pool, PathId::BuildRoot)) {
-        if (auto const* hit = graph.path_to_node.find(to_underlying(*pid));
-            hit && (build_lookup != path || get_file_node(graph, NodeId { *hit })->type != NodeType::Directory)) {
-            return NodeId { *hit };
+        if (auto const* hit = graph.path_to_node.find(to_underlying(*pid))) {
+            auto const file = find_file(graph, NodeId { *hit });
+            assert(file);
+            if (build_lookup != path || get<NodeType>(graph, *file) != NodeType::Directory) {
+                return file;
+            }
         }
     }
     if (auto pid = graph.paths.find_path(path, pool, PathId::SourceRoot)) {
         if (auto const* hit = graph.path_to_node.find(to_underlying(*pid))) {
-            return NodeId { *hit };
+            auto const file = find_file(graph, NodeId { *hit });
+            assert(file);
+            return file;
         }
     }
     return std::nullopt;
-}
-
-auto nodes_of_type(Graph const& graph, NodeType type) -> Vec<NodeId>
-{
-    auto result = Vec<NodeId> {};
-    if (type == NodeType::Command) {
-        for (auto i = std::size_t { 1 }; i < graph.commands.size(); ++i) {
-            auto const& node = graph.commands[i];
-            if (node.id == node_id::make_command(i)) {
-                result.push_back(node.id);
-            }
-        }
-    } else {
-        for (auto i = NodeId { 1 }; i < graph.files.size(); ++i) {
-            auto const& node = graph.files[i];
-            if (node.id == i && node.type == type) {
-                result.push_back(i);
-            }
-        }
-    }
-    return result;
 }
 
 auto edges_where(Graph const& graph, NodeId id, EdgeDirection dir, LinkTypeMask mask) -> Vec<NodeId>
@@ -650,35 +637,31 @@ auto materialize_path(Graph const& graph, PathId path_id) -> StringId
     return pool.intern(path_sv);
 }
 
-auto get_full_path(Graph const& graph, NodeId id, PathCache& cache) -> std::string_view
+auto get_full_path(Graph const& graph, FileId id, PathCache& cache) -> std::string_view
 {
-    auto const* node = get_file_node(graph, id);
-    if (!node) {
+    auto const& node = file_at(graph, id);
+    if (is_root(node.path_id)) {
         return "";
     }
 
-    if (is_root(node->path_id)) {
-        return "";
+    if (cache.ids.contains(id.id())) {
+        auto sid = make_string_id(cache.ids.get(id.id()));
+        return is_empty(sid) ? global_pool().get(node.name) : cache.pool.get(sid);
     }
 
-    if (cache.ids.contains(id)) {
-        auto sid = make_string_id(cache.ids.get(id));
-        return is_empty(sid) ? global_pool().get(node->name) : cache.pool.get(sid);
-    }
-
-    auto materialized = materialize_path(graph, node->path_id);
+    auto materialized = materialize_path(graph, node.path_id);
     auto cached_id = cache.pool.intern(global_pool().get(materialized));
-    cache.ids.set(id, to_underlying(cached_id));
+    cache.ids.set(id.id(), to_underlying(cached_id));
     return cache.pool.get(cached_id);
 }
 
-auto get_full_path(Graph const& graph, NodeId id) -> StringId
+auto get_full_path(Graph const& graph, FileId id) -> StringId
 {
-    auto const* node = get_file_node(graph, id);
-    if (!node || is_root(node->path_id)) {
+    auto const& node = file_at(graph, id);
+    if (is_root(node.path_id)) {
         return StringId::Empty;
     }
-    return materialize_path(graph, node->path_id);
+    return materialize_path(graph, node.path_id);
 }
 
 auto invalidate_path_cache(PathCache& cache, NodeId id) -> void
@@ -731,18 +714,25 @@ struct ExecSite {
     std::string_view source_dir;
     PathResolver const& get_operand_path;
 
+    auto operand(NodeId id) const -> FileId
+    {
+        auto const file = find_file(graph, id);
+        assert(file);
+        return *file;
+    }
+
     auto operand_name(NodeId id) const -> std::string_view
     {
-        return global_pool().get(get<Name>(graph, id));
+        return global_pool().get(get<Name>(graph, operand(id)));
     }
 
     auto operand_path(NodeId id) const -> std::string_view
     {
-        auto const* node = get_file_node(graph, id);
-        if (!node || node->type != NodeType::Group) {
-            return get_operand_path(id);
+        auto const file = operand(id);
+        if (get<NodeType>(graph, file) != NodeType::Group) {
+            return get_operand_path(file);
         }
-        auto const dir = get_operand_path(node->parent_dir);
+        auto const dir = get_operand_path(get_parent_dir(graph, file));
         if (dir.empty() || dir == ".") {
             return operand_name(id);
         }
@@ -800,14 +790,14 @@ struct ExecSite {
             if (i > 0) {
                 buf += ' ';
             }
-            buf += get_operand_path(cmd->outputs[i]);
+            buf += get_operand_path(operand(cmd->outputs[i]));
         }
     }
 
     auto append_output_noext(Buf& buf) const -> void
     {
         if (cmd->outputs.size() == 1) {
-            auto const only = get_operand_path(cmd->outputs[0]);
+            auto const only = get_operand_path(operand(cmd->outputs[0]));
             buf += only.substr(0, only.size() - pup::path::extension(only).size());
         }
     }
@@ -853,7 +843,7 @@ struct ExecSite {
     auto append_nth_output(Buf& buf, std::uint32_t token) const -> void
     {
         append_token(buf, cmd->outputs.token(token), [this](NodeId id) {
-            return get_operand_path(id);
+            return get_operand_path(operand(id));
         });
     }
 
@@ -872,43 +862,35 @@ struct ExecSite {
 template<typename PathResolver>
 auto expand_instruction_impl(
     Graph const& graph,
-    NodeId cmd_id,
+    CommandId cmd_id,
     PathCache& cache,
     PathResolver const& get_operand_path
 ) -> StringId
 {
-    auto const* cmd = get_command_node(graph, cmd_id);
-    if (!cmd) {
-        return StringId::Empty;
-    }
-
-    if (cmd->instruction.empty()) {
+    auto const& cmd = command_at(graph, cmd_id);
+    if (cmd.instruction.empty()) {
         return StringId::Empty;
     }
 
     return fold_instruction(
-        cmd->instruction,
+        cmd.instruction,
         ExecSite<PathResolver> {
             graph,
-            cmd,
+            &cmd,
             cache,
-            global_pool().get(cmd->source_dir),
+            global_pool().get(cmd.source_dir),
             get_operand_path,
         }
     );
 }
 
-auto expand_instruction(Graph const& graph, NodeId cmd_id, PathCache& cache) -> StringId
+auto expand_instruction(Graph const& graph, CommandId cmd_id, PathCache& cache) -> StringId
 {
-    auto const* cmd = get_command_node(graph, cmd_id);
-    if (!cmd) {
-        return StringId::Empty;
-    }
     auto& pool = global_pool();
-    auto source_dir = pool.get(cmd->source_dir);
+    auto source_dir = pool.get(command_at(graph, cmd_id).source_dir);
     auto source_to_root = pool.get(pup::compute_source_to_root(source_dir));
 
-    return expand_instruction_impl(graph, cmd_id, cache, [&](NodeId id) -> std::string_view {
+    return expand_instruction_impl(graph, cmd_id, cache, [&](FileId id) -> std::string_view {
         auto full = get_full_path(graph, id, cache);
         return pool.get(pup::make_source_relative(full, source_to_root, source_dir));
     });
@@ -916,18 +898,14 @@ auto expand_instruction(Graph const& graph, NodeId cmd_id, PathCache& cache) -> 
 
 auto expand_instruction(
     Graph const& graph,
-    NodeId cmd_id,
+    CommandId cmd_id,
     PathCache& cache,
     std::string_view source_root,
     std::string_view config_root
 ) -> StringId
 {
-    auto const* cmd = get_command_node(graph, cmd_id);
-    if (!cmd) {
-        return StringId::Empty;
-    }
     auto& pool = global_pool();
-    auto source_dir = pool.get(cmd->source_dir);
+    auto source_dir = pool.get(command_at(graph, cmd_id).source_dir);
     auto source_to_root = pool.get(pup::compute_source_to_root(source_dir));
     auto canonical_cwd_id = StringId::Empty;
     if (!source_root.empty()) {
@@ -938,7 +916,7 @@ auto expand_instruction(
     }
     auto canonical_cwd = pool.get(canonical_cwd_id);
 
-    return expand_instruction_impl(graph, cmd_id, cache, [&](NodeId id) -> std::string_view {
+    return expand_instruction_impl(graph, cmd_id, cache, [&](FileId id) -> std::string_view {
         auto full = get_full_path(graph, id, cache);
         if (!canonical_cwd.empty() && full.starts_with("..")) {
             auto joined_sv = pool.get(pup::path::join(source_root, full));
@@ -960,31 +938,31 @@ auto expand_instruction(
     });
 }
 
-auto expand_instruction(Graph const& graph, NodeId cmd_id) -> StringId
+auto expand_instruction(Graph const& graph, CommandId cmd_id) -> StringId
 {
     auto cache = PathCache {};
     return expand_instruction(graph, cmd_id, cache);
 }
 
-auto command_label(Graph const& graph, NodeId cmd_id, PathCache& cache) -> StringId
+auto command_label(Graph const& graph, CommandId cmd_id, PathCache& cache) -> StringId
 {
     auto display = get<Display>(graph, cmd_id);
     return is_empty(display) ? expand_instruction(graph, cmd_id, cache) : display;
 }
 
-auto command_label(Graph const& graph, NodeId cmd_id, PathCache& cache, std::string_view source_root, std::string_view config_root) -> StringId
+auto command_label(Graph const& graph, CommandId cmd_id, PathCache& cache, std::string_view source_root, std::string_view config_root) -> StringId
 {
     auto display = get<Display>(graph, cmd_id);
     return is_empty(display) ? expand_instruction(graph, cmd_id, cache, source_root, config_root) : display;
 }
 
-auto command_label(Graph const& graph, NodeId cmd_id) -> StringId
+auto command_label(Graph const& graph, CommandId cmd_id) -> StringId
 {
     auto display = get<Display>(graph, cmd_id);
     return is_empty(display) ? expand_instruction(graph, cmd_id) : display;
 }
 
-auto compute_command_key(Graph const& graph, NodeId cmd_id, PathCache& cache) -> Hash256
+auto compute_command_key(Graph const& graph, CommandId cmd_id, PathCache& cache) -> Hash256
 {
     auto& pool = global_pool();
     auto state = sha256_init();
@@ -1004,7 +982,7 @@ auto compute_command_key(Graph const& graph, NodeId cmd_id, PathCache& cache) ->
     return sha256_finalize(state);
 }
 
-auto compute_command_signature(Graph const& graph, NodeId cmd_id, PathCache& cache) -> Hash256
+auto compute_command_signature(Graph const& graph, CommandId cmd_id, PathCache& cache) -> Hash256
 {
     auto& pool = global_pool();
     auto state = sha256_init();
@@ -1016,8 +994,13 @@ auto compute_command_signature(Graph const& graph, NodeId cmd_id, PathCache& cac
     state = sha256_update(state, pool.get(get<SourceDir>(graph, cmd_id)));
 
     auto output_paths = Vec<std::string_view> {};
-    for (auto out_id : get_outputs(graph, cmd_id)) {
-        auto path = get_full_path(graph, out_id, cache);
+    for (auto out_id : get_outputs(graph, cmd_id.id())) {
+        if (!node_id::is_file(out_id)) {
+            continue;
+        }
+        auto const out = find_file(graph, out_id);
+        assert(out);
+        auto path = get_full_path(graph, *out, cache);
         if (path.empty()) {
             continue;
         }
@@ -1030,11 +1013,16 @@ auto compute_command_signature(Graph const& graph, NodeId cmd_id, PathCache& cac
     }
 
     auto vars = Vec<std::pair<std::string_view, Hash256>> {};
-    for (auto var_id : edges_where(graph, cmd_id, EdgeDirection::Backward, edge_mask::sticky)) {
-        if (get<NodeType>(graph, var_id) != NodeType::Variable) {
+    for (auto var_id : edges_where(graph, cmd_id.id(), EdgeDirection::Backward, edge_mask::sticky)) {
+        if (!node_id::is_file(var_id)) {
             continue;
         }
-        vars.emplace_back(pool.get(get<Name>(graph, var_id)), get<Hash256>(graph, var_id));
+        auto const var = find_file(graph, var_id);
+        assert(var);
+        if (get<NodeType>(graph, *var) != NodeType::Variable) {
+            continue;
+        }
+        vars.emplace_back(pool.get(get<Name>(graph, *var)), get<Hash256>(graph, *var));
     }
     std::sort(vars.begin(), vars.end(), [](auto const& a, auto const& b) { return a.first < b.first; });
     vars.erase(
@@ -1080,7 +1068,7 @@ auto collect_required_commands(Graph const& graph, Vec<NodeId> const& target_ids
         }
         visited.set(id, 1);
 
-        if (node_id::is_command(id) && get_command_node(graph, id)) {
+        if (find_command(graph, id)) {
             commands.set(id, 1);
         }
 
@@ -1121,14 +1109,13 @@ auto collect_affected_commands(
         if (!found) {
             continue;
         }
-        auto id = *found;
+        auto id = found->id();
         if (!affected.contains(id)) {
             affected.set(id, 1);
             to_process.push_back(id);
         }
 
-        auto const* node = get_file_node(graph, id);
-        if (node && node->type == NodeType::Generated) {
+        if (get<NodeType>(graph, *found) == NodeType::Generated) {
             edges_for_each(graph, id, EdgeDirection::Backward, edge_mask::inputs, [&](NodeId input_id) {
                 if (!affected.contains(input_id)) {
                     affected.set(input_id, 1);
@@ -1170,10 +1157,10 @@ auto collect_affected_commands(
         affected.set(id, 1);
     }
 
-    for (auto cmd_id : nodes_of_type(graph, NodeType::Command)) {
+    for (auto cmd_id : command_ids(graph)) {
         auto parent = get_parent_command(graph, cmd_id);
-        if (parent && affected.contains(*parent)) {
-            affected.set(cmd_id, 1);
+        if (parent && affected.contains(parent->id())) {
+            affected.set(cmd_id.id(), 1);
         }
     }
 
@@ -1197,20 +1184,13 @@ auto walk_upstream_from_scope(
     auto result = Vec<NodeId> {};
     auto stack = Vec<NodeId> {};
 
-    for (auto id : all_nodes(graph)) {
-        if (!node_id::is_command(id)) {
-            continue;
-        }
-        auto const* node = get_command_node(graph, id);
-        if (!node) {
-            continue;
-        }
-
-        auto source_dir_sv = global_pool().get(get<SourceDir>(graph, id));
+    for (auto cmd : command_ids(graph)) {
+        auto source_dir_sv = global_pool().get(get<SourceDir>(graph, cmd));
         if (!is_path_in_any_scope(source_dir_sv, scopes)) {
             continue;
         }
 
+        auto const id = cmd.id();
         visited.set(id, 1);
         result.push_back(id);
 
@@ -1252,7 +1232,7 @@ auto collect_scope_with_upstream_commands(
 {
     auto commands = NodeIdMap32 {};
     for (auto id : walk_upstream_from_scope(graph, scopes)) {
-        if (node_id::is_command(id) && get_command_node(graph, id)) {
+        if (node_id::is_command(id)) {
             commands.set(id, 1);
         }
     }
@@ -1267,12 +1247,14 @@ auto collect_upstream_files(
     auto const& g = state.graph;
     auto upstream = Vec<std::string_view> {};
     for (auto id : walk_upstream_from_scope(g, scopes)) {
-        if (node_id::is_command(id)) {
+        if (!node_id::is_file(id)) {
             continue;
         }
-        auto const* node = get_file_node(g, id);
-        if (node && (node->type == NodeType::File || node->type == NodeType::Generated)) {
-            auto path_sv = get_full_path(g, id, state.path_cache);
+        auto const file = find_file(g, id);
+        assert(file);
+        auto const type = get<NodeType>(g, *file);
+        if (type == NodeType::File || type == NodeType::Generated) {
+            auto path_sv = get_full_path(g, *file, state.path_cache);
             if (!path_sv.empty()) {
                 upstream.push_back(path_sv);
             }

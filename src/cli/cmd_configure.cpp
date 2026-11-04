@@ -21,6 +21,7 @@
 #include "pup/graph/dag.hpp"
 #include "pup/platform/file_io.hpp"
 
+#include <cassert>
 #include <cstdio>
 #include <cstdlib>
 #include <string_view>
@@ -143,14 +144,16 @@ auto configure_single_variant(
     auto config_commands = pup::NodeIdMap32 {};
     auto label_cache = pup::graph::PathCache {};
     for (auto const& cfg : configs) {
-        auto source_dir_sv = pool.get(pup::graph::get<pup::graph::SourceDir>(ctx.graph().graph, cfg.cmd_id));
+        auto const command = pup::graph::find_command(ctx.graph().graph, cfg.cmd_id);
+        assert(command);
+        auto source_dir_sv = pool.get(pup::graph::get<pup::graph::SourceDir>(ctx.graph().graph, *command));
         if (!scopes.empty() && !pup::is_path_in_any_scope(source_dir_sv, scopes)) {
             continue;
         }
         config_commands.set(cfg.cmd_id, 1);
         if (opts.verbose) {
             auto display_sv = pool.get(
-                pup::graph::command_label(ctx.graph().graph, cfg.cmd_id, label_cache, pool.get(ctx.layout().source_root), pool.get(ctx.layout().config_root))
+                pup::graph::command_label(ctx.graph().graph, *command, label_cache, pool.get(ctx.layout().source_root), pool.get(ctx.layout().config_root))
             );
             auto output_path_sv = pool.get(cfg.output_path);
             print("[{}] Config rule: {} -> {}\n", variant_name, display_sv, output_path_sv);

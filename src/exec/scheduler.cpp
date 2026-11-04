@@ -24,6 +24,7 @@
 #include "pup/platform/process.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
@@ -369,7 +370,9 @@ auto build_dependency_map(
         // These establish ordering without creating true data dependencies.
         graph::edges_for_each(graph, cmd_id, graph::EdgeDirection::Backward, graph::edge_mask::order_only, [&](pup::NodeId oo_id) {
             // For Group nodes, get member files and find their producers
-            if (graph::get<NodeType>(graph, oo_id) == NodeType::Group) {
+            auto const oo_file = graph::find_file(graph, oo_id);
+            assert(oo_file || !node_id::is_file(oo_id));
+            if (oo_file && graph::get<NodeType>(graph, *oo_file) == NodeType::Group) {
                 graph::edges_for_each(graph, oo_id, graph::EdgeDirection::Backward, graph::edge_mask::inputs, [&](pup::NodeId member_id) {
                     add_producer_dependencies(graph, cmd_to_job, jobs, member_id, j, dependencies);
                 });
@@ -715,10 +718,13 @@ auto Scheduler::build_job_list(
 
     auto jobs = Vec<BuildJob> {};
 
-    for (auto id : topo_result.order) {
-        if (!node_id::is_command(id)) {
+    for (auto node : topo_result.order) {
+        if (!node_id::is_command(node)) {
             continue;
         }
+        auto const command = graph::find_command(g, node);
+        assert(command);
+        auto const id = *command;
         // Compute working directory: source_dir for subdirectory Tupfiles.
         // Commands run from the Tupfile's SOURCE directory so that relative paths
         // and TUP_VARIANT_OUTPUTDIR work correctly. Output paths are already
@@ -753,7 +759,7 @@ auto Scheduler::build_job_list(
         auto guard_active = graph::is_guard_satisfied(g, id);
 
         auto job = BuildJob {
-            .id = id,
+            .id = node,
             .command = cmd_id,
             .display = is_empty(display_id) ? cmd_id : display_id,
             .working_dir = working_dir_id,
@@ -763,25 +769,35 @@ auto Scheduler::build_job_list(
             .exported_vars = std::move(exported_ids),
             .capture_stdout = capture_stdout,
             .inject_implicit_deps = inject_implicit,
-            .parent_command = parent_cmd,
+            .parent_command = parent_cmd ? std::optional<NodeId> { parent_cmd->id() } : std::nullopt,
             .guard_active = guard_active,
         };
 
         // Collect input paths
-        graph::edges_for_each(g, id, graph::EdgeDirection::Backward, graph::edge_mask::inputs, [&](pup::NodeId input_id) {
-            auto input_path = graph::get_full_path(g, input_id, cache);
+        graph::edges_for_each(g, node, graph::EdgeDirection::Backward, graph::edge_mask::inputs, [&](pup::NodeId input_id) {
+            if (!node_id::is_file(input_id)) {
+                return;
+            }
+            auto const input = graph::find_file(g, input_id);
+            assert(input);
+            auto input_path = graph::get_full_path(g, *input, cache);
             if (!input_path.empty()) {
                 job.inputs.push_back(pool.intern(input_path));
             }
         });
 
         // Collect output paths
-        graph::edges_for_each(g, id, graph::EdgeDirection::Forward, graph::edge_mask::data_flow, [&](pup::NodeId output_id) {
-            // A group shares the data-flow role but names no file the command writes.
-            if (graph::get<NodeType>(g, output_id) == NodeType::Group) {
+        graph::edges_for_each(g, node, graph::EdgeDirection::Forward, graph::edge_mask::data_flow, [&](pup::NodeId output_id) {
+            if (!node_id::is_file(output_id)) {
                 return;
             }
-            auto output_path = graph::get_full_path(g, output_id, cache);
+            auto const output = graph::find_file(g, output_id);
+            assert(output);
+            // A group shares the data-flow role but names no file the command writes.
+            if (graph::get<NodeType>(g, *output) == NodeType::Group) {
+                return;
+            }
+            auto output_path = graph::get_full_path(g, *output, cache);
             if (!output_path.empty()) {
                 job.outputs.push_back(pool.intern(output_path));
             }
@@ -789,16 +805,26 @@ auto Scheduler::build_job_list(
 
         // Collect order-only input paths
         // For Group nodes, expand to member file paths
-        graph::edges_for_each(g, id, graph::EdgeDirection::Backward, graph::edge_mask::order_only, [&](pup::NodeId oi_id) {
-            if (graph::get<NodeType>(g, oi_id) == NodeType::Group) {
+        graph::edges_for_each(g, node, graph::EdgeDirection::Backward, graph::edge_mask::order_only, [&](pup::NodeId oi_id) {
+            if (!node_id::is_file(oi_id)) {
+                return;
+            }
+            auto const oi = graph::find_file(g, oi_id);
+            assert(oi);
+            if (graph::get<NodeType>(g, *oi) == NodeType::Group) {
                 graph::edges_for_each(g, oi_id, graph::EdgeDirection::Backward, graph::edge_mask::inputs, [&](pup::NodeId member_id) {
-                    auto member_path = graph::get_full_path(g, member_id, cache);
+                    if (!node_id::is_file(member_id)) {
+                        return;
+                    }
+                    auto const member = graph::find_file(g, member_id);
+                    assert(member);
+                    auto member_path = graph::get_full_path(g, *member, cache);
                     if (!member_path.empty()) {
                         job.order_only_inputs.push_back(pool.intern(member_path));
                     }
                 });
             } else {
-                auto oi_path = graph::get_full_path(g, oi_id, cache);
+                auto oi_path = graph::get_full_path(g, *oi, cache);
                 if (!oi_path.empty()) {
                     job.order_only_inputs.push_back(pool.intern(oi_path));
                 }

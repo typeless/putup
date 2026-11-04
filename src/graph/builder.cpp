@@ -33,6 +33,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <charconv>
 #include <cstdlib>
 #include <memory>
@@ -261,7 +262,9 @@ auto transform_input_path(
 
     if (auto path_id = bs.graph.paths.find_path(inp, pool, PathId::BuildRoot)) {
         if (auto const* hit = bs.graph.path_to_node.find(to_underlying(*path_id))) {
-            auto full_path_sv = get_full_path(bs.graph, NodeId { *hit }, bs.path_cache);
+            auto const file = find_file(bs.graph, NodeId { *hit });
+            assert(file);
+            auto full_path_sv = get_full_path(bs.graph, *file, bs.path_cache);
             if (!full_path_sv.empty()) {
                 if (!is_empty(tc.canonical_cwd) && full_path_sv.starts_with("..")) {
                     return make_canonical_relative(tc, full_path_sv);
@@ -359,15 +362,20 @@ auto resolve_input_node(
     }
 
     if (auto build_path = ctx.state->graph.paths.find_path(normalized_path, pool, PathId::BuildRoot)) {
-        if (auto const* hit = ctx.state->graph.path_to_node.find(to_underlying(*build_path));
-            hit && (had_build_prefix || get_file_node(ctx.state->graph, NodeId { *hit })->type != NodeType::Directory)) {
-            return NodeId { *hit };
+        if (auto const* hit = ctx.state->graph.path_to_node.find(to_underlying(*build_path))) {
+            auto const file = find_file(ctx.state->graph, NodeId { *hit });
+            if (!file) {
+                return make_error<NodeId>(ErrorCode::InvalidNodeId, "Path index names no file node");
+            }
+            if (had_build_prefix || get<NodeType>(ctx.state->graph, *file) != NodeType::Directory) {
+                return file->id();
+            }
         }
     }
 
     if (had_build_prefix) {
         auto path_id = ctx.state->graph.paths.intern_path(normalized_path, pool, PathId::BuildRoot);
-        return ensure_file_node(ctx.state->graph, path_id, NodeType::Ghost);
+        return ensure_file_node(ctx.state->graph, path_id, NodeType::Ghost).transform(&FileId::id);
     }
 
     if (auto source_path = ctx.state->graph.paths.find_path(normalized_path, pool, PathId::SourceRoot)) {
@@ -379,25 +387,25 @@ auto resolve_input_node(
     auto source_path = pool.get(pup::path::join(str(ctx.options.source_root), normalized_path));
     if (pup::platform::exists(source_path)) {
         auto path_id = ctx.state->graph.paths.intern_path(normalized_path, pool, PathId::SourceRoot);
-        return ensure_file_node(ctx.state->graph, path_id, pup::platform::is_directory(source_path) ? NodeType::Directory : NodeType::File);
+        return ensure_file_node(ctx.state->graph, path_id, pup::platform::is_directory(source_path) ? NodeType::Directory : NodeType::File).transform(&FileId::id);
     }
 
     if (!is_empty(ctx.options.config_root) && str(ctx.options.config_root) != str(ctx.options.source_root)) {
         auto config_path_sv = pool.get(pup::path::join(str(ctx.options.config_root), normalized_path));
         if (pup::platform::exists(config_path_sv)) {
             auto path_id = ctx.state->graph.paths.intern_path(normalized_path, pool, PathId::SourceRoot);
-            return ensure_file_node(ctx.state->graph, path_id, pup::platform::is_directory(config_path_sv) ? NodeType::Directory : NodeType::File);
+            return ensure_file_node(ctx.state->graph, path_id, pup::platform::is_directory(config_path_sv) ? NodeType::Directory : NodeType::File).transform(&FileId::id);
         }
     }
 
     auto build_path_sv = pool.get(pup::path::join(str(ctx.options.output_root), normalized_path));
     if (pup::platform::exists(build_path_sv)) {
         auto path_id = ctx.state->graph.paths.intern_path(normalized_path, pool, PathId::BuildRoot);
-        return ensure_file_node(ctx.state->graph, path_id, NodeType::Ghost);
+        return ensure_file_node(ctx.state->graph, path_id, NodeType::Ghost).transform(&FileId::id);
     }
 
     auto path_id = ctx.state->graph.paths.intern_path(normalized_path, pool, PathId::BuildRoot);
-    return ensure_file_node(ctx.state->graph, path_id, NodeType::Ghost);
+    return ensure_file_node(ctx.state->graph, path_id, NodeType::Ghost).transform(&FileId::id);
 }
 
 auto bind_source_files_along(BuilderContext& ctx, PathId dir) -> Result<void>
@@ -460,7 +468,7 @@ auto get_or_create_group_node(
     }
     auto parent_id_result = ensure_file_node(ctx.state->graph, dir_path_id, NodeType::Directory);
     if (!parent_id_result) {
-        return parent_id_result;
+        return pup::unexpected<Error>(parent_id_result.error());
     }
     auto parent_id = *parent_id_result;
 
@@ -477,7 +485,11 @@ auto get_or_create_group_node(
         return make_error<NodeId>(ErrorCode::DuplicateNode, err.view());
     };
     if (auto existing = find_by_dir_name(ctx.state->graph, parent_id, group_basename)) {
-        if (auto const type = get_file_node(ctx.state->graph, *existing)->type; type != NodeType::Group) {
+        auto const existing_file = find_file(ctx.state->graph, *existing);
+        if (!existing_file) {
+            return make_error<NodeId>(ErrorCode::InvalidNodeId, "Directory index names no file node");
+        }
+        if (auto const type = get<NodeType>(ctx.state->graph, *existing_file); type != NodeType::Group) {
             return refuse_occupied(node_type_name(type));
         }
         state.group_nodes.insert(key_id, *existing);
@@ -495,14 +507,15 @@ auto get_or_create_group_node(
     auto node = FileNode {
         .type = NodeType::Group,
         .name = intern(group_basename),
-        .parent_dir = parent_id,
+        .parent_dir = parent_id.id(),
     };
 
     auto result = add_file_node(ctx.state->graph, std::move(node));
-    if (result) {
-        state.group_nodes.insert(key_id, *result);
+    if (!result) {
+        return pup::unexpected<Error>(result.error());
     }
-    return result;
+    state.group_nodes.insert(key_id, result->id());
+    return result->id();
 }
 
 auto group_operand_spelling(
@@ -560,16 +573,17 @@ auto create_command_node(
 
     auto cmd_id_result = add_command_node(ctx.state->graph, std::move(node));
     if (!cmd_id_result) {
-        return cmd_id_result;
+        return pup::unexpected<Error>(cmd_id_result.error());
     }
 
-    auto cmd_id = *cmd_id_result;
+    auto const command = *cmd_id_result;
+    auto const cmd_id = command.id();
 
     for (auto src_id : ctx.sticky_sources) {
         (void)add_edge(ctx.state->graph, src_id, cmd_id, LinkType::Sticky);
     }
 
-    auto tool_words = tokenize_command(get<InstructionPattern>(ctx.state->graph, cmd_id));
+    auto tool_words = tokenize_command(get<InstructionPattern>(ctx.state->graph, command));
     auto tool = std::string_view {};
     for (auto word : tool_words.words()) {
         if (word.find('=') != std::string_view::npos) {
@@ -720,16 +734,16 @@ auto file_input(BuilderContext& ctx, std::string_view project_relative) -> RuleI
 
 auto producer_dir(
     Graph& graph,
-    NodeId generated
+    FileId generated
 ) -> std::optional<StringId>
 {
-    for (auto id : get_inputs(graph, generated)) {
+    for (auto id : get_inputs(graph, generated.id())) {
         if (!node_id::is_command(id)) {
             continue;
         }
-        if (auto const* cmd = get_command_node(graph, id)) {
-            return cmd->source_dir;
-        }
+        auto const command = find_command(graph, id);
+        assert(command);
+        return get<SourceDir>(graph, *command);
     }
     return std::nullopt;
 }
@@ -757,7 +771,10 @@ auto record_if_input_dir_absent(
     prefix += str(input_dir);
     prefix += '/';
     auto const build_root_name = get_build_root_name(ctx.state->graph);
-    for (auto id : nodes_of_type(ctx.state->graph, NodeType::Generated)) {
+    for (auto id : file_ids(ctx.state->graph)) {
+        if (get<NodeType>(ctx.state->graph, id) != NodeType::Generated) {
+            continue;
+        }
         auto node_path_sv = get_full_path(ctx.state->graph, id, ctx.state->path_cache);
         if (node_path_sv.empty() || producer_dir(ctx.state->graph, id) != ctx.current_dir) {
             continue;
@@ -807,7 +824,10 @@ auto expand_glob_pattern(
     auto pattern_path_sv = is_empty(ctx.current_dir) ? path : pool.get(pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), path))));
     auto pattern_id = pool.intern(pattern_path_sv);
     auto glob = parser::Glob { pattern_path_sv };
-    for (auto id : nodes_of_type(ctx.state->graph, NodeType::Generated)) {
+    for (auto id : file_ids(ctx.state->graph)) {
+        if (get<NodeType>(ctx.state->graph, id) != NodeType::Generated) {
+            continue;
+        }
         auto node_path_sv = get_full_path(ctx.state->graph, id, ctx.state->path_cache);
         if (node_path_sv.empty()) {
             continue;
@@ -1195,7 +1215,11 @@ auto expand_inputs(
                 return make_error<TokenizedInputs>(ErrorCode::ParseError, msg.view());
             }
             for (auto id : *members) {
-                auto path_sv = get_full_path(ctx.state->graph, id, ctx.state->path_cache);
+                auto const member = find_file(ctx.state->graph, id);
+                if (!member) {
+                    return make_error<TokenizedInputs>(ErrorCode::InvalidNodeId, "Bin member names no file node");
+                }
+                auto path_sv = get_full_path(ctx.state->graph, *member, ctx.state->path_cache);
                 if (!path_sv.empty()) {
                     result.push_back(file_input(ctx, path_sv));
                 }
@@ -1390,7 +1414,7 @@ auto include_single_file(
     auto inc_path_id = ctx.state->graph.paths.intern_path(inc_rel, global_pool(), PathId::SourceRoot);
     auto inc_node_result = ensure_file_node(ctx.state->graph, inc_path_id, NodeType::File);
     if (inc_node_result) {
-        ctx.sticky_sources.push_back(*inc_node_result);
+        ctx.sticky_sources.push_back(inc_node_result->id());
     }
 
     auto source = Buf {};
@@ -1520,8 +1544,8 @@ auto ensure_env_var_node(
     if (!result) {
         return std::nullopt;
     }
-    state.imported_env_var_nodes.insert(var_name_id, *result);
-    return *result;
+    state.imported_env_var_nodes.insert(var_name_id, result->id());
+    return result->id();
 }
 
 constexpr auto INTERNAL_VAR_PREFIX = std::string_view { "@" };
@@ -2027,10 +2051,12 @@ auto process_generated_rules(
 {
     auto& pool = global_pool();
     for (auto const& gen_rule : generated_rules) {
+        auto const parent_command = find_command(ctx.state->graph, parent_cmd_id);
+        assert(parent_command);
         auto gen_cmd_id = create_command_node(
             ctx,
             state,
-            get<SourcePosition>(ctx.state->graph, parent_cmd_id),
+            get<SourcePosition>(ctx.state->graph, *parent_command),
             atoms_from_generated_text(pool.get(gen_rule.command)),
             pool.get(gen_rule.display)
         );
@@ -2194,7 +2220,11 @@ auto expand_rule(
             if (!group_id) {
                 return pup::unexpected<Error>(group_id.error());
             }
-            auto group_basename = str(get_file_node(ctx.state->graph, *group_id)->name);
+            auto const group = find_file(ctx.state->graph, *group_id);
+            if (!group) {
+                return make_error<void>(ErrorCode::InvalidNodeId, "Group operand names no file node");
+            }
+            auto group_basename = str(get<Name>(ctx.state->graph, *group));
             rule_order_only_group_names.insert(to_underlying(intern(group_basename.substr(1, group_basename.size() - 2))));
             if (!deferred_group_ids.contains(*group_id)) {
                 deferred_group_ids.set(*group_id, 1);
@@ -2378,7 +2408,7 @@ auto expand_rule(
             return pup::unexpected<Error>(output_id.error());
         }
 
-        auto const bound_type = get_file_node(ctx.state->graph, *output_id)->type;
+        auto const bound_type = get<NodeType>(ctx.state->graph, *output_id);
         switch (bound_type) {
         case NodeType::File:
         case NodeType::Generated:
@@ -2404,8 +2434,11 @@ auto expand_rule(
             auto twin_is_directory = pup::platform::is_directory(pool.get(pup::path::join(str(ctx.options.source_root), output_rel)));
             if (auto twin_path = ctx.state->graph.paths.find_path(output_rel, pool, PathId::SourceRoot)) {
                 if (auto const* twin = ctx.state->graph.path_to_node.find(to_underlying(*twin_path))) {
-                    auto const* twin_node = get_file_node(ctx.state->graph, NodeId { *twin });
-                    twin_is_directory = twin_is_directory || (twin_node && twin_node->type == NodeType::Directory);
+                    auto const twin_node = find_file(ctx.state->graph, NodeId { *twin });
+                    if (!twin_node) {
+                        return make_error<void>(ErrorCode::InvalidNodeId, "Path index names no file node");
+                    }
+                    twin_is_directory = twin_is_directory || get<NodeType>(ctx.state->graph, *twin_node) == NodeType::Directory;
                 }
             }
             if (twin_is_directory) {
@@ -2419,15 +2452,18 @@ auto expand_rule(
             }
         }
 
-        auto output_inputs = get_inputs(ctx.state->graph, *output_id);
+        auto output_inputs = get_inputs(ctx.state->graph, output_id->id());
         if (!output_inputs.empty()) {
             for (auto existing_id : output_inputs) {
                 if (node_id::is_command(existing_id)) {
-                    auto const* existing_cmd = get_command_node(ctx.state->graph, existing_id);
-                    if (existing_cmd && are_guards_mutually_exclusive(existing_cmd->guards, ctx.condition_stack)) {
+                    auto const existing = find_command(ctx.state->graph, existing_id);
+                    if (!existing) {
+                        return make_error<void>(ErrorCode::InvalidNodeId, "Output producer names no command node");
+                    }
+                    if (are_guards_mutually_exclusive(get_command_node(ctx.state->graph, existing_id)->guards, ctx.condition_stack)) {
                         continue;
                     }
-                    auto existing_cmd_id = expand_instruction(ctx.state->graph, existing_id, ctx.state->path_cache);
+                    auto existing_cmd_id = expand_instruction(ctx.state->graph, *existing, ctx.state->path_cache);
                     auto existing_cmd_sv = global_pool().get(existing_cmd_id);
                     if (existing_cmd_sv.empty()) {
                         existing_cmd_sv = "<unknown>";
@@ -2440,18 +2476,18 @@ auto expand_rule(
             }
         }
 
-        auto edge_result = add_edge(ctx.state->graph, *cmd_id, *output_id);
+        auto edge_result = add_edge(ctx.state->graph, *cmd_id, output_id->id());
         if (!edge_result) {
             return pup::unexpected<Error>(edge_result.error());
         }
         if (!is_extra) {
-            output_ids.push_back(*output_id);
+            output_ids.push_back(output_id->id());
             output_operand_tokens.push_back(outputs->tokens[i]);
         }
 
         if (eff_output_group && !is_extra && is_context_active(ctx)) {
             auto gkey = to_underlying(*eff_output_group);
-            ctx.groups.get_or_create(gkey).push_back(*output_id);
+            ctx.groups.get_or_create(gkey).push_back(output_id->id());
         }
 
         if (output_group && is_context_active(ctx)) {
@@ -2464,7 +2500,7 @@ auto expand_rule(
             if (!group_id_result) {
                 return pup::unexpected<Error>(group_id_result.error());
             }
-            (void)add_edge(ctx.state->graph, *output_id, *group_id_result, LinkType::Group);
+            (void)add_edge(ctx.state->graph, output_id->id(), *group_id_result, LinkType::Group);
         }
     }
 
@@ -2703,7 +2739,7 @@ auto add_tupfile(
     auto tupfile_path_id = ctx.state->graph.paths.intern_path(tupfile_rel, global_pool(), PathId::SourceRoot);
     auto tupfile_node_result = ensure_file_node(ctx.state->graph, tupfile_path_id, NodeType::File);
     if (tupfile_node_result) {
-        ctx.sticky_sources.push_back(*tupfile_node_result);
+        ctx.sticky_sources.push_back(tupfile_node_result->id());
     }
 
     if (eval.config_vars && state.config_var_nodes.empty()) {
@@ -2715,7 +2751,7 @@ auto add_tupfile(
             auto dir_path_id = build_state.graph.paths.intern_path(config_dir_rel, global_pool(), PathId::SourceRoot);
             auto dir_result = ensure_file_node(build_state.graph, dir_path_id, NodeType::Directory);
             if (dir_result) {
-                config_dir_id = *dir_result;
+                config_dir_id = dir_result->id();
             }
         }
 
@@ -2736,13 +2772,13 @@ auto add_tupfile(
 
             auto var_id_result = add_file_node(build_state.graph, std::move(node));
             if (var_id_result) {
-                state.config_var_nodes.insert(var_name_id, *var_id_result);
+                state.config_var_nodes.insert(var_name_id, var_id_result->id());
             }
         }
     }
 
     if (!state.env_var_dir_id) {
-        if (auto existing = find_by_dir_name(build_state.graph, SOURCE_ROOT_ID, "$")) {
+        if (auto existing = find_by_dir_name(build_state.graph, source_root(build_state.graph), "$")) {
             state.env_var_dir_id = *existing;
         } else {
             auto env_dir_node = FileNode {
@@ -2752,7 +2788,7 @@ auto add_tupfile(
             };
             auto result = add_file_node(build_state.graph, std::move(env_dir_node));
             if (result) {
-                state.env_var_dir_id = *result;
+                state.env_var_dir_id = result->id();
             }
         }
     }
@@ -2811,7 +2847,9 @@ auto add_tupfile(
         }
         auto paths = Vec<StringId> {};
         for (auto id : *members) {
-            auto path_sv = get_full_path(ctx.state->graph, id, ctx.state->path_cache);
+            auto const member = find_file(ctx.state->graph, id);
+            assert(member);
+            auto path_sv = get_full_path(ctx.state->graph, *member, ctx.state->path_cache);
             if (!path_sv.empty()) {
                 paths.push_back(intern(path_sv));
             }
@@ -2834,7 +2872,12 @@ auto add_tupfile(
         auto paths = Vec<StringId> {};
         auto members = get_group_members(ctx.state->graph, *node_id);
         for (auto id : members) {
-            auto path_sv = get_full_path(ctx.state->graph, id, ctx.state->path_cache);
+            if (!node_id::is_file(id)) {
+                continue;
+            }
+            auto const member = find_file(ctx.state->graph, id);
+            assert(member);
+            auto path_sv = get_full_path(ctx.state->graph, *member, ctx.state->path_cache);
             if (!path_sv.empty()) {
                 paths.push_back(intern(path_sv));
             }
@@ -2877,9 +2920,9 @@ auto reject_ambiguous_keys(BuildGraph& build_state) -> Result<void>
 {
     auto& g = build_state.graph;
 
-    auto keys = Vec<std::pair<Hash256, NodeId>> {};
-    for (auto id : all_nodes(g)) {
-        if (!node_id::is_command(id) || !is_guard_satisfied(g, id) || !get_outputs(g, id).empty()) {
+    auto keys = Vec<std::pair<Hash256, CommandId>> {};
+    for (auto id : command_ids(g)) {
+        if (!is_guard_satisfied(g, id) || !get_outputs(g, id.id()).empty()) {
             continue;
         }
         keys.emplace_back(compute_command_key(g, id, build_state.path_cache), id);
@@ -2904,7 +2947,8 @@ auto reject_ambiguous_keys(BuildGraph& build_state) -> Result<void>
         str(expand_instruction(g, dup->second, build_state.path_cache))
     );
     auto error = Error { ErrorCode::DuplicateNode, err.view() };
-    error.location = get<SourcePosition>(g, std::max(dup->second, std::next(dup)->second));
+    auto const later = dup->second.index() < std::next(dup)->second.index() ? std::next(dup)->second : dup->second;
+    error.location = get<SourcePosition>(g, later);
     return pup::unexpected<Error>(error);
 }
 
@@ -2913,7 +2957,10 @@ auto collect_generated_paths(BuildGraph& build_state) -> Vec<GeneratedPath>
     auto& pool = global_pool();
     auto build_root_name = get_build_root_name(build_state.graph);
     auto paths = Vec<GeneratedPath> {};
-    for (auto id : nodes_of_type(build_state.graph, NodeType::Generated)) {
+    for (auto id : file_ids(build_state.graph)) {
+        if (get<NodeType>(build_state.graph, id) != NodeType::Generated) {
+            continue;
+        }
         auto node_path_sv = get_full_path(build_state.graph, id, build_state.path_cache);
         if (node_path_sv.empty()) {
             continue;
@@ -2941,7 +2988,10 @@ auto check_glob_stability(
 
     for (auto const& resolved : state.glob_resolutions) {
         auto glob = parser::Glob { pool.get(resolved.pattern) };
-        for (auto id : nodes_of_type(build_state.graph, NodeType::Generated)) {
+        for (auto id : file_ids(build_state.graph)) {
+            if (get<NodeType>(build_state.graph, id) != NodeType::Generated) {
+                continue;
+            }
             auto node_path_sv = get_full_path(build_state.graph, id, build_state.path_cache);
             if (node_path_sv.empty()) {
                 continue;
@@ -3016,14 +3066,15 @@ auto finalize_graph(
     auto accumulated = Vec<std::pair<std::uint64_t, Vec<NodeId>>> {};
 
     for (auto const& edge : state.deferred_edges) {
-        auto const* group_node = get_file_node(g, edge.group_id);
-        if (!group_node || group_node->type != NodeType::Group) {
+        auto const group = find_file(g, edge.group_id);
+        assert(group);
+        if (get<NodeType>(g, *group) != NodeType::Group) {
             continue;
         }
 
         auto members = get_group_members(g, edge.group_id);
         if (members.empty()) {
-            auto group_path_sv = get_full_path(g, edge.group_id, build_state.path_cache);
+            auto group_path_sv = get_full_path(g, *group, build_state.path_cache);
             auto warn = Buf {};
             warn.fmt("order-only group {} has no members", group_path_sv);
             state.warnings.push_back(warn.intern(global_pool()));
@@ -3031,7 +3082,7 @@ auto finalize_graph(
             (void)add_edge(g, edge.group_id, edge.command_id, LinkType::OrderOnly);
         }
 
-        auto group_basename = str(group_node->name);
+        auto group_basename = str(get<Name>(g, *group));
         if (group_basename.size() > 2 && group_basename.front() == '<' && group_basename.back() == '>') {
             auto bare_name = group_basename.substr(1, group_basename.size() - 2);
             auto name_id = to_underlying(intern(bare_name));
@@ -3085,7 +3136,12 @@ auto finalize_graph(
 
         auto replacement = Buf {};
         for (auto id : members) {
-            auto p_sv = get_full_path(g, id, build_state.path_cache);
+            if (!node_id::is_file(id)) {
+                continue;
+            }
+            auto const member = find_file(g, id);
+            assert(member);
+            auto p_sv = get_full_path(g, *member, build_state.path_cache);
             if (!p_sv.empty()) {
                 if (!replacement.empty()) {
                     replacement += ' ';
