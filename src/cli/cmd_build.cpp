@@ -1020,17 +1020,12 @@ auto sort_lookup(CommandLookup& lookup) -> void
 auto graph_command_address(pup::graph::BuildGraph const& state, pup::graph::CommandId id) -> CommandAddress
 {
     auto address = CommandAddress {};
-    for (auto output_id : pup::graph::get_outputs(state.graph, id.id())) {
-        if (!pup::node_id::is_file(output_id)) {
-            continue;
-        }
-        auto const output = pup::graph::find_file(state.graph, output_id);
-        assert(output);
-        auto path_sv = pup::graph::get_full_path(state.graph, *output, state.path_cache);
+    pup::graph::files_for_each(state.graph, id.id(), pup::graph::EdgeDirection::Forward, pup::graph::edge_mask::data_flow, [&](pup::graph::FileId output) {
+        auto path_sv = pup::graph::get_full_path(state.graph, output, state.path_cache);
         if (!path_sv.empty()) {
             address.outputs.push_back(pup::global_pool().intern(path_sv));
         }
-    }
+    });
     if (address.outputs.empty()) {
         address.key = pup::graph::compute_command_key(state.graph, id, state.path_cache);
     }
@@ -1511,19 +1506,14 @@ auto propagate_command_effect(
 ) -> void
 {
     auto has_output_path = false;
-    for (auto output_id : pup::graph::get_outputs(state.graph, cmd_id)) {
-        if (!pup::node_id::is_file(output_id)) {
-            continue;
-        }
-        auto const output = pup::graph::find_file(state.graph, output_id);
-        assert(output);
-        auto output_path_sv = pup::graph::get_full_path(state.graph, *output, state.path_cache);
+    pup::graph::files_for_each(state.graph, cmd_id, pup::graph::EdgeDirection::Forward, pup::graph::edge_mask::data_flow, [&](pup::graph::FileId output) {
+        auto output_path_sv = pup::graph::get_full_path(state.graph, output, state.path_cache);
         if (output_path_sv.empty()) {
-            continue;
+            return;
         }
         has_output_path = true;
         push_path(pup::global_pool().intern(output_path_sv));
-    }
+    });
     if (!has_output_path) {
         forced_cmds.push_back(cmd_id);
     }
@@ -1605,17 +1595,12 @@ auto build_index(
         carried.by_path = pup::index::files_by_path(*old_index);
     }
     for (auto graph_cmd_id : executed_cmds) {
-        for (auto output_id : pup::graph::get_outputs(state.graph, graph_cmd_id)) {
-            if (!pup::node_id::is_file(output_id)) {
-                continue;
-            }
-            auto const output = pup::graph::find_file(state.graph, output_id);
-            assert(output);
-            auto output_path_sv = pup::graph::get_full_path(state.graph, *output, state.path_cache);
+        pup::graph::files_for_each(state.graph, graph_cmd_id, pup::graph::EdgeDirection::Forward, pup::graph::edge_mask::data_flow, [&](pup::graph::FileId output) {
+            auto output_path_sv = pup::graph::get_full_path(state.graph, output, state.path_cache);
             if (!output_path_sv.empty()) {
                 carried.refreshed.push_back(pup::global_pool().intern(output_path_sv));
             }
-        }
+        });
     }
     std::sort(carried.refreshed.begin(), carried.refreshed.end(), pup::handle_less);
 
@@ -1756,19 +1741,14 @@ auto reject_shadowed_sources(
         if (!pup::graph::is_guard_satisfied(g, cmd_id)) {
             continue;
         }
-        for (auto id : pup::graph::get_outputs(g, cmd_id.id())) {
-            if (!pup::node_id::is_file(id)) {
-                continue;
-            }
-            auto const output = pup::graph::find_file(g, id);
-            assert(output);
-            auto full_path_sv = pup::graph::get_full_path(g, *output, state.path_cache);
+        pup::graph::files_for_each(g, cmd_id.id(), pup::graph::EdgeDirection::Forward, pup::graph::edge_mask::data_flow, [&](pup::graph::FileId output) {
+            auto full_path_sv = pup::graph::get_full_path(g, output, state.path_cache);
             if (full_path_sv.empty()) {
-                continue;
+                return;
             }
             auto rel_sv = pool.get(pup::strip_path_prefix(full_path_sv, build_root_name));
             if (rel_sv == "tup.config" || rel_sv.ends_with("/tup.config")) {
-                continue;
+                return;
             }
 
             auto abs_sv = pool.get(pup::path::join(source_root, rel_sv));
@@ -1777,7 +1757,7 @@ auto reject_shadowed_sources(
                 on_disk = pup::platform::exists(pool.get(pup::path::join(config_root, rel_sv)));
             }
             if (!on_disk) {
-                continue;
+                return;
             }
 
             auto rel_id = pool.intern(rel_sv);
@@ -1785,11 +1765,11 @@ auto reject_shadowed_sources(
                 return std::binary_search(paths.begin(), paths.end(), rel_id, pup::handle_less);
             };
             if (known && !recorded(prior.sources) && !recorded(prior.unowned)) {
-                continue;
+                return;
             }
 
             shadowed.push_back(rel_id);
-        }
+        });
     }
 
     if (shadowed.empty()) {

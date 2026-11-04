@@ -13,7 +13,6 @@
 #include "pup/platform/file_io.hpp"
 
 #include <algorithm>
-#include <cassert>
 #include <cstddef>
 #include <string_view>
 #include <variant>
@@ -149,17 +148,12 @@ auto check_unscanned_compiles(
         }
 
         auto objects = Vec<StringId> {};
-        for (auto out_id : graph::get_outputs(graph, id.id())) {
-            if (!node_id::is_file(out_id)) {
-                continue;
-            }
-            auto const out = graph::find_file(graph, out_id);
-            assert(out);
-            auto full = graph::get_full_path(graph, *out);
+        graph::files_for_each(graph, id.id(), graph::EdgeDirection::Forward, graph::edge_mask::data_flow, [&](graph::FileId out) {
+            auto full = graph::get_full_path(graph, out);
             if (auto ext = pup::path::extension(pool.get(full)); ext == ".o" || ext == ".obj") {
                 objects.push_back(full);
             }
-        }
+        });
         if (objects.empty()) {
             continue;
         }

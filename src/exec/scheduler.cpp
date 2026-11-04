@@ -774,30 +774,20 @@ auto Scheduler::build_job_list(
         };
 
         // Collect input paths
-        graph::edges_for_each(g, node, graph::EdgeDirection::Backward, graph::edge_mask::inputs, [&](pup::NodeId input_id) {
-            if (!node_id::is_file(input_id)) {
-                return;
-            }
-            auto const input = graph::find_file(g, input_id);
-            assert(input);
-            auto input_path = graph::get_full_path(g, *input, cache);
+        graph::files_for_each(g, node, graph::EdgeDirection::Backward, graph::edge_mask::inputs, [&](graph::FileId input) {
+            auto input_path = graph::get_full_path(g, input, cache);
             if (!input_path.empty()) {
                 job.inputs.push_back(pool.intern(input_path));
             }
         });
 
         // Collect output paths
-        graph::edges_for_each(g, node, graph::EdgeDirection::Forward, graph::edge_mask::data_flow, [&](pup::NodeId output_id) {
-            if (!node_id::is_file(output_id)) {
-                return;
-            }
-            auto const output = graph::find_file(g, output_id);
-            assert(output);
+        graph::files_for_each(g, node, graph::EdgeDirection::Forward, graph::edge_mask::data_flow, [&](graph::FileId output) {
             // A group shares the data-flow role but names no file the command writes.
-            if (graph::get<NodeType>(g, *output) == NodeType::Group) {
+            if (graph::get<NodeType>(g, output) == NodeType::Group) {
                 return;
             }
-            auto output_path = graph::get_full_path(g, *output, cache);
+            auto output_path = graph::get_full_path(g, output, cache);
             if (!output_path.empty()) {
                 job.outputs.push_back(pool.intern(output_path));
             }
@@ -805,26 +795,16 @@ auto Scheduler::build_job_list(
 
         // Collect order-only input paths
         // For Group nodes, expand to member file paths
-        graph::edges_for_each(g, node, graph::EdgeDirection::Backward, graph::edge_mask::order_only, [&](pup::NodeId oi_id) {
-            if (!node_id::is_file(oi_id)) {
-                return;
-            }
-            auto const oi = graph::find_file(g, oi_id);
-            assert(oi);
-            if (graph::get<NodeType>(g, *oi) == NodeType::Group) {
-                graph::edges_for_each(g, oi_id, graph::EdgeDirection::Backward, graph::edge_mask::inputs, [&](pup::NodeId member_id) {
-                    if (!node_id::is_file(member_id)) {
-                        return;
-                    }
-                    auto const member = graph::find_file(g, member_id);
-                    assert(member);
-                    auto member_path = graph::get_full_path(g, *member, cache);
+        graph::files_for_each(g, node, graph::EdgeDirection::Backward, graph::edge_mask::order_only, [&](graph::FileId oi) {
+            if (graph::get<NodeType>(g, oi) == NodeType::Group) {
+                graph::files_for_each(g, oi.id(), graph::EdgeDirection::Backward, graph::edge_mask::inputs, [&](graph::FileId member) {
+                    auto member_path = graph::get_full_path(g, member, cache);
                     if (!member_path.empty()) {
                         job.order_only_inputs.push_back(pool.intern(member_path));
                     }
                 });
             } else {
-                auto oi_path = graph::get_full_path(g, *oi, cache);
+                auto oi_path = graph::get_full_path(g, oi, cache);
                 if (!oi_path.empty()) {
                     job.order_only_inputs.push_back(pool.intern(oi_path));
                 }

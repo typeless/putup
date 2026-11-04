@@ -34,13 +34,8 @@ auto find_config_commands(
 
     for (auto cmd : graph::command_ids(g)) {
         auto const id = cmd.id();
-        for (auto output_id : graph::get_outputs(g, id)) {
-            if (!node_id::is_file(output_id)) {
-                continue;
-            }
-            auto const output = graph::find_file(g, output_id);
-            assert(output);
-            auto path = graph::get_full_path(g, *output, state.path_cache);
+        graph::files_for_each(g, id, graph::EdgeDirection::Forward, graph::edge_mask::data_flow, [&](graph::FileId output) {
+            auto path = graph::get_full_path(g, output, state.path_cache);
             if (is_config_output(path)) {
                 auto full_path_sv = global_pool().get(pup::path::join(source_root, path));
                 result.push_back({
@@ -49,7 +44,7 @@ auto find_config_commands(
                     .exists = pup::platform::exists(full_path_sv),
                 });
             }
-        }
+        });
     }
     return result;
 }

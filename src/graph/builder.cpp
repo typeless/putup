@@ -2870,18 +2870,12 @@ auto add_tupfile(
             return {};
         }
         auto paths = Vec<StringId> {};
-        auto members = get_group_members(ctx.state->graph, *node_id);
-        for (auto id : members) {
-            if (!node_id::is_file(id)) {
-                continue;
-            }
-            auto const member = find_file(ctx.state->graph, id);
-            assert(member);
-            auto path_sv = get_full_path(ctx.state->graph, *member, ctx.state->path_cache);
+        files_for_each(ctx.state->graph, *node_id, EdgeDirection::Backward, edge_mask::inputs, [&](FileId member) {
+            auto path_sv = get_full_path(ctx.state->graph, member, ctx.state->path_cache);
             if (!path_sv.empty()) {
                 paths.push_back(intern(path_sv));
             }
-        }
+        });
         return paths;
     };
 
@@ -3135,12 +3129,11 @@ auto finalize_graph(
         };
 
         auto replacement = Buf {};
-        for (auto id : members) {
-            if (!node_id::is_file(id)) {
+        for (auto member_id : members) {
+            auto const member = find_file(g, member_id);
+            if (!member) {
                 continue;
             }
-            auto const member = find_file(g, id);
-            assert(member);
             auto p_sv = get_full_path(g, *member, build_state.path_cache);
             if (!p_sv.empty()) {
                 if (!replacement.empty()) {

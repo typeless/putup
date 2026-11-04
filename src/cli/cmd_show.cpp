@@ -386,40 +386,34 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
             continue;
         }
         auto source_file = std::string_view {};
-        for (auto input_id : graph::get_inputs(ctx.graph().graph, id.id())) {
-            if (!node_id::is_file(input_id)) {
-                continue;
+        graph::files_for_each(ctx.graph().graph, id.id(), graph::EdgeDirection::Backward, graph::edge_mask::inputs, [&](graph::FileId input) {
+            if (!source_file.empty()) {
+                return;
             }
-            auto const input = graph::find_file(ctx.graph().graph, input_id);
-            assert(input);
-            auto input_path_id = graph::get_full_path(ctx.graph().graph, *input);
+            auto input_path_id = graph::get_full_path(ctx.graph().graph, input);
             auto sv = pool.get(input_path_id);
             if (sv.empty()) {
-                continue;
+                return;
             }
             if (sv.ends_with(".c") || sv.ends_with(".cc") || sv.ends_with(".cpp") || sv.ends_with(".cxx") || sv.ends_with(".C") || sv.ends_with(".S") || sv.ends_with(".s")) {
                 source_file = sv;
-                break;
             }
-        }
+        });
 
         auto output_file = std::string_view {};
-        for (auto output_id : graph::get_outputs(ctx.graph().graph, id.id())) {
-            if (!node_id::is_file(output_id)) {
-                continue;
+        graph::files_for_each(ctx.graph().graph, id.id(), graph::EdgeDirection::Forward, graph::edge_mask::data_flow, [&](graph::FileId output) {
+            if (!output_file.empty()) {
+                return;
             }
-            auto const output = graph::find_file(ctx.graph().graph, output_id);
-            assert(output);
-            auto output_path_id = graph::get_full_path(ctx.graph().graph, *output);
+            auto output_path_id = graph::get_full_path(ctx.graph().graph, output);
             auto sv = pool.get(output_path_id);
             if (sv.empty()) {
-                continue;
+                return;
             }
             if (sv.ends_with(".o") || sv.ends_with(".obj")) {
                 output_file = sv;
-                break;
             }
-        }
+        });
 
         if (source_file.empty()) {
             continue;

@@ -508,6 +508,17 @@ auto edges_for_each(Graph const& graph, NodeId id, EdgeDirection dir, LinkTypeMa
     }
 }
 
+/// edges_for_each restricted to file endpoints: fn receives each as a FileId; endpoints of another kind are skipped
+template<typename Fn>
+auto files_for_each(Graph const& graph, NodeId id, EdgeDirection dir, LinkTypeMask mask, Fn&& fn) -> void
+{
+    edges_for_each(graph, id, dir, mask, [&](NodeId endpoint) {
+        if (auto const file = find_file(graph, endpoint)) {
+            fn(*file);
+        }
+    });
+}
+
 /// Query edges by direction and type mask
 [[nodiscard]]
 auto edges_where(Graph const& graph, NodeId id, EdgeDirection dir, LinkTypeMask mask) -> Vec<NodeId>;

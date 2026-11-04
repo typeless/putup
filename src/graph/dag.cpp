@@ -994,18 +994,13 @@ auto compute_command_signature(Graph const& graph, CommandId cmd_id, PathCache& 
     state = sha256_update(state, pool.get(get<SourceDir>(graph, cmd_id)));
 
     auto output_paths = Vec<std::string_view> {};
-    for (auto out_id : get_outputs(graph, cmd_id.id())) {
-        if (!node_id::is_file(out_id)) {
-            continue;
-        }
-        auto const out = find_file(graph, out_id);
-        assert(out);
-        auto path = get_full_path(graph, *out, cache);
+    files_for_each(graph, cmd_id.id(), EdgeDirection::Forward, edge_mask::data_flow, [&](FileId out) {
+        auto path = get_full_path(graph, out, cache);
         if (path.empty()) {
-            continue;
+            return;
         }
         output_paths.push_back(path);
-    }
+    });
     std::sort(output_paths.begin(), output_paths.end());
     for (auto path : output_paths) {
         state = sha256_update(state, std::span<std::byte const> { &SEP, 1 });
@@ -1013,17 +1008,12 @@ auto compute_command_signature(Graph const& graph, CommandId cmd_id, PathCache& 
     }
 
     auto vars = Vec<std::pair<std::string_view, Hash256>> {};
-    for (auto var_id : edges_where(graph, cmd_id.id(), EdgeDirection::Backward, edge_mask::sticky)) {
-        if (!node_id::is_file(var_id)) {
-            continue;
+    files_for_each(graph, cmd_id.id(), EdgeDirection::Backward, edge_mask::sticky, [&](FileId var) {
+        if (get<NodeType>(graph, var) != NodeType::Variable) {
+            return;
         }
-        auto const var = find_file(graph, var_id);
-        assert(var);
-        if (get<NodeType>(graph, *var) != NodeType::Variable) {
-            continue;
-        }
-        vars.emplace_back(pool.get(get<Name>(graph, *var)), get<Hash256>(graph, *var));
-    }
+        vars.emplace_back(pool.get(get<Name>(graph, var)), get<Hash256>(graph, var));
+    });
     std::sort(vars.begin(), vars.end(), [](auto const& a, auto const& b) { return a.first < b.first; });
     vars.erase(
         std::unique(vars.begin(), vars.end(), [](auto const& a, auto const& b) { return a.first == b.first; }),
@@ -1247,11 +1237,10 @@ auto collect_upstream_files(
     auto const& g = state.graph;
     auto upstream = Vec<std::string_view> {};
     for (auto id : walk_upstream_from_scope(g, scopes)) {
-        if (!node_id::is_file(id)) {
+        auto const file = find_file(g, id);
+        if (!file) {
             continue;
         }
-        auto const file = find_file(g, id);
-        assert(file);
         auto const type = get<NodeType>(g, *file);
         if (type == NodeType::File || type == NodeType::Generated) {
             auto path_sv = get_full_path(g, *file, state.path_cache);

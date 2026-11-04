@@ -2030,6 +2030,33 @@ TEST_CASE("The source root is a live directory node that enumeration skips", "[g
     CHECK(std::ranges::find(directories, source_root(g)) == directories.end());
 }
 
+TEST_CASE("files_for_each visits the file endpoints of matching edges in order", "[graph]")
+{
+    auto bs = make_build_graph();
+    auto& g = bs.graph;
+    auto first = add_file_node(g, FileNode { .name = intern("a.c") });
+    REQUIRE(first.has_value());
+    auto second = add_file_node(g, FileNode { .name = intern("b.c") });
+    REQUIRE(second.has_value());
+    auto sticky = add_file_node(g, FileNode { .name = intern("c.c") });
+    REQUIRE(sticky.has_value());
+    auto cmd = add_command_node(g, CommandNode {});
+    REQUIRE(cmd.has_value());
+    auto scan = add_command_node(g, CommandNode {});
+    REQUIRE(scan.has_value());
+    REQUIRE(add_edge(g, cmd->id(), second->id()));
+    REQUIRE(add_edge(g, cmd->id(), scan->id()));
+    REQUIRE(add_edge(g, cmd->id(), first->id()));
+    REQUIRE(add_edge(g, cmd->id(), sticky->id(), LinkType::Sticky));
+
+    auto visited = std::vector<FileId> {};
+    files_for_each(g, cmd->id(), EdgeDirection::Forward, edge_mask::data_flow, [&](FileId file) { visited.push_back(file); });
+
+    REQUIRE(visited.size() == 2);
+    CHECK(visited[0] == *second);
+    CHECK(visited[1] == *first);
+}
+
 TEST_CASE("An id that names no node resolves to nothing", "[graph]")
 {
     auto bs = make_build_graph();
