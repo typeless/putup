@@ -37,6 +37,10 @@ public:
     [[nodiscard]]
     auto intern(PathId parent, StringId name) -> PathId;
 
+    /// Lookup a child without creating it. Read-only counterpart of intern.
+    [[nodiscard]]
+    auto find(PathId parent, StringId name) const -> std::optional<PathId>;
+
     /// Parse a slash-separated path string into a PathId chain.
     /// Each component is interned via pool. "." and empty components are skipped.
     [[nodiscard]]

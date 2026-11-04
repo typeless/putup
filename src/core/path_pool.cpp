@@ -46,28 +46,35 @@ auto PathPool::operator=(PathPool&&) noexcept -> PathPool& = default;
 
 auto PathPool::intern(PathId parent, StringId name) -> PathId
 {
-    if (is_empty(name)) {
-        return parent;
-    }
-
-    assert(to_underlying(parent) < entries_.size());
-
-    auto const h = hash_edge(parent, name);
-    auto const found = children_.find(h, [&](std::uint32_t child) {
-        auto const& e = entries_[child];
-        return e.parent == parent && e.name == name;
-    });
-    if (found) {
-        return make_path_id(*found);
+    if (auto const found = find(parent, name)) {
+        return *found;
     }
 
     auto const idx = static_cast<std::uint32_t>(entries_.size());
     auto const id = make_path_id(idx);
 
     entries_.push_back(Entry { .parent = parent, .name = name });
-    children_.insert(h, idx);
+    children_.insert(hash_edge(parent, name), idx);
 
     return id;
+}
+
+auto PathPool::find(PathId parent, StringId name) const -> std::optional<PathId>
+{
+    if (is_empty(name)) {
+        return parent;
+    }
+
+    assert(to_underlying(parent) < entries_.size());
+
+    auto const found = children_.find(hash_edge(parent, name), [&](std::uint32_t child) {
+        auto const& e = entries_[child];
+        return e.parent == parent && e.name == name;
+    });
+    if (!found) {
+        return std::nullopt;
+    }
+    return make_path_id(*found);
 }
 
 auto PathPool::intern_path(std::string_view path, StringPool& pool) -> PathId
@@ -235,15 +242,12 @@ auto PathPool::find_path(std::string_view path, StringPool const& pool, PathId s
             return std::nullopt;
         }
 
-        auto const found = children_.find(hash_edge(current, name), [&](std::uint32_t child) {
-            auto const& e = entries_[child];
-            return e.parent == current && e.name == name;
-        });
+        auto const found = find(current, name);
         if (!found) {
             return std::nullopt;
         }
 
-        current = make_path_id(*found);
+        current = *found;
     }
 
     return current;

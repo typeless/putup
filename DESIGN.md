@@ -735,7 +735,7 @@ auto get_condition_node(Graph&, NodeId) -> ConditionNode*; // nullptr for non-co
 auto add_condition_node(Graph&, ConditionNode) -> Result<NodeId>;
 
 // Build root management (for variant builds)
-auto set_build_root_name(Graph&, name) -> void;
+auto set_build_root_name(Graph&, name) -> Result<void>; // DuplicateNode when another node holds the name's source path
 auto get_build_root_name(Graph const&) -> std::string_view;
 ```
 

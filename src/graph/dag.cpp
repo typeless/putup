@@ -675,20 +675,41 @@ auto clear_path_cache(PathCache& cache) -> void
     cache.pool.clear();
 }
 
-auto set_build_root_name(Graph& graph, std::string_view name) -> void
+auto set_build_root_name(Graph& graph, std::string_view name) -> Result<void>
 {
-    auto old_name = graph.files[BUILD_ROOT_ID].name;
-    if (!is_empty(old_name)) {
-        graph.dir_children[0].remove(to_underlying(old_name));
+    auto const name_id = global_pool().intern(name);
+    auto const name_path = graph.paths.intern(PathId::SourceRoot, name_id);
+    if (!is_empty(name_id)) {
+        auto const* occupant = graph.path_to_node.find(to_underlying(name_path));
+        if (occupant && NodeId { *occupant } != BUILD_ROOT_ID) {
+            auto const existing = find_file(graph, NodeId { *occupant });
+            if (!existing) {
+                return make_error<void>(ErrorCode::InvalidNodeId, "Path index names no file node");
+            }
+            auto err = Buf {};
+            err.fmt(
+                "Unable to name the build root '{}' because a {} already occupies that path",
+                name,
+                node_type_name(file_at(graph, *existing).type)
+            );
+            return make_error<void>(ErrorCode::DuplicateNode, err.view());
+        }
     }
 
-    auto name_id = global_pool().intern(name);
+    auto const old_name = graph.files[BUILD_ROOT_ID].name;
+    if (!is_empty(old_name)) {
+        graph.dir_children[0].remove(to_underlying(old_name));
+        graph.path_to_node.remove(to_underlying(graph.paths.intern(PathId::SourceRoot, old_name)));
+    }
+
     graph.files[BUILD_ROOT_ID].name = name_id;
 
     if (!is_empty(name_id)) {
         graph.dir_children[0].insert(to_underlying(name_id), BUILD_ROOT_ID);
+        graph.path_to_node.insert(to_underlying(name_path), BUILD_ROOT_ID);
     }
     graph.path_to_node.insert(to_underlying(PathId::BuildRoot), is_empty(name_id) ? SOURCE_ROOT_ID : BUILD_ROOT_ID);
+    return {};
 }
 
 auto get_build_root_name(Graph const& graph) -> std::string_view
@@ -1034,10 +1055,11 @@ auto make_build_graph() -> BuildGraph
     return BuildGraph { .graph = make_graph(), .path_cache = {} };
 }
 
-auto set_build_root_name(BuildGraph& state, std::string_view name) -> void
+auto set_build_root_name(BuildGraph& state, std::string_view name) -> Result<void>
 {
-    graph::set_build_root_name(state.graph, name);
+    auto named = graph::set_build_root_name(state.graph, name);
     graph::clear_path_cache(state.path_cache);
+    return named;
 }
 
 auto collect_required_commands(Graph const& graph, Vec<NodeId> const& target_ids) -> NodeIdMap32

@@ -897,7 +897,9 @@ auto build_context(
             pool.get(ctx.impl_->layout.output_root),
             pool.get(ctx.impl_->layout.source_root)
         ));
-        graph::set_build_root_name(ctx.impl_->graph, build_root_name);
+        if (auto named = graph::set_build_root_name(ctx.impl_->graph, build_root_name); !named) {
+            return unexpected<Error>(named.error());
+        }
     }
 
     // 2. Auto-init if needed
@@ -1100,7 +1102,9 @@ auto build_context(
 
         auto build_root_name = pool.intern(graph::get_build_root_name(ctx.impl_->graph.graph));
         ctx.impl_->graph = graph::make_build_graph();
-        graph::set_build_root_name(ctx.impl_->graph, pool.get(build_root_name));
+        if (auto named = graph::set_build_root_name(ctx.impl_->graph, pool.get(build_root_name)); !named) {
+            return unexpected<Error>(named.error());
+        }
         ctx.impl_->state.parsed.clear();
         ctx.impl_->state.parsing.clear();
         ctx.impl_->state.errors_printed = 0;

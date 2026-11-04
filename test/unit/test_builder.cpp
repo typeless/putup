@@ -1241,7 +1241,7 @@ TEST_CASE("GraphBuilder TUP_VARIANT_OUTPUTDIR matches tup behavior", "[e2e][buil
     auto builder_state = make_builder(options);
 
     // Set build root name for variant build (normally done by builder.build())
-    set_build_root_name(bs, "build");
+    REQUIRE(set_build_root_name(bs, "build").has_value());
 
     // Set TUP_VARIANT_OUTPUTDIR as tup would for sub/dir Tupfile with build variant
     // From sub/dir, path to build/sub/dir is ../../build/sub/dir
@@ -1459,7 +1459,7 @@ TEST_CASE("GraphBuilder path simplification in variant build", "[e2e][builder][p
     auto builder_state = make_builder(options);
 
     // Set build root name for variant build (normally done by builder.build())
-    set_build_root_name(bs, "build");
+    REQUIRE(set_build_root_name(bs, "build").has_value());
 
     ctx.tup_variant_outputdir = intern("../../build/src/lib");
 
@@ -1507,7 +1507,7 @@ TEST_CASE("GraphBuilder output filename starting with dotdot is not parent refer
     fs::create_directories(fixture.root() / "build" / "src");
 
     auto bs = make_build_graph();
-    set_build_root_name(bs, "build");
+    REQUIRE(set_build_root_name(bs, "build").has_value());
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 

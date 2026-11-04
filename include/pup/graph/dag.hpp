@@ -632,7 +632,9 @@ auto compute_command_key(Graph const& graph, CommandId cmd_id, PathCache& cache)
 
 /// Set the build root name (relative path from source root to build root)
 /// For in-tree builds, this should be empty. For variant builds, e.g. "build".
-auto set_build_root_name(Graph& graph, std::string_view name) -> void;
+/// Refused when a node other than the build root already holds that source path.
+[[nodiscard]]
+auto set_build_root_name(Graph& graph, std::string_view name) -> Result<void>;
 
 /// Get the build root name
 [[nodiscard]]
@@ -683,6 +685,7 @@ auto collect_upstream_files(
 ) -> Vec<std::string_view>;
 
 /// Set build root name and clear path cache
-auto set_build_root_name(BuildGraph& state, std::string_view name) -> void;
+[[nodiscard]]
+auto set_build_root_name(BuildGraph& state, std::string_view name) -> Result<void>;
 
 }

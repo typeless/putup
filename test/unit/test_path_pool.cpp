@@ -88,6 +88,21 @@ TEST_CASE("PathPool intern and decompose", "[path_pool]")
     }
 }
 
+TEST_CASE("PathPool find answers an interned child without creating one", "[path_pool]")
+{
+    auto pool = PathPool {};
+    auto const src = pool.intern(PathId::SourceRoot, intern("src"));
+    auto const group = pool.intern(src, intern("<a/b>"));
+    auto const size_before = pool.size();
+
+    REQUIRE(pool.find(PathId::SourceRoot, intern("src")) == src);
+    REQUIRE(pool.find(src, intern("<a/b>")) == group);
+    REQUIRE(pool.find(src, intern("main.c")) == std::nullopt);
+    REQUIRE(pool.find(PathId::BuildRoot, intern("src")) == std::nullopt);
+    REQUIRE(pool.find(src, StringId::Empty) == src);
+    REQUIRE(pool.size() == size_before);
+}
+
 TEST_CASE("PathPool intern_path parses slash-separated paths", "[path_pool]")
 {
     auto pool = PathPool {};
