@@ -13399,6 +13399,38 @@ SCENARIO("An unscanned object is reported at the line of the rule that declares 
     }
 }
 
+SCENARIO("An unscanned compile in a branch the configuration does not take is not reported", "[e2e][strict][depscan]")
+{
+    GIVEN("an unscanned compile guarded by a condition that does not hold, and another in its else branch")
+    {
+        auto f = E2EFixture { "unscanned_compile" };
+        f.write_file(
+            "Tupfile",
+            "ifeq (@(FREESTANDING),y)\n: hidden.c |> cd . && gcc -c %f -o %o |> %B.o\nelse\n: plain.c |> cd . && gcc -c %f -o %o |> %B.o\nendif\n"
+        );
+        REQUIRE(f.init().success());
+
+        WHEN("parse and the build report on them")
+        {
+            auto parsed = f.pup({ "parse" });
+            auto built = f.build({ "-v" });
+
+            THEN("both name only the object of the branch taken")
+            {
+                INFO("parse stderr: " << parsed.stderr_output);
+                INFO("build stdout: " << built.stdout_output);
+                REQUIRE(parsed.success());
+                REQUIRE(built.success());
+                REQUIRE(parsed.stderr_output.find("no dependency scan for 'plain.o'") != std::string::npos);
+                REQUIRE(parsed.stderr_output.find("hidden.o") == std::string::npos);
+                REQUIRE(built.stdout_output.find("1 object file has no dependency scan:\n") != std::string::npos);
+                REQUIRE(built.stdout_output.find("no dependency scan for 'plain.o'") != std::string::npos);
+                REQUIRE(built.stdout_output.find("hidden.o") == std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("A depfile flag the compile never carried hides no unscanned object", "[e2e][strict][depscan]")
 {
     GIVEN("a rule that spells a depfile flag after the compile it could not scan")

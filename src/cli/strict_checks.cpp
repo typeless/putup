@@ -143,7 +143,7 @@ auto check_unscanned_compiles(
 
     auto& pool = global_pool();
     for (auto id : graph::command_ids(graph)) {
-        if (graph::get_parent_command(graph, id)) {
+        if (graph::get_parent_command(graph, id) || !graph::is_guard_satisfied(graph, id)) {
             continue;
         }
 

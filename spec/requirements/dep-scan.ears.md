@@ -175,8 +175,9 @@ speaks about the object it names, not about the command that declares it.
 - discharge: test "A depfile flag inside the scannable prefix still suppresses"
 - discharge: test "Scenario: The object of a compile that runs elsewhere is reported instead of scanned wrongly"
 - discharge: test "Scenario: An unscanned object is reported at the line of the rule that declares it"
+- discharge: test "Scenario: An unscanned compile in a branch the configuration does not take is not reported"
 
-When a rule declares an object file that no generated scan covers — every object it declares,
+When a rule in a branch the configuration takes declares an object file that no generated scan covers — every object it declares,
 where no scan at all is generated — and no invocation a scan would have been built from carries a
 depfile flag, putup shall name that object with the file and line of the rule that declares it
 under `parse` and under a verbose build, and report how many such objects exist under any build.
