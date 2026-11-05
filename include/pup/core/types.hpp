@@ -122,7 +122,6 @@ enum class NodeType : std::uint8_t {
     GeneratedDir = 7, ///< Auto-created output directory
     Root = 8,         ///< Project root
     Condition = 9,    ///< Conditional guard (ifeq/ifdef condition)
-    Phi = 10,         ///< Reserved index-format value; no node of this type is built
 };
 
 /// Dependency edge types
@@ -163,7 +162,9 @@ constexpr auto link_role(LinkType type) -> LinkRole
     return LinkRole::Unknown;
 }
 
-/// A persisted type byte outside its enum is damage, not a value from a future version (#399).
+/// Whether a recorded entry's type byte is one some version in the readable window writes. Any
+/// other byte is damage, not a value from a future version (#399), and that includes the types no
+/// record holds: commands live in their own table and conditions are never recorded (#410).
 /// The recovery read consumes this across the whole readable window: retiring an enumerator without
 /// a format bump would need the retired set NodeFlags has and this does not (#399).
 [[nodiscard]]
@@ -171,7 +172,6 @@ constexpr auto names_node_type(std::uint8_t value) -> bool
 {
     switch (static_cast<NodeType>(value)) {
     case NodeType::File:
-    case NodeType::Command:
     case NodeType::Directory:
     case NodeType::Variable:
     case NodeType::Generated:
@@ -179,9 +179,10 @@ constexpr auto names_node_type(std::uint8_t value) -> bool
     case NodeType::Group:
     case NodeType::GeneratedDir:
     case NodeType::Root:
-    case NodeType::Condition:
-    case NodeType::Phi:
         return true;
+    case NodeType::Command:
+    case NodeType::Condition:
+        return false;
     }
     return false;
 }
@@ -206,7 +207,6 @@ constexpr auto is_path_addressable(NodeType type) -> bool
         return true;
     case NodeType::Variable:
     case NodeType::Condition:
-    case NodeType::Phi:
         return false;
     }
     return false;
@@ -239,8 +239,6 @@ constexpr auto node_type_name(NodeType type) -> std::string_view
         return "root";
     case NodeType::Condition:
         return "condition";
-    case NodeType::Phi:
-        return "branch merge";
     }
     return "node";
 }

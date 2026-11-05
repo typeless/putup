@@ -775,7 +775,6 @@ auto serialize_graph_nodes(
         }
         case pup::NodeType::Command:
         case pup::NodeType::Condition:
-        case pup::NodeType::Phi:
             break;
         }
     }

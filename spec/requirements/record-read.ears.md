@@ -59,15 +59,16 @@ record as unreadable rather than returning an empty value in that field's place.
 
 - conformance: putup-only
 - discharge: test "A record whose entry carries a type this putup cannot name is unreadable"
+- discharge: test "A record whose entry carries a node type no record ever held is unreadable"
 - discharge: test "A record whose edge carries a link type this putup cannot name is unreadable"
 - discharge: test "A record whose edge carries link type zero is unreadable"
 - discharge: test "A record whose entry carries a flag bit this putup cannot name is unreadable"
 - discharge: test "A record whose command carries a flag bit this putup cannot name is unreadable"
 - discharge: test "A record carrying a flag bit retired since it was written stays readable"
 
-If a recorded entry, edge, or command carries a value no version in the readable window defines,
-then putup shall report the record as unreadable rather than admitting a value no observer
-classifies.
+If a recorded entry, edge, or command carries a value no version in the readable window writes in
+that field, then putup shall report the record as unreadable rather than admitting a value no
+observer classifies.
 
 ### REQ-READ-REJECT-SELF-CONTRADICTION
 

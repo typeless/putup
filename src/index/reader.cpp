@@ -231,7 +231,6 @@ auto prior_paths(Index const& index) -> PriorPaths
         case NodeType::GeneratedDir:
         case NodeType::Root:
         case NodeType::Condition:
-        case NodeType::Phi:
             break;
         }
     }

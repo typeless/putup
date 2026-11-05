@@ -2420,8 +2420,7 @@ auto expand_rule(
         case NodeType::Group:
         case NodeType::GeneratedDir:
         case NodeType::Root:
-        case NodeType::Condition:
-        case NodeType::Phi: {
+        case NodeType::Condition: {
             auto err = Buf {};
             err.fmt("Attempting to insert '{}' as a generated node when it already exists as a different type ({})", get_full_path(ctx.state->graph, *output_id, ctx.state->path_cache), node_type_name(bound_type));
             return make_error<void>(ErrorCode::DuplicateNode, err.view());

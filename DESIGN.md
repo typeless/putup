@@ -144,8 +144,7 @@ enum class NodeType : std::uint8_t {
     Group,          // Named group {objs}
     GeneratedDir,   // Auto-created directory
     Root,           // Project root
-    Condition,      // Conditional guard (ifeq/ifdef)
-    Phi             // Reserved index-format value; no node of this type is built
+    Condition       // Conditional guard (ifeq/ifdef)
 };
 ```
 

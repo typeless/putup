@@ -1803,11 +1803,47 @@ TEST_CASE("A record whose entry carries a type this putup cannot name is unreada
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto const* hdr = reinterpret_cast<RawHeader const*>(bytes.data());
     REQUIRE(hdr->file_count > 0);
-    auto constexpr UNNAMEABLE_TYPE = static_cast<std::uint8_t>(static_cast<std::uint8_t>(NodeType::Phi) + 1);
+    auto constexpr UNNAMEABLE_TYPE = static_cast<std::uint8_t>(static_cast<std::uint8_t>(NodeType::Condition) + 1);
     bytes[hdr->file_offset + offsetof(RawFileEntry, type)] = std::byte { UNNAMEABLE_TYPE };
     stamp_version(bytes, INDEX_VERSION);
 
     auto const path = temp_index_path("pup_unnameable_node_type");
+    write_bytes(path, bytes);
+
+    auto opened = open_index(path);
+    REQUIRE(opened.has_value());
+    auto restored = read_index(*opened);
+    REQUIRE_FALSE(restored.has_value());
+    REQUIRE(restored.error().code == ErrorCode::IndexDamaged);
+
+    opened->file.close();
+    REQUIRE(read_prior_paths(path).kind == PriorPaths::Kind::Lost);
+}
+
+TEST_CASE("A record whose entry carries a node type no record ever held is unreadable", "[index]")
+{
+    static auto constexpr PHI_TYPE_BYTE = std::uint8_t { 10 };
+    auto const never_recorded = GENERATE(
+        static_cast<std::uint8_t>(NodeType::Command),
+        static_cast<std::uint8_t>(NodeType::Condition),
+        PHI_TYPE_BYTE
+    );
+    INFO("type byte " << static_cast<int>(never_recorded));
+
+    auto index = Index {};
+    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::File, .name = intern("main.c") });
+
+    auto data = serialize_index(index);
+    REQUIRE(data.has_value());
+
+    auto bytes = *data;
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto const* hdr = reinterpret_cast<RawHeader const*>(bytes.data());
+    REQUIRE(hdr->file_count > 0);
+    bytes[hdr->file_offset + offsetof(RawFileEntry, type)] = std::byte { never_recorded };
+    stamp_version(bytes, INDEX_VERSION);
+
+    auto const path = temp_index_path("pup_never_recorded_node_type_" + std::to_string(never_recorded));
     write_bytes(path, bytes);
 
     auto opened = open_index(path);
