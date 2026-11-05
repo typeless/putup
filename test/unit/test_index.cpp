@@ -538,9 +538,6 @@ TEST_CASE("Index serialization roundtrip", "[e2e][index]")
         }
     }
     REQUIRE(found_implicit);
-
-    idx_file.file.close();
-    std::filesystem::remove(temp_path);
 }
 
 TEST_CASE("Index ID contiguity requirement", "[e2e][index]")
@@ -602,9 +599,6 @@ TEST_CASE("Index ID contiguity requirement", "[e2e][index]")
     auto* lib = find_file_by_path(restored, "src/lib");
     REQUIRE(lib != nullptr);
     REQUIRE(lib->type == NodeType::Directory);
-
-    reader_result->file.close();
-    std::filesystem::remove(temp_path);
 }
 
 TEST_CASE("Index reader validation", "[e2e][index]")
@@ -671,8 +665,6 @@ TEST_CASE("A record whose declared layout does not fit the file is refused", "[e
         auto opened = open_index(path);
         REQUIRE_FALSE(opened.has_value());
     }
-
-    std::filesystem::remove(path);
 }
 
 TEST_CASE("StringTable overflow handling", "[index]")
@@ -757,9 +749,6 @@ TEST_CASE("A command longer than the string table's entry limit is still recorde
         auto const* exact_cmd = exact_restored->find_command_by_id(cmd_id);
         REQUIRE(exact_cmd != nullptr);
         REQUIRE(sv(exact_cmd->instruction_pattern) == at_limit.view());
-
-        exact_opened->file.close();
-        std::filesystem::remove(exact_path);
     }
 
     SECTION("each display field is recorded, marked as truncated, and within the entry limit")
@@ -772,9 +761,6 @@ TEST_CASE("A command longer than the string table's entry limit is still recorde
             REQUIRE(text.find("70000") != std::string_view::npos);
         }
     }
-
-    opened->file.close();
-    std::filesystem::remove(temp_path);
 }
 
 TEST_CASE("An environment longer than the string table's entry limit fails the record", "[index]")
@@ -837,9 +823,6 @@ TEST_CASE("A command with more than 255 operands records all of them", "[index]"
     REQUIRE(cmd != nullptr);
     REQUIRE(cmd->inputs == inputs);
     REQUIRE(cmd->outputs == outputs);
-
-    opened->file.close();
-    std::filesystem::remove(temp_path);
 }
 
 TEST_CASE("A command's operand tokens survive the record", "[index]")
@@ -892,9 +875,6 @@ TEST_CASE("A command's operand tokens survive the record", "[index]")
     REQUIRE(cmd->order_only_inputs.token(1).size() == 1);
     REQUIRE(cmd->order_only_inputs.token(2).empty());
     REQUIRE(cmd->order_only_inputs.token(3).size() == 1);
-
-    opened->file.close();
-    std::filesystem::remove(temp_path);
 }
 
 TEST_CASE("StringTable deduplication", "[index]")
@@ -1314,9 +1294,6 @@ TEST_CASE("v8 roundtrip with operand sections", "[e2e][index][v8]")
 
     auto cmd3_str = get_command_string(restored, *cmd3);
     REQUIRE(sv(cmd3_str) =="g++ build/main.o build/util.o -o build/program");
-
-    reader_result->file.close();
-    std::filesystem::remove(temp_path);
 }
 
 namespace {
@@ -1398,7 +1375,6 @@ auto require_graph_index_roundtrip(pup::graph::BuildGraph const& bs, std::string
     REQUIRE(write_result.has_value());
 
     auto loaded = read_index(temp_path);
-    std::filesystem::remove(temp_path);
     REQUIRE(loaded.has_value());
 
     REQUIRE(loaded->file_count() == live_file_nodes);
@@ -1638,8 +1614,6 @@ TEST_CASE("A record too short to hold a header is damage rather than a format th
     auto const opened = open_index(path);
     REQUIRE_FALSE(opened.has_value());
     REQUIRE(opened.error().code == ErrorCode::IndexDamaged);
-
-    std::filesystem::remove(path);
 }
 
 TEST_CASE("A file that does not carry the index magic is damage", "[index]")
@@ -1661,8 +1635,6 @@ TEST_CASE("A file that does not carry the index magic is damage", "[index]")
     auto const opened = open_index(path);
     REQUIRE_FALSE(opened.has_value());
     REQUIRE(opened.error().code == ErrorCode::IndexDamaged);
-
-    std::filesystem::remove(path);
 }
 
 TEST_CASE("A record from a version outside the window is a version mismatch rather than damage", "[index]")
@@ -1682,8 +1654,6 @@ TEST_CASE("A record from a version outside the window is a version mismatch rath
     auto const opened = open_index(path);
     REQUIRE_FALSE(opened.has_value());
     REQUIRE(opened.error().code == ErrorCode::IndexVersionMismatch);
-
-    std::filesystem::remove(path);
 }
 
 TEST_CASE("An operand count larger than the record makes it unreadable", "[index]")
@@ -1712,9 +1682,6 @@ TEST_CASE("An operand count larger than the record makes it unreadable", "[index
     auto restored = read_index(*opened);
     REQUIRE_FALSE(restored.has_value());
     REQUIRE(restored.error().code == ErrorCode::IndexDamaged);
-
-    opened->file.close();
-    std::filesystem::remove(path);
 }
 
 TEST_CASE("An operand boundary that does not span its operands makes the record unreadable", "[index]")
@@ -1748,9 +1715,6 @@ TEST_CASE("An operand boundary that does not span its operands makes the record 
     REQUIRE_FALSE(restored.has_value());
     REQUIRE(restored.error().code == ErrorCode::IndexDamaged);
     REQUIRE(sv(restored.error().message).find("tokens") != std::string_view::npos);
-
-    opened->file.close();
-    std::filesystem::remove(path);
 }
 
 static_assert(offsetof(RawHeader, file_count) == 8, "the operand wrap test lands on this field");
@@ -1786,9 +1750,6 @@ TEST_CASE("An operand offset that wraps makes the record unreadable", "[index]")
     auto restored = read_index(*opened);
     REQUIRE_FALSE(restored.has_value());
     REQUIRE(restored.error().code == ErrorCode::IndexDamaged);
-
-    opened->file.close();
-    std::filesystem::remove(path);
 }
 
 TEST_CASE("A name offset that wraps makes the record unreadable", "[index]")
@@ -1828,8 +1789,6 @@ TEST_CASE("A name offset that wraps makes the record unreadable", "[index]")
 
     opened->file.close();
     REQUIRE(read_prior_paths(path).kind == PriorPaths::Kind::Lost);
-
-    std::filesystem::remove(path);
 }
 
 TEST_CASE("A record whose entry carries a type this putup cannot name is unreadable", "[index]")
@@ -1859,8 +1818,6 @@ TEST_CASE("A record whose entry carries a type this putup cannot name is unreada
 
     opened->file.close();
     REQUIRE(read_prior_paths(path).kind == PriorPaths::Kind::Lost);
-
-    std::filesystem::remove(path);
 }
 
 TEST_CASE("A record whose edge carries a link type this putup cannot name is unreadable", "[index]")
@@ -1892,8 +1849,6 @@ TEST_CASE("A record whose edge carries a link type this putup cannot name is unr
 
     opened->file.close();
     REQUIRE(read_prior_paths(path).kind == PriorPaths::Kind::Known);
-
-    std::filesystem::remove(path);
 }
 
 TEST_CASE("A record whose edge carries link type zero is unreadable", "[index]")
@@ -1921,9 +1876,6 @@ TEST_CASE("A record whose edge carries link type zero is unreadable", "[index]")
     auto restored = read_index(*opened);
     REQUIRE_FALSE(restored.has_value());
     REQUIRE(restored.error().code == ErrorCode::IndexDamaged);
-
-    opened->file.close();
-    std::filesystem::remove(path);
 }
 
 TEST_CASE("A record whose entry carries a flag bit this putup cannot name is unreadable", "[index]")
@@ -1949,9 +1901,6 @@ TEST_CASE("A record whose entry carries a flag bit this putup cannot name is unr
     auto restored = read_index(*opened);
     REQUIRE_FALSE(restored.has_value());
     REQUIRE(restored.error().code == ErrorCode::IndexDamaged);
-
-    opened->file.close();
-    std::filesystem::remove(path);
 }
 
 /// NodeFlags::Inactive occupied bit 5 through index version 13 and was retired without a format
@@ -1975,8 +1924,6 @@ TEST_CASE("A record carrying a flag bit retired since it was written stays reada
     write_bytes(path, bytes);
 
     REQUIRE(read_prior_paths(path).kind == PriorPaths::Kind::Known);
-
-    std::filesystem::remove(path);
 }
 
 TEST_CASE("A record whose command carries a flag bit this putup cannot name is unreadable", "[index]")
@@ -2005,9 +1952,6 @@ TEST_CASE("A record whose command carries a flag bit this putup cannot name is u
     auto restored = read_index(*opened);
     REQUIRE_FALSE(restored.has_value());
     REQUIRE(restored.error().code == ErrorCode::IndexDamaged);
-
-    opened->file.close();
-    std::filesystem::remove(path);
 }
 
 /// Whole-record rejection is safe only because each reader's validation scope is its read scope:
@@ -2043,8 +1987,6 @@ TEST_CASE("A corrupt operand record still leaves the recorded paths readable", "
     REQUIRE(prior.sources.size() == 1);
     REQUIRE(prior.generated.size() == 1);
     REQUIRE(sv(prior.generated[0]) == "main.o");
-
-    std::filesystem::remove(path);
 }
 
 TEST_CASE("An empty recorded string is a value rather than a failure", "[index]")
@@ -2068,8 +2010,6 @@ TEST_CASE("An empty recorded string is a value rather than a failure", "[index]"
     REQUIRE(sv(cmd->env).empty());
     REQUIRE(sv(cmd->display).empty());
     REQUIRE(sv(cmd->instruction_pattern) == "cc %f");
-
-    std::filesystem::remove(path);
 }
 
 TEST_CASE("A record names the paths it recorded even at a version too old to trust", "[index]")
@@ -2103,8 +2043,6 @@ TEST_CASE("A record names the paths it recorded even at a version too old to tru
             REQUIRE(recovered.generated.empty());
         }
     }
-
-    std::filesystem::remove(path);
 }
 
 TEST_CASE("A record that classifies one path two ways is unreadable", "[index]")
@@ -2132,7 +2070,6 @@ TEST_CASE("A record that classifies one path two ways is unreadable", "[index]")
         auto const path = temp_index_path("pup_prior_contradiction");
         REQUIRE(write_index(path, index).has_value());
         REQUIRE(read_prior_paths(path).kind == PriorPaths::Kind::Lost);
-        std::filesystem::remove(path);
     }
 }
 
@@ -2155,7 +2092,6 @@ TEST_CASE("A record that names one path twice with one type is unreadable", "[in
         auto const path = temp_index_path("pup_prior_repeat");
         REQUIRE(write_index(path, index).has_value());
         REQUIRE(read_prior_paths(path).kind == PriorPaths::Kind::Lost);
-        std::filesystem::remove(path);
     }
 }
 
@@ -2184,8 +2120,6 @@ TEST_CASE("Absence of a record is not the same answer as an unreadable one", "[i
     garbage.resize(200);
     write_bytes(path, garbage);
     REQUIRE(read_prior_paths(path).kind == PriorPaths::Kind::Lost);
-
-    std::filesystem::remove(path);
 }
 
 TEST_CASE("Recovering a record's paths agrees with reading the record", "[index]")
@@ -2209,8 +2143,6 @@ TEST_CASE("Recovering a record's paths agrees with reading the record", "[index]
         REQUIRE(from_file.generated == from_loaded.generated);
         REQUIRE(from_file.sources == sorted_paths_of_type(index, NodeType::File));
         REQUIRE(from_file.generated == sorted_paths_of_type(index, NodeType::Generated));
-
-        std::filesystem::remove(path);
     }
 }
 
@@ -2234,8 +2166,6 @@ TEST_CASE("One flipped bit anywhere in a record makes it unrecoverable, never pa
         REQUIRE(recovered.sources.empty());
         REQUIRE(recovered.generated.empty());
     }
-
-    std::filesystem::remove(path);
 }
 
 TEST_CASE("One flipped bit anywhere in a record makes it unreadable", "[index]")
@@ -2255,8 +2185,6 @@ TEST_CASE("One flipped bit anywhere in a record makes it unreadable", "[index]")
 
         REQUIRE_FALSE(read_index(path).has_value());
     }
-
-    std::filesystem::remove(path);
 }
 
 TEST_CASE("Keying a record's file table by path keeps every addressable entry and only those", "[index]")
