@@ -664,9 +664,9 @@ auto is_context_active(BuilderContext const& ctx) -> bool
     return true;
 }
 
-/// Statements processed even in an inactive context: rules and macros register
-/// guarded for the phi model, and assignments run so those registrations
-/// expand with the branch's own values (the branch scope restores them).
+/// Statements processed even in an inactive context: rules expand so their operands are
+/// checked and their outputs recorded as inactive declarations, and assignments run so those
+/// rules expand with the branch's own values (the branch scope restores them).
 auto should_process_in_inactive_context(parser::Statement const& stmt) -> bool
 {
     return stmt.is<parser::Rule>()
@@ -678,8 +678,8 @@ auto should_process_in_inactive_context(parser::Statement const& stmt) -> bool
 }
 
 /// Check if two guard sets are mutually exclusive (cannot both be satisfied)
-/// This allows phi-node conditionals where branches produce the same output
-/// but only one executes based on config values.
+/// This allows complementary conditional branches to declare the same output,
+/// since only one of them is taken.
 ///
 /// Mutually exclusive if guards diverge at some position with complementary values.
 /// Examples:
@@ -2339,29 +2339,34 @@ auto expand_rule(
     collect_order_only_paths(macro_order_only_paths, macro_order_only);
     order_only_paths.insert(order_only_paths.end(), macro_order_only_paths.begin(), macro_order_only_paths.end());
 
-    auto rule_location = SourcePosition { .file = ctx.current_file, .line = rule.location.line };
-    auto cmd_id = create_command_node(ctx, state, rule_location, std::move(instruction_pattern), str(display));
-    if (!cmd_id) {
-        return pup::unexpected<Error>(cmd_id.error());
+    auto const active = is_context_active(ctx);
+    auto cmd_id = std::optional<NodeId> {};
+    if (active) {
+        auto rule_location = SourcePosition { .file = ctx.current_file, .line = rule.location.line };
+        auto created = create_command_node(ctx, state, rule_location, std::move(instruction_pattern), str(display));
+        if (!created) {
+            return pup::unexpected<Error>(created.error());
+        }
+        cmd_id = *created;
+
+        auto cmd_info = CommandInfo {
+            .node_id = *cmd_id,
+            .command = cmd_text,
+            .display = display,
+            .inputs = file_inputs,
+            .order_only_inputs = order_only_paths,
+            .outputs = outputs->ids,
+            .working_dir = intern(str(ctx.current_dir)),
+        };
+
+        auto generated_rules = Vec<GeneratedRule> {};
+        if (ctx.options.scanner_registry && !ctx.options.scanner_registry->empty()) {
+            auto tokens = tokenize_command(cmd_text);
+            generated_rules = ctx.options.scanner_registry->match_and_generate(cmd_info, tokens);
+        }
+
+        process_generated_rules(ctx, state, generated_rules, *cmd_id, deferred_group_vec);
     }
-
-    auto cmd_info = CommandInfo {
-        .node_id = *cmd_id,
-        .command = cmd_text,
-        .display = display,
-        .inputs = file_inputs,
-        .order_only_inputs = order_only_paths,
-        .outputs = outputs->ids,
-        .working_dir = intern(str(ctx.current_dir)),
-    };
-
-    auto generated_rules = Vec<GeneratedRule> {};
-    if (ctx.options.scanner_registry && !ctx.options.scanner_registry->empty()) {
-        auto tokens = tokenize_command(cmd_text);
-        generated_rules = ctx.options.scanner_registry->match_and_generate(cmd_info, tokens);
-    }
-
-    process_generated_rules(ctx, state, generated_rules, *cmd_id, deferred_group_vec);
 
     auto input_ids = Vec<NodeId> {};
     for (auto const& inp : operands) {
@@ -2377,9 +2382,11 @@ auto expand_rule(
         if (!input_id) {
             return pup::unexpected<Error>(input_id.error());
         }
-        auto edge_result = add_edge(ctx.state->graph, *input_id, *cmd_id);
-        if (!edge_result) {
-            return pup::unexpected<Error>(edge_result.error());
+        if (cmd_id) {
+            auto edge_result = add_edge(ctx.state->graph, *input_id, *cmd_id);
+            if (!edge_result) {
+                return pup::unexpected<Error>(edge_result.error());
+            }
         }
         input_ids.push_back(*input_id);
     }
@@ -2402,7 +2409,7 @@ auto expand_rule(
             return pup::unexpected<Error>(bound.error());
         }
         auto output_id = ensure_file_node(
-            ctx.state->graph, output_path, is_context_active(ctx) ? NodeType::Generated : NodeType::Ghost
+            ctx.state->graph, output_path, active ? NodeType::Generated : NodeType::Ghost
         );
         if (!output_id) {
             return pup::unexpected<Error>(output_id.error());
@@ -2451,28 +2458,45 @@ auto expand_rule(
             }
         }
 
-        auto output_inputs = get_inputs(ctx.state->graph, output_id->id());
-        if (!output_inputs.empty()) {
-            for (auto existing_id : output_inputs) {
-                if (node_id::is_command(existing_id)) {
-                    auto const existing = find_command(ctx.state->graph, existing_id);
-                    if (!existing) {
-                        return make_error<void>(ErrorCode::InvalidNodeId, "Output producer names no command node");
-                    }
-                    if (are_guards_mutually_exclusive(get_command_node(ctx.state->graph, existing_id)->guards, ctx.condition_stack)) {
-                        continue;
-                    }
-                    auto existing_cmd_id = expand_instruction(ctx.state->graph, *existing, ctx.state->path_cache);
-                    auto existing_cmd_sv = global_pool().get(existing_cmd_id);
-                    if (existing_cmd_sv.empty()) {
-                        existing_cmd_sv = "<unknown>";
-                    }
-                    auto output_path_sv = get_full_path(ctx.state->graph, *output_id, ctx.state->path_cache);
-                    auto err = Buf {};
-                    err.fmt("Unable to create output '{}' because it is already owned by command:\n  {}", output_path_sv, existing_cmd_sv);
-                    return make_error<void>(ErrorCode::DuplicateNode, err.view());
-                }
+        auto existing_text = std::optional<StringId> {};
+        for (auto existing_id : get_inputs(ctx.state->graph, output_id->id())) {
+            if (!node_id::is_command(existing_id)) {
+                continue;
             }
+            auto const existing = find_command(ctx.state->graph, existing_id);
+            if (!existing) {
+                return make_error<void>(ErrorCode::InvalidNodeId, "Output producer names no command node");
+            }
+            if (!are_guards_mutually_exclusive(get_command_node(ctx.state->graph, existing_id)->guards, ctx.condition_stack)) {
+                existing_text = expand_instruction(ctx.state->graph, *existing, ctx.state->path_cache);
+                break;
+            }
+        }
+        for (auto const& declaration : ctx.state->graph.inactive_declarations) {
+            if (!existing_text && declaration.output == output_id->id()
+                && !are_guards_mutually_exclusive(declaration.guards, ctx.condition_stack)) {
+                existing_text = declaration.command_text;
+                break;
+            }
+        }
+        if (existing_text) {
+            auto existing_cmd_sv = global_pool().get(*existing_text);
+            if (existing_cmd_sv.empty()) {
+                existing_cmd_sv = "<unknown>";
+            }
+            auto output_path_sv = get_full_path(ctx.state->graph, *output_id, ctx.state->path_cache);
+            auto err = Buf {};
+            err.fmt("Unable to create output '{}' because it is already owned by command:\n  {}", output_path_sv, existing_cmd_sv);
+            return make_error<void>(ErrorCode::DuplicateNode, err.view());
+        }
+
+        if (!cmd_id) {
+            ctx.state->graph.inactive_declarations.push_back(InactiveDeclaration {
+                .output = output_id->id(),
+                .guards = ctx.condition_stack,
+                .command_text = cmd_text,
+            });
+            continue;
         }
 
         auto edge_result = add_edge(ctx.state->graph, *cmd_id, output_id->id());
@@ -2484,12 +2508,12 @@ auto expand_rule(
             output_operand_tokens.push_back(outputs->tokens[i]);
         }
 
-        if (eff_output_group && !is_extra && is_context_active(ctx)) {
+        if (eff_output_group && !is_extra) {
             auto gkey = to_underlying(*eff_output_group);
             ctx.groups.get_or_create(gkey).push_back(output_id->id());
         }
 
-        if (output_group && is_context_active(ctx)) {
+        if (output_group) {
             auto dir = output_group->group_dir;
             if (is_empty(dir)) {
                 dir = is_empty(ctx.current_dir) ? intern(".") : ctx.current_dir;
@@ -2518,8 +2542,24 @@ auto expand_rule(
         if (!file_id) {
             return pup::unexpected<Error>(file_id.error());
         }
-        (void)add_edge(ctx.state->graph, *file_id, *cmd_id, LinkType::OrderOnly);
+        if (cmd_id) {
+            (void)add_edge(ctx.state->graph, *file_id, *cmd_id, LinkType::OrderOnly);
+        }
         order_only_ids.push_back(*file_id);
+    }
+
+    for (auto oi : macro_order_only_paths) {
+        auto oi_node = resolve_input_node(ctx, str(oi));
+        if (!oi_node) {
+            return pup::unexpected<Error>(oi_node.error());
+        }
+        if (cmd_id) {
+            (void)add_edge(ctx.state->graph, *oi_node, *cmd_id, LinkType::OrderOnly);
+        }
+    }
+
+    if (!cmd_id) {
+        return {};
     }
 
     if (auto* cmd = get_command_node(ctx.state->graph, *cmd_id)) {
@@ -2530,14 +2570,6 @@ auto expand_rule(
         cmd->outputs = TokenList<NodeId>::grouped(
             std::move(output_ids), output_operand_tokens, outputs->token_count
         );
-    }
-
-    for (auto oi : macro_order_only_paths) {
-        auto oi_node = resolve_input_node(ctx, str(oi));
-        if (!oi_node) {
-            return pup::unexpected<Error>(oi_node.error());
-        }
-        (void)add_edge(ctx.state->graph, *oi_node, *cmd_id, LinkType::OrderOnly);
     }
 
     add_deferred_group_edges(state, deferred_group_vec, *cmd_id);
@@ -2902,20 +2934,16 @@ auto add_tupfile(
 }
 
 /// A command that produces files is joined across builds by the files, and output ownership
-/// is already unique among guard-satisfied commands. Output-less commands are joined by
-/// their textual key instead, and nothing enforced that key's uniqueness: two such rules in
-/// one directory are indistinguishable to every later build. Reject the graph here rather
-/// than join it wrong later.
-///
-/// Guard-satisfied only, matching the set the index records: complementary branches of one
-/// conditional legitimately render the same text, and at most one of them is ever live.
+/// is already unique. Output-less commands are joined by their textual key instead, and
+/// nothing enforced that key's uniqueness: two such rules in one directory are
+/// indistinguishable to every later build. Reject the graph here rather than join it wrong later.
 auto reject_ambiguous_keys(BuildGraph& build_state) -> Result<void>
 {
     auto& g = build_state.graph;
 
     auto keys = Vec<std::pair<Hash256, CommandId>> {};
     for (auto id : command_ids(g)) {
-        if (!is_guard_satisfied(g, id) || !get_outputs(g, id.id()).empty()) {
+        if (!get_outputs(g, id.id()).empty()) {
             continue;
         }
         keys.emplace_back(compute_command_key(g, id, build_state.path_cache), id);

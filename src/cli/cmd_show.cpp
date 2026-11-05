@@ -199,9 +199,6 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
         if (graph::get<graph::OutputAction>(ctx.graph().graph, id) == graph::OutputAction::InjectImplicitDeps) {
             continue;
         }
-        if (!graph::is_guard_satisfied(ctx.graph().graph, id)) {
-            continue;
-        }
 
         auto source_dir = global_pool().get(graph::get<graph::SourceDir>(ctx.graph().graph, id));
         auto dir = source_dir.empty() ? std::string_view { "." } : source_dir;
@@ -277,20 +274,9 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
     print("  rankdir=LR;\n");
 
     auto const inactive_outputs = graph::collect_inactive_outputs(ctx.graph().graph);
-    auto is_gated_off = [&](NodeId id) {
-        if (inactive_outputs.contains(id)) {
-            return true;
-        }
-        if (!node_id::is_command(id)) {
-            return false;
-        }
-        auto const command = graph::find_command(ctx.graph().graph, id);
-        assert(command);
-        return !graph::is_guard_satisfied(ctx.graph().graph, *command);
-    };
     auto declared_nodes = pup::NodeIdMap32 {};
     for (auto id : graph::all_nodes(ctx.graph().graph)) {
-        if (is_gated_off(id)) {
+        if (inactive_outputs.contains(id)) {
             continue;
         }
         declared_nodes.set(id, 1);
@@ -310,7 +296,7 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
         print("  {} [label=\"{}\"];\n", format_node_id(id), pool.get(label));
 
         for (auto input_id : graph::get_inputs(ctx.graph().graph, id)) {
-            if (is_gated_off(input_id)) {
+            if (inactive_outputs.contains(input_id)) {
                 continue;
             }
             print("  {} -> {};\n", format_node_id(input_id), format_node_id(id));
@@ -318,7 +304,7 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
 
         // Output order-only edges (dotted)
         for (auto oo_id : graph::get_order_only(ctx.graph().graph, id)) {
-            if (is_gated_off(oo_id)) {
+            if (inactive_outputs.contains(oo_id)) {
                 continue;
             }
             print("  {} -> {} [style=dotted color=\"#0088ff\"];\n", format_node_id(oo_id), format_node_id(id));
@@ -382,9 +368,6 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
     auto first = true;
 
     for (auto id : graph::command_ids(ctx.graph().graph)) {
-        if (!graph::is_guard_satisfied(ctx.graph().graph, id)) {
-            continue;
-        }
         auto source_file = std::string_view {};
         graph::files_for_each(ctx.graph().graph, id.id(), graph::EdgeDirection::Backward, graph::edge_mask::inputs, [&](graph::FileId input) {
             if (!source_file.empty()) {

@@ -261,7 +261,6 @@ auto discover_d_file_deps(
 }
 
 /// Add job dependencies for any command that produces the given node.
-/// For phi-nodes (multiple producers), only add active producers when consumer is active.
 auto sorted_insert_unique(Vec<std::size_t>& v, std::size_t val) -> void
 {
     auto pos = std::lower_bound(v.begin(), v.end(), val);
@@ -273,21 +272,16 @@ auto sorted_insert_unique(Vec<std::size_t>& v, std::size_t val) -> void
 auto add_producer_dependencies(
     graph::Graph const& graph,
     NodeIdMap32 const& cmd_to_job,
-    Vec<BuildJob> const& jobs,
     NodeId node_id,
     std::size_t current_job,
     Vec<std::size_t>& dependencies
 ) -> void
 {
-    auto current_active = jobs[current_job].guard_active;
-
     graph::edges_for_each(graph, node_id, graph::EdgeDirection::Backward, graph::edge_mask::inputs, [&](pup::NodeId producer_id) {
         if (node_id::is_command(producer_id) && cmd_to_job.contains(producer_id)) {
             auto dep_idx = static_cast<std::size_t>(cmd_to_job.get(producer_id));
             if (dep_idx != current_job) {
-                if (!current_active || jobs[dep_idx].guard_active) {
-                    sorted_insert_unique(dependencies, dep_idx);
-                }
+                sorted_insert_unique(dependencies, dep_idx);
             }
         }
     });
@@ -341,8 +335,6 @@ auto build_dependency_map(
         auto dependencies = Vec<std::size_t> {};
         auto cmd_id = jobs[j].id;
 
-        auto current_active = jobs[j].guard_active;
-
         // Check regular inputs - traverse graph edges
         graph::edges_for_each(graph, cmd_id, graph::EdgeDirection::Backward, graph::edge_mask::inputs, [&](pup::NodeId input_id) {
             // Case 1: Input itself is a command (e.g., generated dep-scan rule)
@@ -350,16 +342,14 @@ auto build_dependency_map(
                 if (cmd_to_job.contains(input_id)) {
                     auto dep_idx = static_cast<std::size_t>(cmd_to_job.get(input_id));
                     if (dep_idx != j) {
-                        if (!current_active || jobs[dep_idx].guard_active) {
-                            sorted_insert_unique(dependencies, dep_idx);
-                        }
+                        sorted_insert_unique(dependencies, dep_idx);
                     }
                 }
                 return;
             }
 
             // Case 2: Input is a file produced by another command
-            add_producer_dependencies(graph, cmd_to_job, jobs, input_id, j, dependencies);
+            add_producer_dependencies(graph, cmd_to_job, input_id, j, dependencies);
         });
 
         // Case 3: Order-only inputs (groups and files)
@@ -370,20 +360,18 @@ auto build_dependency_map(
             assert(oo_file || !node_id::is_file(oo_id));
             if (oo_file && graph::get<NodeType>(graph, *oo_file) == NodeType::Group) {
                 graph::edges_for_each(graph, oo_id, graph::EdgeDirection::Backward, graph::edge_mask::inputs, [&](pup::NodeId member_id) {
-                    add_producer_dependencies(graph, cmd_to_job, jobs, member_id, j, dependencies);
+                    add_producer_dependencies(graph, cmd_to_job, member_id, j, dependencies);
                 });
             } else {
-                add_producer_dependencies(graph, cmd_to_job, jobs, oo_id, j, dependencies);
+                add_producer_dependencies(graph, cmd_to_job, oo_id, j, dependencies);
             }
         });
 
         // Case 4: ordering the graph does not carry, from a previous build's discoveries
         if (!injected_producers.empty()) {
             for (auto dep_idx : injected_producers[j]) {
-                if (!current_active || jobs[dep_idx].guard_active) {
-                    sorted_insert_unique(dependencies, dep_idx);
-                    enforced.push_back(OrderingEdge { .producer = jobs[dep_idx].id, .consumer = cmd_id });
-                }
+                sorted_insert_unique(dependencies, dep_idx);
+                enforced.push_back(OrderingEdge { .producer = jobs[dep_idx].id, .consumer = cmd_id });
             }
         }
 
@@ -400,7 +388,6 @@ auto build_dependency_map(
 /// The graph's own edges are acyclic (build_job_list topologically sorts them), so only the
 /// injected ordering can close a cycle -- but a stalled ready queue leaves execute_parallel
 /// reporting success with the cycle's jobs never run, so it has to be caught before the loop.
-/// Guards are not consulted: whether a job would be skipped says nothing about the shape.
 auto has_cycle(
     Vec<std::size_t> const& in_degree,
     Vec<Vec<std::size_t>> const& dependents
@@ -426,34 +413,6 @@ auto has_cycle(
         }
     }
     return reached < in_degree.size();
-}
-
-/// Validate that no active job depends on a skipped job's output.
-/// Returns error if an active job would fail due to missing inputs from skipped jobs.
-auto validate_guard_dependencies(
-    Vec<BuildJob> const& jobs,
-    Vec<Vec<std::size_t>> const& dependents
-) -> Result<void>
-{
-    for (auto i = std::size_t { 0 }; i < jobs.size(); ++i) {
-        if (jobs[i].guard_active) {
-            continue;
-        }
-        // This job is skipped - check if any active job depends on it
-        for (auto dep_idx : dependents[i]) {
-            if (jobs[dep_idx].guard_active) {
-                auto& pool = global_pool();
-                auto eb = Buf {};
-                eb.append("Command '");
-                eb.append(pool.get(jobs[dep_idx].command));
-                eb.append("' depends on output from '");
-                eb.append(pool.get(jobs[i].command));
-                eb.append("' which is inactive due to conditional guard");
-                return make_error<void>(ErrorCode::MissingInput, eb.view());
-            }
-        }
-    }
-    return {};
 }
 
 struct JobSlot {
@@ -755,9 +714,6 @@ auto Scheduler::build_job_list(
             exported_ids.push_back(make_string_id(raw_id));
         }
 
-        // Evaluate guards - command only executes if ALL guards are satisfied
-        auto guard_active = graph::is_guard_satisfied(g, id);
-
         auto job = BuildJob {
             .id = node,
             .command = cmd_id,
@@ -770,7 +726,6 @@ auto Scheduler::build_job_list(
             .capture_stdout = capture_stdout,
             .inject_implicit_deps = inject_implicit,
             .parent_command = parent_cmd ? std::optional<NodeId> { parent_cmd->id() } : std::nullopt,
-            .guard_active = guard_active,
         };
 
         // Collect input paths
@@ -846,29 +801,20 @@ auto Scheduler::execute_parallel(
     auto& in_degree = dep_map.first;
     auto& dependents = dep_map.second;
 
-    if (auto result = validate_guard_dependencies(jobs, dependents); !result) {
-        return pup::unexpected<Error>(result.error());
-    }
-
-    auto active_count = static_cast<std::size_t>(
-        std::count_if(jobs.begin(), jobs.end(), [](auto const& j) { return j.guard_active; })
-    );
-    impl_->stats.skipped_jobs += jobs.size() - active_count;
-
-    if (active_count == 0) {
+    if (jobs.empty()) {
         return {};
     }
 
     auto ready_queue = std::queue<std::size_t> {};
     for (auto i = std::size_t { 0 }; i < jobs.size(); ++i) {
-        if (in_degree[i] == 0 && jobs[i].guard_active) {
+        if (in_degree[i] == 0) {
             ready_queue.push(i);
         }
     }
 
     // Job slots -- one per concurrent child process.
     // JobSlot is non-copyable/non-movable (Buf), so allocate via new[].
-    auto max_jobs = std::min(impl_->options.jobs, active_count);
+    auto max_jobs = std::min(impl_->options.jobs, jobs.size());
     auto slots_storage = std::unique_ptr<JobSlot[]>(new JobSlot[max_jobs]); // NOLINT
     auto* slots = slots_storage.get();
 
@@ -881,7 +827,7 @@ auto Scheduler::execute_parallel(
     auto output_root_sv = pool.get(impl_->options.output_root);
     auto output_root_prefix = pool.get(pup::path::relative(output_root_sv, source_root_sv));
 
-    while (finished_count < active_count) {
+    while (finished_count < jobs.size()) {
         // 1. Launch: fill empty slots from ready_queue
         if (!failed || impl_->options.keep_going) {
             for (auto s = std::size_t { 0 }; s < max_jobs; ++s) {
@@ -917,7 +863,7 @@ auto Scheduler::execute_parallel(
                     impl_->stats.build_time += result.duration;
 
                     for (auto dep_idx : dependents[job_idx]) {
-                        if (--in_degree[dep_idx] == 0 && jobs[dep_idx].guard_active) {
+                        if (--in_degree[dep_idx] == 0) {
                             ready_queue.push(dep_idx);
                         }
                     }
@@ -1130,7 +1076,7 @@ auto Scheduler::execute_parallel(
             if (result.success) {
                 ++impl_->stats.completed_jobs;
                 for (auto dep_idx : dependents[job_idx]) {
-                    if (--in_degree[dep_idx] == 0 && jobs[dep_idx].guard_active) {
+                    if (--in_degree[dep_idx] == 0) {
                         ready_queue.push(dep_idx);
                     }
                 }

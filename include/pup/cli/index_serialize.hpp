@@ -80,9 +80,8 @@ auto serialize_graph_nodes(
     Vec<StringId> const& prior_generated = {}
 ) -> std::pair<index::Index, PathIdMap>;
 
-/// Serialize guard-satisfied command nodes to the index with dense ids.
-/// Returns the graph-id -> index-position remap; guard-unsatisfied commands
-/// are absent from it.
+/// Serialize command nodes to the index with dense ids.
+/// Returns the graph-id -> index-position remap.
 [[nodiscard]]
 auto serialize_command_nodes(
     graph::BuildGraph const& state,

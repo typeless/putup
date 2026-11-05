@@ -127,12 +127,12 @@ struct BuilderContext {
     /// Pending weak (??=) assignments - applied before rules, last wins
     Vec<PendingWeakAssignment> pending_weak_assignments = {};
 
-    /// Condition stack for phi-node model - tracks nested conditional guards
-    /// Each entry is (condition_id, polarity). Commands created while in a conditional
-    /// will have these guards applied.
+    /// Condition stack - tracks nested conditional guards
+    /// Each entry is (condition_id, polarity). Commands created and outputs declared while
+    /// in a conditional carry these guards.
     Vec<Guard> condition_stack = {};
 
-    /// Config variable StringIds used in enclosing conditions (for phi-node model).
+    /// Config variable StringIds used in enclosing conditions.
     /// Commands inside conditionals need to depend on these vars to rebuild when
     /// the condition's value changes.
     SortedIdVec condition_config_vars = {};

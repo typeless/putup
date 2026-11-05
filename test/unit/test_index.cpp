@@ -36,10 +36,6 @@ auto sv(pup::StringId id) -> std::string_view { return pup::global_pool().get(id
 using namespace pup;
 using namespace pup::index;
 
-namespace pup::graph {
-auto add_condition_node(Graph& graph, ConditionNode node) -> Result<NodeId>;
-}
-
 namespace {
 
 auto intern(std::string_view s) -> StringId
@@ -1323,15 +1319,9 @@ auto entry_label(Index const& idx, pup::NodeId id) -> std::string
 
 auto sorted_edge_labels_of_graph(pup::graph::Graph const& g) -> std::vector<std::string>
 {
-    auto touches_inactive_command = [&g](pup::NodeId id) {
-        return node_id::is_command(id) && !pup::graph::is_guard_satisfied(g, pup::graph::find_command(g, id).value());
-    };
     auto labels = std::vector<std::string> {};
     for (auto const& edge : g.edges) {
         if (edge.type == LinkType::OrderOnly) {
-            continue;
-        }
-        if (touches_inactive_command(edge.from) || touches_inactive_command(edge.to)) {
             continue;
         }
         labels.push_back(
@@ -1363,12 +1353,7 @@ auto require_graph_index_roundtrip(pup::graph::BuildGraph const& bs, std::string
     pup::cli::serialize_edges(bs, index, cmd_remap);
 
     auto live_file_nodes = pup::graph::file_ids(bs.graph).size();
-    auto active_commands = std::size_t { 0 };
-    for (auto id : pup::graph::command_ids(bs.graph)) {
-        if (pup::graph::is_guard_satisfied(bs.graph, id)) {
-            ++active_commands;
-        }
-    }
+    auto live_commands = pup::graph::command_ids(bs.graph).size();
 
     auto temp_path = pup::test::temp_path(file_tag).string();
     auto write_result = write_index(temp_path, index);
@@ -1378,7 +1363,7 @@ auto require_graph_index_roundtrip(pup::graph::BuildGraph const& bs, std::string
     REQUIRE(loaded.has_value());
 
     REQUIRE(loaded->file_count() == live_file_nodes);
-    REQUIRE(loaded->command_count() == active_commands);
+    REQUIRE(loaded->command_count() == live_commands);
     REQUIRE(sorted_edge_labels_of_index(*loaded) == sorted_edge_labels_of_graph(bs.graph));
 }
 
@@ -1473,26 +1458,10 @@ TEST_CASE("graph-to-index roundtrip holds for randomized graphs", "[index]")
             file_ids.push_back(id->id());
         }
 
-        auto false_cond = pup::graph::add_condition_node(g, pup::graph::ConditionNode { .current_value = false });
-        auto true_cond = pup::graph::add_condition_node(g, pup::graph::ConditionNode { .current_value = true });
-        REQUIRE(false_cond.has_value());
-        REQUIRE(true_cond.has_value());
-
         auto cmd_ids = std::vector<pup::NodeId> {};
         auto cmd_count = std::size_t { 1 + rng() % 4 };
         for (auto i = std::size_t { 0 }; i < cmd_count; ++i) {
-            auto guards = pup::Vec<pup::graph::Guard> {};
-            switch (rng() % 4) {
-            case 0:
-                guards.push_back(pup::graph::Guard { .condition = *false_cond, .polarity = true });
-                break;
-            case 1:
-                guards.push_back(pup::graph::Guard { .condition = *true_cond, .polarity = true });
-                break;
-            default:
-                break;
-            }
-            auto id = pup::graph::add_command_node(g, pup::graph::CommandNode { .instruction = pup::test::instruction("cmd" + std::to_string(i)), .guards = std::move(guards) });
+            auto id = pup::graph::add_command_node(g, pup::graph::CommandNode { .instruction = pup::test::instruction("cmd" + std::to_string(i)) });
             REQUIRE(id.has_value());
             cmd_ids.push_back(id->id());
         }

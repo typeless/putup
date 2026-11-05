@@ -34,9 +34,6 @@ struct BuildJob {
     bool capture_stdout = false;               ///< Capture stdout for depfile parsing
     bool inject_implicit_deps = false;         ///< Parse stdout as depfile
     std::optional<NodeId> parent_command = {}; ///< Parent command for implicit deps
-
-    // For phi-node model: true if all guards are satisfied
-    bool guard_active = true;
 };
 
 /// Result of executing a build job

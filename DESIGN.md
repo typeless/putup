@@ -582,10 +582,11 @@ struct CommandNode {
     OutputAction output_action = {};           // What to do with output
     std::optional<NodeId> parent_command = {}; // Parent command for InjectImplicitDeps
 
-    // Guards for conditional execution (phi-node model)
-    // ALL guards must be satisfied for command to execute
+    // Guards of the taken branch the rule sits in, all satisfied: a rule in an
+    // untaken branch becomes no command (see "Why Untaken Branches Become No Commands")
     // For nested conditionals: ifeq(A,x) { ifeq(B,y) { cmd } }
     //   → guards = [Guard{condA, true}, Guard{condB, true}]
+    // Compared against later declarations of the same output (are_guards_mutually_exclusive)
     // Guards exist only for conditions that can flip without a Tupfile edit
     // (config or env reads). A static ifeq/ifneq is processed textually like
     // tup: the losing branch is skipped and no condition node is created.
@@ -643,6 +644,9 @@ struct Graph {
     Vec<Edge> edges;                  // Central edge storage
 
     Vec<ConditionNode> conditions;    // Conditional guards
+
+    // One row per output an untaken-branch rule declares: the rule becomes no command
+    Vec<InactiveDeclaration> inactive_declarations;  // { output, guards, command_text }
 
     // Edge indices: NodeId -> ArenaSlice (indices into edges vector)
     Arena32 edge_arena;
@@ -714,7 +718,7 @@ auto get_full_path(Graph const&, FileId) -> StringId;
 auto find_by_dir_name(Graph const&, FileId parent, name) -> std::optional<NodeId>;
 auto get_parent_command(Graph const&, CommandId) -> std::optional<CommandId>;
 auto is_stdout_capture(Graph const&, CommandId) -> bool;
-auto is_guard_satisfied(Graph const&, CommandId) -> bool;
+auto collect_inactive_outputs(Graph const&) -> NodeIdMap32;  // declared only by untaken branches
 auto expand_instruction(Graph const&, CommandId, PathCache&) -> StringId;
 auto expand_instruction(Graph const&, CommandId) -> StringId;
 auto command_label(Graph const&, CommandId, PathCache&) -> StringId;
@@ -778,7 +782,7 @@ Ghost nodes are placeholder nodes for files that don't exist yet during parsing.
 
 **Validation**: before build execution, `reject_unresolved_ghosts` (`src/cli/cmd_build.cpp`) fails the build for a ghost that something consumes and that nothing put on disk. A ghost nothing consumes is harmless and is left alone; a consumed one backed by a file on disk is a foreign input, not an error.
 
-**Index serialization**: every live ghost node gets a record entry, because ids stay dense (id == position + 1). Three kinds carry meaning there. A consumed ghost backed by a file no rule produces is a foreign input — the variant's `tup.config` is the standing example — recorded with its content so change detection can see it change. And a path this build has no authority over, an output whose producing directory a scoped build never parsed, arrives here as a ghost too: a ghost is the graph's own encoding of "referenced, awaiting its producer", which is what such a path is from this build's point of view. The record then re-asserts its previous owner rather than downgrading it to a source (#369) — the entry is written back as `Generated` from the previous record's output set, and `merge_out_of_scope_commands` carries its producing command forward and re-attaches the output edge (#125). The third kind is a path declared only by rules whose guards are unsatisfied: `Generated` means produced by a rule this configuration runs, so an inactive branch's declared output rests as a ghost rather than reclassifying whatever is at that path (#386). Alone among ghosts it can carry a producer edge, and turning the branch back off after a build that ran it routes through the same #369 re-assertion, which is what keeps the build's ownership of a file it genuinely made.
+**Index serialization**: every live ghost node gets a record entry, because ids stay dense (id == position + 1). Three kinds carry meaning there. A consumed ghost backed by a file no rule produces is a foreign input — the variant's `tup.config` is the standing example — recorded with its content so change detection can see it change. And a path this build has no authority over, an output whose producing directory a scoped build never parsed, arrives here as a ghost too: a ghost is the graph's own encoding of "referenced, awaiting its producer", which is what such a path is from this build's point of view. The record then re-asserts its previous owner rather than downgrading it to a source (#369) — the entry is written back as `Generated` from the previous record's output set, and `merge_out_of_scope_commands` carries its producing command forward and re-attaches the output edge (#125). The third kind is a path declared only by rules in an untaken branch: `Generated` means produced by a rule this configuration runs, so an inactive branch's declared output rests as a ghost rather than reclassifying whatever is at that path (#386). Such a rule becomes no command, so the ghost has no producer edge; the declaration lives in `Graph::inactive_declarations`, and `collect_inactive_outputs` names the ghosts it alone declares. Turning the branch back off after a build that ran it routes through the same #369 re-assertion, which is what keeps the build's ownership of a file it genuinely made.
 
 ### GraphBuilder
 
@@ -1180,9 +1184,6 @@ struct BuildJob {
     bool capture_stdout = false;             // Capture stdout for depfile parsing
     bool inject_implicit_deps = false;       // Parse stdout as depfile
     std::optional<NodeId> parent_command = {}; // Parent command for implicit deps
-
-    // Phi-node model: evaluated at schedule time from CommandNode.guards
-    bool guard_active = true;  // True if all guards satisfied, job skipped if false
 };
 
 struct JobResult {
@@ -1997,15 +1998,28 @@ With edge preservation:
 2. Parse zzz_producer → upgrade Ghost→Generated, **keep edge** ✓
 3. Result: aaa_consumer's command correctly depends on the generated file
 
-### Why Phi-Node Model for Conditionals?
+### Why Untaken Branches Become No Commands?
 
-When building with different conditional values (e.g., `-D TESTS=n` vs `-D TESTS=y`), a naive approach skips statements in inactive branches entirely. This causes problems:
+A condition that can flip without a Tupfile edit (a config or env read) gets a condition node, and
+every rule inside it carries the `Guard{condition, polarity}` entries of its enclosing branches.
+Guard values are fixed when the condition node is created, so whether a rule's branch is taken is
+known when the rule is expanded. A statically decidable `ifeq`/`ifneq` is processed textually, like
+tup: the losing branch is skipped and no condition node is created.
 
-1. Commands disappear from graph when condition is false
-2. Index prunes disappeared commands
-3. Toggling condition back rebuilds everything from scratch
+A rule in an untaken branch is still expanded, so that whether a Tupfile is accepted does not depend
+on the configuration: its command text is expanded, its inputs are resolved (an input inside a
+directory nothing provides is refused, REQ-GLOB-ABSENT-DIR-REFUSED), its outputs are validated
+(REQ-OUTPUT-NOT-A-DIRECTORY, REQ-OUTPUT-INSIDE-HIERARCHY) and checked for an earlier owner. But it
+becomes no command: no `CommandNode`, no edge of any kind, no dep-scan child. Each output it declares
+is ensured as a `Ghost` node and recorded as one row of `Graph::inactive_declarations`:
 
-**Solution**: Inspired by SSA (Static Single Assignment) form in compilers, use a phi-node model where both branches always exist in the graph with guards determining execution.
+```cpp
+struct InactiveDeclaration {
+    NodeId output = 0;
+    Vec<Guard> guards = {};
+    StringId command_text = StringId::Empty; // for the duplicate-output message
+};
+```
 
 **Example:**
 ```tup
@@ -2016,48 +2030,29 @@ else
 endif
 ```
 
-**Graph structure:**
+With `DEBUG=n` the graph holds one command, and the other branch is one row:
+
 ```
-foo.c ─────┬─→ [cmd1: gcc -g]  ──┐
-           │       ↑ guard       │
-           │   DEBUG=y           ├─→ app ─→ downstream
-           │                     │
-           └─→ [cmd2: gcc -O2] ──┘
-                   ↑ guard
-               DEBUG=n
+foo.c ──→ [cmd: gcc -O2] ──→ app ──→ downstream
+
+inactive_declarations: { app, [Guard{DEBUG, true}], "gcc -g -o app foo.c" }
 ```
 
-**Key properties:**
+**Why not keep both branches as guarded commands:** commands reach their consumers three ways —
+`command_ids`, `all_nodes`/topological order, and edge traversal. A guarded command in the graph
+obliged every consumer to re-check its guard, and the obligation was a convention: consumers that
+forgot (configure's config-rule collection, `parse`'s command count, the scoped command walk) counted
+or ran rules of an untaken branch. With no such command in the graph, no consumer can reach one, and
+the scheduler runs every job it is given.
 
-1. **Both branches always in graph** - Stable structure across condition toggles
-2. **Commands are guarded** - Have `Guard{condition, polarity}` entries
-3. **Exclusive branches share an output node** - Two commands may name the same output when their guards cannot both hold (`are_guards_mutually_exclusive`); downstream consumers see one node. No separate phi node is stored.
-4. **Execution filters by guard** - Scheduler checks `guard_active` before running
-5. **Index stays constant** - No churn when toggling configurations
+**Duplicate outputs:** each output of any rule, taken or not, is compared against every earlier
+declarer of that output — the producer edges on its node (commands) and the side-table rows for it
+(untaken rules) — and refused with "already owned by command" unless the two guard lists are mutually
+exclusive (`are_guards_mutually_exclusive`). The verdict depends on neither the rule order nor the
+configuration: an unguarded rule and a guarded one, or `[A=y]` and `[A=y, B=y]`, collide whichever
+branch is taken. Exclusive branches share one output node, and at most one of them is a command.
 
-**Guard evaluation in scheduler:**
-
-```cpp
-// When building job list, evaluate guards via helper
-auto guard_active = is_guard_satisfied(graph, cmd_id);
-
-// is_guard_satisfied() checks ALL guards:
-for (auto const& guard : cmd.guards) {
-    auto const* cond = get_condition_node(graph, guard.condition);
-    if (cond->current_value != guard.polarity) {
-        return false;  // Guard not satisfied
-    }
-}
-return true;  // All guards satisfied
-
-// Jobs with inactive guards are skipped, not executed
-if (!job.guard_active) {
-    mark_job_skipped(i);
-    continue;
-}
-```
-
-**Nested conditionals**: Guards are a list of `Guard{condition, polarity}` entries. For nested ifeq/ifdef blocks, ALL must be satisfied:
+**Nested conditionals**: guards are a list; every entry must hold for the branch to be taken.
 
 ```tup
 ifeq (@(A),x)           # cond1
@@ -2068,6 +2063,11 @@ ifeq (@(A),x)           # cond1
   endif
 endif
 ```
+
+**The record**: it holds only commands, so a rule of an untaken branch is never recorded. Taking the
+branch adds a command that joins nothing in the previous record and runs; leaving it retires the
+command and deletes its outputs as stale (REQ-KEY-RETIRE, REQ-OUT-BRANCHOFF). Toggling a
+configuration therefore changes the record, as it always did.
 
 ### Why (parent_dir, name) Path Storage?
 

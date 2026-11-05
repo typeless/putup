@@ -227,11 +227,10 @@ auto collect_scope_crossing_inputs(
     return result;
 }
 
-/// Collect paths declared only by commands whose conditional guard is unsatisfied.
-/// Both branches of a config-driven conditional are in the graph; only the satisfied
-/// one produces files, so the other branch's outputs will never exist on disk. A path
-/// declared by both branches shares one node and has an active producer, so the test
-/// is "no active producer" rather than "some inactive declarer".
+/// Collect paths declared only by rules of an untaken conditional branch. Such a rule
+/// becomes no command, so its outputs will never exist on disk. A path declared by both
+/// branches shares one node and has a producer, so the test is "no producer" rather
+/// than "some inactive declarer".
 auto collect_inactive_output_paths(pup::graph::BuildGraph const& state) -> Vec<StringId>
 {
     auto const& g = state.graph;
@@ -784,10 +783,8 @@ auto serialize_graph_nodes(
 
 /// Serialize command nodes from the build graph to the index.
 /// v8: Store template + operands instead of fully-expanded command.
-/// Serialize commands whose guard is satisfied, assigning dense index ids.
-/// Returns the graph-id -> index-position remap; guard-unsatisfied commands are
-/// absent from it. A guard-unsatisfied command never ran; recording its identity
-/// would mask it as known on reactivation.
+/// Serialize every command, assigning dense index ids.
+/// Returns the graph-id -> index-position remap.
 auto serialize_command_nodes(
     pup::graph::BuildGraph const& state,
     pup::index::Index& index,
@@ -799,9 +796,6 @@ auto serialize_command_nodes(
     auto remap = pup::NodeIdMap32 {};
     auto next_position = std::uint32_t { 1 };
     for (auto id : pup::graph::command_ids(g)) {
-        if (!pup::graph::is_guard_satisfied(g, id)) {
-            continue;
-        }
 
         auto inputs = pup::graph::view<pup::graph::Inputs>(g, id);
         auto order_only_inputs = pup::graph::view<pup::graph::OrderOnlyInputs>(g, id);
@@ -838,7 +832,7 @@ auto serialize_command_nodes(
 
 /// Serialize edges from the build graph to the index, rewriting command
 /// endpoints through the dense-id remap. Edges touching a command absent from
-/// the remap (guard-unsatisfied) are dropped with it.
+/// the remap are dropped with it.
 auto serialize_edges(
     pup::graph::BuildGraph const& state,
     pup::index::Index& index,
@@ -993,7 +987,7 @@ auto process_implicit_deps(
 /// How a set of commands is addressed for joining, in one place so that every join --
 /// graph to index, index to graph, index to index -- agrees on what "the same command"
 /// means. A command that produces files is addressed by the files: output ownership is
-/// unique among guard-satisfied commands, enforced where the output edge is created, so a
+/// unique among commands, enforced where the output edge is created, so a
 /// produced path names its producer and survives any edit to the recipe. A command that
 /// produces nothing has no such name and is addressed by its textual key instead.
 ///
@@ -1043,14 +1037,10 @@ auto index_command_address(pup::index::Index const& idx, pup::index::CommandEntr
     return address;
 }
 
-/// Guard-satisfied only, matching the set the index records.
 auto graph_command_lookup(pup::graph::BuildGraph const& state) -> CommandLookup
 {
     auto lookup = CommandLookup {};
     for (auto id : pup::graph::command_ids(state.graph)) {
-        if (!pup::graph::is_guard_satisfied(state.graph, id)) {
-            continue;
-        }
         auto address = graph_command_address(state, id);
         for (auto path : address.outputs) {
             lookup.by_output.emplace_back(path, id.id());
@@ -1124,8 +1114,7 @@ auto find_joined_command(
 /// by. A discovered dependency is recorded only in the index, so nothing in the graph puts its
 /// consumer after its producer and the two race on every build that runs both (#276). Producers
 /// are read from the current graph's outputs, so a rule that no longer produces the file orders
-/// nothing; both endpoints are guard-satisfied because the lookup holds only those, and an
-/// inactive one would otherwise fail the build as a dependency on a skipped command.
+/// nothing.
 auto collect_discovered_ordering(
     pup::index::Index const& old_index,
     CommandLookup const& join
@@ -1737,9 +1726,6 @@ auto reject_shadowed_sources(
     auto shadowed = pup::Vec<StringId> {};
 
     for (auto cmd_id : pup::graph::command_ids(g)) {
-        if (!pup::graph::is_guard_satisfied(g, cmd_id)) {
-            continue;
-        }
         pup::graph::files_for_each(g, cmd_id.id(), pup::graph::EdgeDirection::Forward, pup::graph::edge_mask::data_flow, [&](pup::graph::FileId output) {
             auto full_path_sv = pup::graph::get_full_path(g, output, state.path_cache);
             if (full_path_sv.empty()) {
@@ -1815,17 +1801,9 @@ auto reject_unresolved_ghosts(
             continue;
         }
         auto consumed = false;
-        pup::graph::edges_for_each(
-            g, id.id(), pup::graph::EdgeDirection::Forward, pup::graph::edge_mask::consumers, [&](pup::NodeId consumer) {
-                if (!pup::node_id::is_command(consumer)) {
-                    consumed = true;
-                    return;
-                }
-                auto const command = pup::graph::find_command(g, consumer);
-                assert(command);
-                consumed = consumed || pup::graph::is_guard_satisfied(g, *command);
-            }
-        );
+        pup::graph::edges_for_each(g, id.id(), pup::graph::EdgeDirection::Forward, pup::graph::edge_mask::consumers, [&](pup::NodeId) -> void {
+            consumed = true;
+        });
         if (!consumed) {
             continue;
         }
@@ -1870,9 +1848,6 @@ auto detect_new_commands(
     auto const old_lookup = index_command_lookup(idx);
 
     for (auto id : pup::graph::command_ids(g)) {
-        if (!pup::graph::is_guard_satisfied(g, id)) {
-            continue;
-        }
 
         auto const address = graph_command_address(state, id);
         auto const joined = find_joined(old_lookup, address);
@@ -2332,9 +2307,6 @@ auto build_single_variant(
 
         if (opts.rerun) {
             for (auto id : pup::graph::command_ids(bs.graph)) {
-                if (!pup::graph::is_guard_satisfied(bs.graph, id)) {
-                    continue;
-                }
                 if (!scopes.empty()) {
                     auto dir_sv = pup::global_pool().get(pup::graph::get<pup::graph::SourceDir>(bs.graph, id));
                     if (!pup::is_path_in_any_scope(dir_sv.empty() ? "." : dir_sv, scopes)) {
@@ -2512,9 +2484,6 @@ auto build_single_variant(
     }
 
     for (auto cmd : pup::graph::command_ids(bs.graph)) {
-        if (!pup::graph::is_guard_satisfied(bs.graph, cmd)) {
-            continue;
-        }
         auto const id = cmd.id();
         if (auto const* intended = filter.ptr(); intended != nullptr && !intended->contains(id)) {
             continue;

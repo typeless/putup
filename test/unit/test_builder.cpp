@@ -1952,14 +1952,8 @@ TEST_CASE("GraphBuilder inactive branch rules expand branch-local assignments", 
     REQUIRE(parse_result.success());
     REQUIRE(add_tupfile(bs, parse_result.tupfile, ctx, builder_state).has_value());
 
-    auto found = false;
-    for (std::size_t i = 0; i < bs.graph.commands.size(); ++i) {
-        auto instruction = sv(pup::render_instruction(bs.graph.commands[i].instruction));
-        if (instruction.find("branchval") != std::string_view::npos) {
-            found = true;
-        }
-    }
-    CHECK(found);
+    REQUIRE(bs.graph.inactive_declarations.size() == 1);
+    CHECK(sv(bs.graph.inactive_declarations[0].command_text).find("branchval") != std::string_view::npos);
     CHECK_FALSE(vars.contains("V"));
 }
 

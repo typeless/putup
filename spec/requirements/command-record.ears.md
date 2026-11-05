@@ -603,7 +603,7 @@ classification the previous record gave that file.
 
 - leg: invariant
 - conformance: deliberate-deviation
-- reference: upstream never evaluates an unsatisfied branch, so its rules declare nothing and the question does not arise (`src/tup/parser.c` skips the block); putup registers them for the phi model and must therefore say what their outputs are, and answers that a classification names what this configuration produces (#386)
+- reference: upstream never evaluates an unsatisfied branch, so its rules declare nothing and the question does not arise (`src/tup/parser.c` skips the block); putup expands them, so that whether a Tupfile is accepted does not depend on the configuration, and records their outputs as declarations no command produces; it must therefore say what those outputs are, and answers that a classification names what this configuration produces (#386)
 - discharge: test "Scenario: clean leaves a source file an inactive branch merely declares"
 - discharge: test "Scenario: A glob skips a path only an inactive branch declares"
 - discharge: test "GraphBuilder inactive branch does not generate its declared output"
@@ -626,7 +626,7 @@ attribution the previous record gave that output and delete the output as stale.
 
 - leg: invariant
 - conformance: putup-only
-- reference: upstream never evaluates an unsatisfied branch, so a path declared by several branches never arises (`src/tup/parser.c` skips the block, as REQ-OUT-INACTIVE records); the phi model that registers both branches is putup's own
+- reference: upstream never evaluates an unsatisfied branch, so a path declared by several branches never arises (`src/tup/parser.c` skips the block, as REQ-OUT-INACTIVE records); expanding both branches, so that each declares the path, is putup's own
 - discharge: test "Scenario: An output declared by both conditional branches stays tracked"
 
 If an output declared by more than one branch of a conditional is missing from disk, then putup

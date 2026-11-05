@@ -4288,6 +4288,164 @@ SCENARIO("Turning a branch off keeps ownership of what it built", "[e2e][build][
     }
 }
 
+SCENARIO("A guarded rule cannot claim an unguarded rule's output whichever branch is taken", "[e2e][parse][conditionals][duplicate]")
+{
+    GIVEN("an unguarded rule written before a guarded rule declaring the same output")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": |> echo a > %o |> out.txt\nifeq (@(FOO),y)\n: |> echo b > %o |> out.txt\nendif\n");
+        f.write_file("tup.config", "");
+
+        WHEN("parsed with the guard unsatisfied")
+        {
+            auto result = f.parse();
+
+            THEN("the second declaration is refused")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("Unable to create output 'out.txt' because it is already owned by command") != std::string::npos);
+            }
+        }
+
+        WHEN("parsed with the guard satisfied")
+        {
+            auto result = f.parse({ "-D", "FOO=y" });
+
+            THEN("the second declaration is refused")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("Unable to create output 'out.txt' because it is already owned by command") != std::string::npos);
+            }
+        }
+    }
+
+    GIVEN("a guarded rule written before an unguarded rule declaring the same output")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", "ifeq (@(FOO),y)\n: |> echo b > %o |> out.txt\nendif\n: |> echo a > %o |> out.txt\n");
+        f.write_file("tup.config", "");
+
+        WHEN("parsed with the guard unsatisfied")
+        {
+            auto result = f.parse();
+
+            THEN("the second declaration is refused")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("Unable to create output 'out.txt' because it is already owned by command") != std::string::npos);
+            }
+        }
+
+        WHEN("parsed with the guard satisfied")
+        {
+            auto result = f.parse({ "-D", "FOO=y" });
+
+            THEN("the second declaration is refused")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("Unable to create output 'out.txt' because it is already owned by command") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("Two untaken branches that could both be taken cannot declare one output", "[e2e][parse][conditionals][duplicate]")
+{
+    GIVEN("a rule under FOO and a rule under FOO and BAR, both declaring one output")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file(
+            "Tupfile",
+            "ifeq (@(FOO),y)\n: |> echo a > %o |> out.txt\nendif\n"
+            "ifeq (@(FOO),y)\nifeq (@(BAR),y)\n: |> echo b > %o |> out.txt\nendif\nendif\n"
+        );
+        f.write_file("tup.config", "");
+
+        WHEN("parsed with FOO unset")
+        {
+            auto result = f.parse();
+
+            THEN("the second declaration is refused")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("Unable to create output 'out.txt' because it is already owned by command") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("An untaken branch's input inside a directory nothing provides is refused", "[e2e][parse][conditionals][glob]")
+{
+    GIVEN("a guarded rule whose input names a directory nothing provides")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", "ifeq (@(FOO),y)\n: nodir/a.c |> cat %f > %o |> out.txt\nendif\n");
+        f.write_file("tup.config", "");
+
+        WHEN("parsed with the guard unsatisfied")
+        {
+            auto result = f.parse();
+
+            THEN("the Tupfile is refused and names the input")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("/Tupfile:2: error: Failed to find directory ID for dir 'nodir/a.c'") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("Parse counts only the rules of taken branches", "[e2e][parse][conditionals]")
+{
+    GIVEN("an unguarded rule and a rule under an unsatisfied guard")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": |> echo a > %o |> a.txt\nifeq (@(FOO),y)\n: |> echo b > %o |> b.txt\nendif\n");
+        REQUIRE(f.init().success());
+
+        WHEN("parsed")
+        {
+            auto result = f.parse();
+
+            THEN("only the unguarded rule is counted")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output.find("Tupfile(s), 1 commands") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("Configure does not run a config rule of an untaken branch", "[e2e][configure][conditionals]")
+{
+    GIVEN("a config-generating rule under an unsatisfied guard")
+    {
+        auto f = E2EFixture { "scoped_stale" };
+        f.write_file("gamma/Tupfile", "ifeq (@(FOO),y)\n: |> echo CONFIG_X=y > %o |> tup.config\nendif\n");
+
+        WHEN("configure runs")
+        {
+            auto result = f.pup({ "configure", "-B", "build" });
+
+            THEN("no config-generating rule is found")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output.find("No config-generating rules found") != std::string::npos);
+                REQUIRE_FALSE(f.exists("build/gamma/tup.config"));
+            }
+        }
+    }
+}
+
 SCENARIO("A stale output that cannot even be queried keeps its record", "[e2e][incremental][stale]")
 {
     GIVEN("a removed rule whose output sits in a directory that cannot be read")

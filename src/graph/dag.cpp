@@ -457,34 +457,16 @@ auto get_condition_node(Graph& graph, NodeId id) -> ConditionNode*
     return const_cast<ConditionNode*>(get_condition_node(std::as_const(graph), id));
 }
 
-auto is_guard_satisfied(Graph const& graph, CommandId id) -> bool
-{
-    for (auto const& guard : command_at(graph, id).guards) {
-        auto const* cond = get_condition_node(graph, guard.condition);
-        if (!cond) {
-            return false;
-        }
-        if (cond->current_value != guard.polarity) {
-            return false;
-        }
-    }
-    return true;
-}
-
 auto collect_inactive_outputs(Graph const& graph) -> NodeIdMap32
 {
-    auto produced_by_active = NodeIdMap32 {};
-    auto declared_by_inactive = NodeIdMap32 {};
-    for (auto id : command_ids(graph)) {
-        auto& outputs = is_guard_satisfied(graph, id) ? produced_by_active : declared_by_inactive;
-        for (auto output_id : get_outputs(graph, id.id())) {
-            outputs.set(output_id, 1);
-        }
-    }
     auto result = NodeIdMap32 {};
-    for (auto id : all_nodes(graph)) {
-        if (declared_by_inactive.contains(id) && !produced_by_active.contains(id)) {
-            result.set(id, 1);
+    for (auto const& declaration : graph.inactive_declarations) {
+        auto produced = false;
+        edges_for_each(graph, declaration.output, EdgeDirection::Backward, edge_mask::data_flow, [&](NodeId producer) -> void {
+            produced = produced || node_id::is_command(producer);
+        });
+        if (!produced) {
+            result.set(declaration.output, 1);
         }
     }
     return result;

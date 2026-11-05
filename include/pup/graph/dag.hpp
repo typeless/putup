@@ -84,10 +84,16 @@ struct CommandNode {
 };
 
 /// Condition node - represents an ifeq/ifdef/ifneq/ifndef condition
-/// Both branches are in the graph; guards determine which executes
 struct ConditionNode {
     NodeId id = 0;
     bool current_value = false; ///< Evaluated at graph time
+};
+
+/// An output declared by a rule under an unsatisfied guard; such a rule becomes no command
+struct InactiveDeclaration {
+    NodeId output = 0;
+    Vec<Guard> guards = {};
+    StringId command_text = StringId::Empty; ///< The rule's expanded command, for the duplicate-output message
 };
 
 /// Build graph - DAG of nodes and edges (plain data struct)
@@ -96,6 +102,8 @@ struct Graph {
     StableVec<CommandNode> commands;     ///< Command nodes only
     StableVec<ConditionNode> conditions; ///< Condition nodes
     Vec<Edge> edges;                     ///< Central edge storage (single source of truth)
+
+    Vec<InactiveDeclaration> inactive_declarations; ///< One row per output each untaken-branch rule declares
 
     Arena32 edge_arena;
     NodeIdArenaIndex edges_to_index;
@@ -389,11 +397,7 @@ auto get_parent_command(Graph const& graph, CommandId id) -> std::optional<Comma
 [[nodiscard]]
 auto is_stdout_capture(Graph const& graph, CommandId id) -> bool;
 
-/// Check if all guards on a command are satisfied
-[[nodiscard]]
-auto is_guard_satisfied(Graph const& graph, CommandId id) -> bool;
-
-/// Collect the nodes that guard-unsatisfied commands declare as outputs and no satisfied command produces
+/// Collect the nodes that untaken-branch rules declare as outputs and no command produces
 [[nodiscard]]
 auto collect_inactive_outputs(Graph const& graph) -> NodeIdMap32;
 
@@ -622,7 +626,7 @@ auto compute_command_signature(Graph const& graph, CommandId cmd_id, PathCache& 
 
 /// Which rule this is, for joining a command against the previous build. A command that
 /// produces files is keyed by the files themselves — output ownership is unique among
-/// guard-satisfied commands, enforced when the output edge is created — so this textual
+/// commands, enforced when the output edge is created — so this textual
 /// key is the fallback for output-less commands, which have nothing else to be named by.
 /// It deliberately excludes variable values: a var change means re-run, not a new rule.
 [[nodiscard]]
