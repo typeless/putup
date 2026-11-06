@@ -12,13 +12,13 @@
 #include "pup/core/types.hpp"
 #include "pup/core/vec.hpp"
 
+#include <optional>
 #include <string_view>
 
 namespace pup::index {
 
 /// In-memory file entry
 struct FileEntry {
-    NodeId id = 0;
     NodeId parent_id = 0;
     NodeId src_id = 0; ///< For generated: command that creates it
 
@@ -36,14 +36,12 @@ struct FileEntry {
     auto to_raw(std::uint32_t name_offset) const -> RawFileEntry;
 
     /// Create from raw format (path must be computed separately from parent chain)
-    /// @param array_index 0-based position in file array (ID = array_index + 1)
     /// @return IndexDamaged if the recorded type byte names no NodeType this build knows, or the
     ///         recorded flags word carries a bit no version in the readable window names
     [[nodiscard]]
     static auto from_raw(
         RawFileEntry const& raw,
-        std::string_view name_str,
-        std::size_t array_index
+        std::string_view name_str
     ) -> Result<FileEntry>;
 };
 
@@ -51,7 +49,6 @@ struct FileEntry {
 /// Stores instruction pattern with %f/%o markers plus operand NodeIds.
 /// Full command string is reconstructed on demand via get_command_string().
 struct CommandEntry {
-    NodeId id = 0;
     NodeId dir_id = 0; ///< Directory where command runs
 
     StringId instruction_pattern = StringId::Empty; ///< Instruction pattern with %f/%o markers
@@ -77,7 +74,6 @@ struct CommandEntry {
     ) const -> RawCommandEntry;
 
     /// Create from raw format
-    /// @param array_index 0-based position in command array (ID = node_id::make_command(array_index + 1))
     /// @return IndexDamaged if the recorded flags word carries a bit no CommandFlag names
     [[nodiscard]]
     static auto from_raw(
@@ -87,8 +83,7 @@ struct CommandEntry {
         std::string_view env_str,
         TokenList<NodeId> inputs,
         TokenList<NodeId> order_only_inputs,
-        TokenList<NodeId> outputs,
-        std::size_t array_index
+        TokenList<NodeId> outputs
     ) -> Result<CommandEntry>;
 };
 
@@ -114,10 +109,20 @@ public:
     Index() = default;
 
     /// Add a file entry
-    auto add_file(FileEntry entry) -> void { files_.push_back(std::move(entry)); }
+    /// @return The id the entry now has: its position in the file table
+    auto add_file(FileEntry entry) -> NodeId
+    {
+        files_.push_back(std::move(entry));
+        return file_id(files_.size() - 1);
+    }
 
     /// Add a command entry
-    auto add_command(CommandEntry entry) -> void { commands_.push_back(std::move(entry)); }
+    /// @return The id the entry now has: its position in the command table
+    auto add_command(CommandEntry entry) -> NodeId
+    {
+        commands_.push_back(std::move(entry));
+        return command_id(commands_.size() - 1);
+    }
 
     /// Add an edge (also updates edge indices)
     auto add_edge(EdgeEntry entry) -> void;
@@ -165,6 +170,26 @@ public:
     /// Find command by ID
     [[nodiscard]]
     auto find_command_by_id(NodeId id) const -> CommandEntry const*;
+    [[nodiscard]]
+    auto find_command_by_id(NodeId id) -> CommandEntry*;
+
+    /// The id of the file entry at `position` in files(): the inverse of find_file_by_id
+    [[nodiscard]]
+    static auto file_id(std::size_t position) -> NodeId
+    {
+        return static_cast<NodeId>(position + 1);
+    }
+
+    /// The id of the command entry at `position` in commands(): the inverse of find_command_by_id
+    [[nodiscard]]
+    static auto command_id(std::size_t position) -> NodeId
+    {
+        return node_id::make_command(position + 1);
+    }
+
+    /// The id of `entry`, which must be an element of files()
+    [[nodiscard]]
+    auto file_id_of(FileEntry const& entry) const -> NodeId;
 
     /// Get edges from a node (O(1) after build_edge_indices)
     [[nodiscard]]
@@ -218,6 +243,9 @@ public:
     auto set_save_time_ns(std::int64_t ns) -> void { save_time_ns_ = ns; }
 
 private:
+    [[nodiscard]]
+    auto command_position(NodeId id) const -> std::optional<std::size_t>;
+
     Vec<FileEntry> files_ = {};
     Vec<CommandEntry> commands_ = {};
     Vec<EdgeEntry> edges_ = {};

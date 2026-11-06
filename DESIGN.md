@@ -201,7 +201,7 @@ Error codes are categorized:
 | Category | Examples |
 |----------|----------|
 | General | InvalidArgument, NotFound, IoError |
-| Index | IndexCorrupted, IndexChecksumMismatch, IndexDamaged, IndexVersionMismatch |
+| Index | IndexChecksumMismatch, IndexDamaged, IndexVersionMismatch |
 | Parser | ParseError, UnterminatedString, CircularInclude |
 | Graph | CyclicDependency, UnknownMacro |
 | Exec | CommandFailed, MissingInput |

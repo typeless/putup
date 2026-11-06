@@ -732,9 +732,10 @@ auto cmd_export_index(Options const& opts, std::string_view variant_name) -> int
 
     if (opts.summary) {
         auto cmds_with_implicit = std::size_t { 0 };
-        for (auto const& cmd : index.commands()) {
+        for (auto i = std::size_t { 0 }; i < index.commands().size(); ++i) {
+            auto const cmd_id = pup::index::Index::command_id(i);
             for (auto const& e : index.edges()) {
-                if (e.to == cmd.id
+                if (e.to == cmd_id
                     && (e.type == pup::LinkType::Implicit || e.type == pup::LinkType::Sticky)) {
                     ++cmds_with_implicit;
                     break;
@@ -747,7 +748,9 @@ auto cmd_export_index(Options const& opts, std::string_view variant_name) -> int
 
     print("\nCommands (with implicit/sticky edges):\n");
     auto filter_sv = pool.get(opts.show_var_filter);
-    for (auto const& cmd : index.commands()) {
+    for (auto i = std::size_t { 0 }; i < index.commands().size(); ++i) {
+        auto const& cmd = index.commands()[i];
+        auto const cmd_id = pup::index::Index::command_id(i);
         auto cmd_str_id = pup::index::get_command_string(index, cmd);
         auto cmd_sv = pool.get(cmd_str_id);
 
@@ -760,13 +763,13 @@ auto cmd_export_index(Options const& opts, std::string_view variant_name) -> int
             dir_sv = pool.get(dir->path);
         }
 
-        print("  c{}  [{}]{}\n", cmd.id, dir_sv, cmd.must_rerun ? "  must_rerun" : "");
+        print("  c{}  [{}]{}\n", cmd_id, dir_sv, cmd.must_rerun ? "  must_rerun" : "");
         print("       cmd: {}\n", cmd_sv);
 
         auto implicit = Vec<StringId> {};
         auto sticky = Vec<StringId> {};
         for (auto const& e : index.edges()) {
-            if (e.to != cmd.id) {
+            if (e.to != cmd_id) {
                 continue;
             }
             if (e.type != pup::LinkType::Implicit && e.type != pup::LinkType::Sticky) {

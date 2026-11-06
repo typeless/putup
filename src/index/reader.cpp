@@ -145,7 +145,7 @@ auto read_index(IndexFile const& f) -> Result<Index>
         if (!name) {
             return pup::unexpected<Error>(name.error());
         }
-        auto entry = FileEntry::from_raw(raw, *name, i);
+        auto entry = FileEntry::from_raw(raw, *name);
         if (!entry) {
             return pup::unexpected<Error>(entry.error());
         }
@@ -174,8 +174,7 @@ auto read_index(IndexFile const& f) -> Result<Index>
             *env,
             std::move(operands->inputs),
             std::move(operands->order_only_inputs),
-            std::move(operands->outputs),
-            i
+            std::move(operands->outputs)
         );
         if (!command) {
             return pup::unexpected<Error>(command.error());
@@ -285,7 +284,7 @@ auto read_prior_paths(std::string_view path) -> PriorPaths
         if (!name) {
             return lost;
         }
-        auto entry = FileEntry::from_raw(raw[i], *name, i);
+        auto entry = FileEntry::from_raw(raw[i], *name);
         if (!entry) {
             return lost;
         }

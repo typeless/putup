@@ -25,7 +25,6 @@ enum class ErrorCode {
     InvalidState,
 
     // Index errors
-    IndexCorrupted,
     IndexVersionMismatch,
     IndexChecksumMismatch,
     // A code that conflates damage with an expected-benign outcome forces every caller to choose between noise and silence.

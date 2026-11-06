@@ -19,6 +19,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string_view>
 #include <utility>
@@ -41,8 +42,7 @@ auto FileEntry::to_raw(std::uint32_t name_offset) const -> RawFileEntry
 
 auto FileEntry::from_raw(
     RawFileEntry const& raw,
-    std::string_view name_str,
-    std::size_t array_index
+    std::string_view name_str
 ) -> Result<FileEntry>
 {
     if (!names_node_type(raw.type)) {
@@ -53,7 +53,6 @@ auto FileEntry::from_raw(
         return make_error<FileEntry>(ErrorCode::IndexDamaged, "Recorded entry flags carry a bit no flag names");
     }
     return FileEntry {
-        .id = static_cast<NodeId>(array_index + 1),
         .parent_id = raw.parent_id,
         .src_id = raw.src_id,
         .type = static_cast<NodeType>(raw.type),
@@ -90,15 +89,13 @@ auto CommandEntry::from_raw(
     std::string_view env_str,
     TokenList<NodeId> inputs,
     TokenList<NodeId> order_only_inputs,
-    TokenList<NodeId> outputs,
-    std::size_t array_index
+    TokenList<NodeId> outputs
 ) -> Result<CommandEntry>
 {
     if ((raw.flags & ~RECORDED_COMMAND_FLAGS_MASK) != 0U) {
         return make_error<CommandEntry>(ErrorCode::IndexDamaged, "Recorded command flags carry a bit no flag names");
     }
     return CommandEntry {
-        .id = node_id::make_command(array_index + 1),
         .dir_id = raw.dir_id,
         .instruction_pattern = global_pool().intern(instruction_pattern),
         .display = global_pool().intern(display_str),
@@ -156,23 +153,37 @@ auto Index::find_file_by_id(NodeId id) const -> FileEntry const*
     if (idx >= files_.size()) {
         return nullptr;
     }
-    return files_[idx].id == id ? &files_[idx] : nullptr;
+    return &files_[idx];
+}
+
+auto Index::command_position(NodeId id) const -> std::optional<std::size_t>
+{
+    if (!node_id::is_command(id)) {
+        return std::nullopt;
+    }
+    auto const idx = node_id::index(id);
+    if (idx == 0 || idx - 1 >= commands_.size()) {
+        return std::nullopt;
+    }
+    return idx - 1;
 }
 
 auto Index::find_command_by_id(NodeId id) const -> CommandEntry const*
 {
-    if (!node_id::is_command(id)) {
-        return nullptr;
-    }
-    auto const idx = node_id::index(id);
-    if (idx == 0) {
-        return nullptr;
-    }
-    auto const vec_idx = idx - 1;
-    if (vec_idx >= commands_.size()) {
-        return nullptr;
-    }
-    return commands_[vec_idx].id == id ? &commands_[vec_idx] : nullptr;
+    auto const position = command_position(id);
+    return position ? &commands_[*position] : nullptr;
+}
+
+auto Index::find_command_by_id(NodeId id) -> CommandEntry*
+{
+    auto const position = command_position(id);
+    return position ? &commands_[*position] : nullptr;
+}
+
+auto Index::file_id_of(FileEntry const& entry) const -> NodeId
+{
+    assert(&entry >= files_.data() && &entry < files_.data() + files_.size());
+    return file_id(static_cast<std::size_t>(&entry - files_.data()));
 }
 
 auto Index::lookup_edges(NodeIdArenaIndex const& index, NodeId id) const
@@ -224,8 +235,6 @@ auto Index::compute_paths() -> void
         return;
     }
 
-    assert(files_[0].id == 1 && "compute_paths requires 1-based contiguous IDs");
-    assert(files_[n - 1].id == static_cast<NodeId>(n) && "compute_paths requires 1-based contiguous IDs");
     auto computed = Vec<bool> {};
     computed.resize(n);
     auto chain = Vec<std::size_t> {};

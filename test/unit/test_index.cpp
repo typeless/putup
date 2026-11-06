@@ -127,7 +127,6 @@ TEST_CASE("RawFileEntry helpers", "[index]")
 TEST_CASE("FileEntry conversion", "[index]")
 {
     auto file = FileEntry {
-        .id = 42,
         .parent_id = 1,
         .src_id = 0,
         .type = NodeType::File,
@@ -150,10 +149,9 @@ TEST_CASE("FileEntry conversion", "[index]")
     REQUIRE(raw.content_hash[0] == std::byte { 0xAB });
     REQUIRE(raw.content_hash[31] == std::byte { 0xCD });
 
-    auto restored = FileEntry::from_raw(raw, "main.cpp", 41);
+    auto restored = FileEntry::from_raw(raw, "main.cpp");
     REQUIRE(restored.has_value());
 
-    REQUIRE(restored->id == 42);
     REQUIRE(restored->parent_id == file.parent_id);
     REQUIRE(restored->type == file.type);
     REQUIRE(restored->flags == file.flags);
@@ -172,7 +170,6 @@ TEST_CASE("CommandEntry conversion", "[index]")
     signature[31] = std::byte { 0x34 };
 
     auto cmd = CommandEntry {
-        .id = node_id::make_command(5),
         .dir_id = 5,
         .instruction_pattern = intern("gcc -c %f -o %o"),
         .display = intern("CC main.c"),
@@ -198,12 +195,11 @@ TEST_CASE("CommandEntry conversion", "[index]")
     auto& pool = global_pool();
     auto restored = CommandEntry::from_raw(
         raw, pool.get(cmd.instruction_pattern), pool.get(cmd.display), pool.get(cmd.env),
-        pup::Vec<NodeId> { 10 }, pup::Vec<NodeId> { 30 }, pup::Vec<NodeId> { 20 }, 4
+        pup::Vec<NodeId> { 10 }, pup::Vec<NodeId> { 30 }, pup::Vec<NodeId> { 20 }
     );
 
     REQUIRE(restored.has_value());
 
-    REQUIRE(restored->id == node_id::make_command(5));
     REQUIRE(restored->dir_id == cmd.dir_id);
     REQUIRE(restored->instruction_pattern == cmd.instruction_pattern);
     REQUIRE(restored->display == cmd.display);
@@ -274,35 +270,56 @@ TEST_CASE("Index in-memory operations", "[index]")
 
     SECTION("add and find files")
     {
-        index.add_file(FileEntry { .id = 1, .name = intern("foo.c"), .path = intern("foo.c") });
-        index.add_file(FileEntry { .id = 2, .name = intern("bar.c"), .path = intern("bar.c") });
+        auto const foo_id = index.add_file(FileEntry { .name = intern("foo.c"), .path = intern("foo.c") });
+        auto const bar_id = index.add_file(FileEntry { .name = intern("bar.c"), .path = intern("bar.c") });
 
         REQUIRE(index.file_count() == 2);
         REQUIRE_FALSE(index.empty());
+        REQUIRE(foo_id == 1);
+        REQUIRE(bar_id == 2);
+        REQUIRE(Index::file_id(1) == bar_id);
 
-        auto* by_id_1 = index.find_file_by_id(1);
+        auto* by_id_1 = index.find_file_by_id(foo_id);
         REQUIRE(by_id_1 != nullptr);
         REQUIRE(by_id_1->name == intern("foo.c"));
 
-        auto* by_id_2 = index.find_file_by_id(2);
+        auto* by_id_2 = index.find_file_by_id(bar_id);
         REQUIRE(by_id_2 != nullptr);
         REQUIRE(by_id_2->name == intern("bar.c"));
 
         REQUIRE(index.find_file_by_id(999) == nullptr);
+
+        for (auto position = std::size_t { 0 }; position < index.files().size(); ++position) {
+            auto const& entry = index.files()[position];
+            REQUIRE(index.find_file_by_id(Index::file_id(position)) == &entry);
+            REQUIRE(index.file_id_of(entry) == Index::file_id(position));
+        }
     }
 
     SECTION("add and find commands")
     {
-        index.add_command(CommandEntry { .id = node_id::make_command(1), .instruction_pattern = intern("gcc foo.c") });
-        index.add_command(CommandEntry { .id = node_id::make_command(2), .instruction_pattern = intern("gcc bar.c") });
+        auto const foo_id = index.add_command(CommandEntry { .instruction_pattern = intern("gcc foo.c") });
+        auto const bar_id = index.add_command(CommandEntry { .instruction_pattern = intern("gcc bar.c") });
 
         REQUIRE(index.command_count() == 2);
+        REQUIRE(foo_id == node_id::make_command(1));
+        REQUIRE(bar_id == node_id::make_command(2));
+        REQUIRE(Index::command_id(1) == bar_id);
 
-        auto* found = index.find_command_by_id(node_id::make_command(1));
+        auto* found = index.find_command_by_id(foo_id);
         REQUIRE(found != nullptr);
         REQUIRE(found->instruction_pattern == intern("gcc foo.c"));
 
         REQUIRE(index.find_command_by_id(node_id::make_command(999)) == nullptr);
+        REQUIRE(index.find_command_by_id(NodeId { 1 }) == nullptr);
+
+        index.find_command_by_id(bar_id)->must_rerun = true;
+        REQUIRE(index.commands()[1].must_rerun);
+        REQUIRE_FALSE(index.commands()[0].must_rerun);
+
+        for (auto position = std::size_t { 0 }; position < index.commands().size(); ++position) {
+            REQUIRE(index.find_command_by_id(Index::command_id(position)) == &index.commands()[position]);
+        }
     }
 
     SECTION("add and query edges")
@@ -326,8 +343,8 @@ TEST_CASE("Index in-memory operations", "[index]")
     SECTION("clear")
     {
         auto cmd1 = node_id::make_command(1);
-        index.add_file(FileEntry { .id = 1, .name = intern("test.c") });
-        index.add_command(CommandEntry { .id = cmd1 });
+        index.add_file(FileEntry { .name = intern("test.c") });
+        index.add_command(CommandEntry {});
         index.add_edge(EdgeEntry { .from = 1, .to = cmd1 });
 
         REQUIRE_FALSE(index.empty());
@@ -348,20 +365,18 @@ TEST_CASE("Serialized edge section is independent of edge insertion order", "[in
 
     auto serialize_with_edges = [&](std::vector<EdgeEntry> const& edges) {
         auto index = Index {};
-        index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::Directory, .name = intern("src") });
-        index.add_file(FileEntry { .id = 2, .parent_id = 1, .type = NodeType::File, .name = intern("a.c") });
-        index.add_file(FileEntry { .id = 3, .parent_id = 1, .type = NodeType::Generated, .name = intern("a.o") });
-        index.add_file(FileEntry { .id = 4, .parent_id = 1, .type = NodeType::File, .name = intern("a.h") });
-        index.add_file(FileEntry { .id = 5, .parent_id = 1, .type = NodeType::Generated, .name = intern("b.o") });
+        index.add_file(FileEntry { .parent_id = 0, .type = NodeType::Directory, .name = intern("src") });
+        index.add_file(FileEntry { .parent_id = 1, .type = NodeType::File, .name = intern("a.c") });
+        index.add_file(FileEntry { .parent_id = 1, .type = NodeType::Generated, .name = intern("a.o") });
+        index.add_file(FileEntry { .parent_id = 1, .type = NodeType::File, .name = intern("a.h") });
+        index.add_file(FileEntry { .parent_id = 1, .type = NodeType::Generated, .name = intern("b.o") });
         index.add_command(CommandEntry {
-            .id = cmd1,
             .dir_id = 1,
             .instruction_pattern = intern("cc -c %f -o %o"),
             .inputs = { 2 },
             .outputs = { 3 },
         });
         index.add_command(CommandEntry {
-            .id = cmd2,
             .dir_id = 1,
             .instruction_pattern = intern("cc -S %f -o %o"),
             .inputs = { 2 },
@@ -408,21 +423,18 @@ TEST_CASE("Index serialization roundtrip", "[e2e][index]")
     auto index = Index {};
 
     index.add_file(FileEntry {
-        .id = 1,
         .parent_id = 0,
         .type = NodeType::Directory,
         .name = intern("src"),
     });
 
     index.add_file(FileEntry {
-        .id = 2,
         .parent_id = 0,
         .type = NodeType::Directory,
         .name = intern("build"),
     });
 
     index.add_file(FileEntry {
-        .id = 3,
         .parent_id = 1,
         .type = NodeType::File,
         .name = intern("main.cpp"),
@@ -430,7 +442,6 @@ TEST_CASE("Index serialization roundtrip", "[e2e][index]")
     });
 
     index.add_file(FileEntry {
-        .id = 4,
         .parent_id = 2,
         .type = NodeType::Generated,
         .name = intern("main.o"),
@@ -438,7 +449,6 @@ TEST_CASE("Index serialization roundtrip", "[e2e][index]")
     });
 
     index.add_file(FileEntry {
-        .id = 5,
         .parent_id = 0,
         .type = NodeType::File,
         .name = intern("/usr/include/stdio.h"),
@@ -449,7 +459,6 @@ TEST_CASE("Index serialization roundtrip", "[e2e][index]")
     cmd_key[0] = std::byte { 0x11 };
     cmd_key[31] = std::byte { 0x99 };
     index.add_command(CommandEntry {
-        .id = cmd_id,
         .dir_id = 0,
         .instruction_pattern = intern("g++ -c %f -o %o"),
         .display = intern("CXX main.cpp"),
@@ -500,12 +509,12 @@ TEST_CASE("Index serialization roundtrip", "[e2e][index]")
 
     auto* file1 = find_file_by_path(restored, "src/main.cpp");
     REQUIRE(file1 != nullptr);
-    REQUIRE(file1->id == 3);
+    REQUIRE(file1 == restored.find_file_by_id(3));
     REQUIRE(file1->size == 1024);
 
     auto* file2 = find_file_by_path(restored, "build/main.o");
     REQUIRE(file2 != nullptr);
-    REQUIRE(file2->id == 4);
+    REQUIRE(file2 == restored.find_file_by_id(4));
     REQUIRE(file2->type == NodeType::Generated);
 
     auto* cmd = restored.find_command_by_id(cmd_id);
@@ -521,7 +530,7 @@ TEST_CASE("Index serialization roundtrip", "[e2e][index]")
 
     auto* header = find_file_by_path(restored, "/usr/include/stdio.h");
     REQUIRE(header != nullptr);
-    REQUIRE(header->id == 5);
+    REQUIRE(header == restored.find_file_by_id(5));
     REQUIRE(header->size == 8192);
 
     auto edges_to_cmd = restored.edges_to(cmd_id);
@@ -541,35 +550,30 @@ TEST_CASE("Index ID contiguity requirement", "[e2e][index]")
     auto index = Index {};
 
     index.add_file(FileEntry {
-        .id = 1,
         .parent_id = 0,
         .type = NodeType::Directory,
         .name = intern("src"),
     });
 
     index.add_file(FileEntry {
-        .id = 2,
         .parent_id = 0,
         .type = NodeType::Directory,
         .name = intern("build"),
     });
 
     index.add_file(FileEntry {
-        .id = 3,
         .parent_id = 0,
         .type = NodeType::Ghost,
         .name = intern("placeholder"),
     });
 
     index.add_file(FileEntry {
-        .id = 4,
         .parent_id = 1,
         .type = NodeType::Directory,
         .name = intern("lib"),
     });
 
     index.add_file(FileEntry {
-        .id = 5,
         .parent_id = 4,
         .type = NodeType::File,
         .name = intern("foo.c"),
@@ -611,8 +615,8 @@ TEST_CASE("A record whose declared layout does not fit the file is refused", "[e
 {
     auto const cmd_id = node_id::make_command(1);
     auto index = Index {};
-    index.add_file(FileEntry { .id = 1, .name = intern("test.c") });
-    index.add_command(CommandEntry { .id = cmd_id, .instruction_pattern = intern("gcc test.c"), .inputs = { 1 } });
+    index.add_file(FileEntry { .name = intern("test.c") });
+    index.add_command(CommandEntry { .instruction_pattern = intern("gcc test.c"), .inputs = { 1 } });
     index.add_edge(EdgeEntry { .from = 1, .to = cmd_id });
 
     auto const data = serialize_index(index);
@@ -673,7 +677,7 @@ TEST_CASE("StringTable overflow handling", "[index]")
         huge_name.resize(65536);
         std::memset(huge_name.data(), 'x', 65536);
 
-        index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = global_pool().intern(huge_name.view()) });
+        index.add_file(FileEntry { .parent_id = 0, .name = global_pool().intern(huge_name.view()) });
 
                 auto result = serialize_index(index);
 
@@ -689,7 +693,7 @@ TEST_CASE("StringTable overflow handling", "[index]")
         max_name.resize(65535);
         std::memset(max_name.data(), 'y', 65535);
 
-        index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = global_pool().intern(max_name.view()) });
+        index.add_file(FileEntry { .parent_id = 0, .name = global_pool().intern(max_name.view()) });
 
                 auto result = serialize_index(index);
 
@@ -704,10 +708,9 @@ TEST_CASE("A command longer than the string table's entry limit is still recorde
     std::memset(oversized.data(), 'c', 70000);
 
     auto index = Index {};
-    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::Directory, .name = intern("dir") });
+    index.add_file(FileEntry { .parent_id = 0, .type = NodeType::Directory, .name = intern("dir") });
     auto cmd_id = node_id::make_command(1);
     index.add_command(CommandEntry {
-        .id = cmd_id,
         .dir_id = 1,
         .instruction_pattern = intern(oversized.view()),
         .display = intern(oversized.view()),
@@ -731,8 +734,8 @@ TEST_CASE("A command longer than the string table's entry limit is still recorde
         std::memset(at_limit.data(), 'e', 65535);
 
         auto exact = Index {};
-        exact.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::Directory, .name = intern("dir") });
-        exact.add_command(CommandEntry { .id = cmd_id, .dir_id = 1, .instruction_pattern = intern(at_limit.view()) });
+        exact.add_file(FileEntry { .parent_id = 0, .type = NodeType::Directory, .name = intern("dir") });
+        exact.add_command(CommandEntry { .dir_id = 1, .instruction_pattern = intern(at_limit.view()) });
 
         auto exact_path = pup::test::temp_path("pup_at_limit_command_test").string();
         REQUIRE(write_index(exact_path, exact).has_value());
@@ -766,9 +769,8 @@ TEST_CASE("An environment longer than the string table's entry limit fails the r
     std::memset(oversized.data(), 'v', 70000);
 
     auto index = Index {};
-    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::Directory, .name = intern("dir") });
+    index.add_file(FileEntry { .parent_id = 0, .type = NodeType::Directory, .name = intern("dir") });
     index.add_command(CommandEntry {
-        .id = node_id::make_command(1),
         .dir_id = 1,
         .instruction_pattern = intern("cc %f"),
         .env = intern(oversized.view()),
@@ -790,18 +792,17 @@ TEST_CASE("A command with more than 255 operands records all of them", "[index]"
     for (auto i = std::size_t { 0 }; i < OPERANDS; ++i) {
         auto in_name = Buf {};
         in_name.fmt("in_{}.c", i);
-        index.add_file(FileEntry { .id = static_cast<NodeId>(index.files().size() + 1), .parent_id = 0, .name = intern(in_name.view()) });
+        index.add_file(FileEntry { .parent_id = 0, .name = intern(in_name.view()) });
         inputs.push_back(static_cast<NodeId>(index.files().size()));
 
         auto out_name = Buf {};
         out_name.fmt("out_{}.o", i);
-        index.add_file(FileEntry { .id = static_cast<NodeId>(index.files().size() + 1), .parent_id = 0, .type = NodeType::Generated, .name = intern(out_name.view()) });
+        index.add_file(FileEntry { .parent_id = 0, .type = NodeType::Generated, .name = intern(out_name.view()) });
         outputs.push_back(static_cast<NodeId>(index.files().size()));
     }
 
     auto cmd_id = node_id::make_command(1);
     index.add_command(CommandEntry {
-        .id = cmd_id,
         .instruction_pattern = intern("cc %f -o %o"),
         .inputs = inputs,
         .outputs = outputs,
@@ -827,7 +828,7 @@ TEST_CASE("A command's operand tokens survive the record", "[index]")
     for (auto i = 1; i <= 5; ++i) {
         auto name = Buf {};
         name.fmt("f{}.c", i);
-        index.add_file(FileEntry { .id = static_cast<NodeId>(i), .parent_id = 0, .name = intern(name.view()) });
+        index.add_file(FileEntry { .parent_id = 0, .name = intern(name.view()) });
     }
 
     auto const inputs = pup::TokenList<NodeId>::grouped(
@@ -843,7 +844,6 @@ TEST_CASE("A command's operand tokens survive the record", "[index]")
 
     auto cmd_id = node_id::make_command(1);
     index.add_command(CommandEntry {
-        .id = cmd_id,
         .instruction_pattern = intern("cc %2f -o %2o %i"),
         .inputs = inputs,
         .order_only_inputs = order_only_inputs,
@@ -879,9 +879,9 @@ TEST_CASE("StringTable deduplication", "[index]")
     {
         auto index = Index {};
 
-        index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = intern("main.cpp") });
-        index.add_file(FileEntry { .id = 2, .parent_id = 0, .name = intern("main.cpp") });
-        index.add_file(FileEntry { .id = 3, .parent_id = 0, .name = intern("main.cpp") });
+        index.add_file(FileEntry { .parent_id = 0, .name = intern("main.cpp") });
+        index.add_file(FileEntry { .parent_id = 0, .name = intern("main.cpp") });
+        index.add_file(FileEntry { .parent_id = 0, .name = intern("main.cpp") });
 
                 auto data = serialize_index(index);
         REQUIRE(data.has_value());
@@ -894,8 +894,8 @@ TEST_CASE("StringTable deduplication", "[index]")
     {
         auto index = Index {};
 
-        index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = intern("/usr/include/stdio.h") });
-        index.add_file(FileEntry { .id = 2, .parent_id = 0, .name = intern("/usr/include/stdio.h") });
+        index.add_file(FileEntry { .parent_id = 0, .name = intern("/usr/include/stdio.h") });
+        index.add_file(FileEntry { .parent_id = 0, .name = intern("/usr/include/stdio.h") });
 
                 auto data = serialize_index(index);
         REQUIRE(data.has_value());
@@ -908,8 +908,8 @@ TEST_CASE("StringTable deduplication", "[index]")
     {
         auto index = Index {};
 
-        index.add_command(CommandEntry { .id = node_id::make_command(1), .instruction_pattern = intern("gcc"), .display = intern(""), .env = intern("") });
-        index.add_command(CommandEntry { .id = node_id::make_command(2), .instruction_pattern = intern("gcc"), .display = intern(""), .env = intern("") });
+        index.add_command(CommandEntry { .instruction_pattern = intern("gcc"), .display = intern(""), .env = intern("") });
+        index.add_command(CommandEntry { .instruction_pattern = intern("gcc"), .display = intern(""), .env = intern("") });
 
                 auto data = serialize_index(index);
         REQUIRE(data.has_value());
@@ -923,17 +923,16 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
 {
     auto index = Index {};
 
-    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::Directory, .name = intern("src") });
-    index.add_file(FileEntry { .id = 2, .parent_id = 0, .type = NodeType::Directory, .name = intern("build") });
-    index.add_file(FileEntry { .id = 3, .parent_id = 1, .type = NodeType::File, .name = intern("main.cpp") });
-    index.add_file(FileEntry { .id = 4, .parent_id = 2, .type = NodeType::Generated, .name = intern("main.o") });
+    index.add_file(FileEntry { .parent_id = 0, .type = NodeType::Directory, .name = intern("src") });
+    index.add_file(FileEntry { .parent_id = 0, .type = NodeType::Directory, .name = intern("build") });
+    index.add_file(FileEntry { .parent_id = 1, .type = NodeType::File, .name = intern("main.cpp") });
+    index.add_file(FileEntry { .parent_id = 2, .type = NodeType::Generated, .name = intern("main.o") });
 
     index.compute_paths();
 
     SECTION("get_command_string with %f and %o")
     {
         auto cmd = CommandEntry {
-            .id = node_id::make_command(1),
             .instruction_pattern = intern("g++ -c %f -o %o"),
             .inputs = { 3 },
             .outputs = { 4 },
@@ -946,11 +945,10 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
 
     SECTION("get_command_string with %o covering multiple outputs")
     {
-        index.add_file(FileEntry { .id = 5, .parent_id = 2, .type = NodeType::Generated, .name = intern("main.d") });
+        index.add_file(FileEntry { .parent_id = 2, .type = NodeType::Generated, .name = intern("main.d") });
         index.compute_paths();
 
         auto cmd = CommandEntry {
-            .id = node_id::make_command(1),
             .instruction_pattern = intern("g++ -c %f -o %o"),
             .inputs = { 3 },
             .outputs = { 4, 5 },
@@ -964,7 +962,6 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
     SECTION("get_command_string with %b (basename)")
     {
         auto cmd = CommandEntry {
-            .id = node_id::make_command(1),
             .instruction_pattern = intern("echo %b"),
             .inputs = { 3 },
             .outputs = {},
@@ -978,7 +975,6 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
     SECTION("get_command_string with %B (basename without extension)")
     {
         auto cmd = CommandEntry {
-            .id = node_id::make_command(1),
             .instruction_pattern = intern("echo %B"),
             .inputs = { 3 },
             .outputs = {},
@@ -992,7 +988,6 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
     SECTION("get_command_string with %e (extension)")
     {
         auto cmd = CommandEntry {
-            .id = node_id::make_command(1),
             .instruction_pattern = intern("echo %e"),
             .inputs = { 3 },
             .outputs = {},
@@ -1005,11 +1000,10 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
 
     SECTION("get_command_string with multiple inputs")
     {
-        index.add_file(FileEntry { .id = 5, .parent_id = 1, .type = NodeType::File, .name = intern("util.cpp") });
+        index.add_file(FileEntry { .parent_id = 1, .type = NodeType::File, .name = intern("util.cpp") });
         index.compute_paths();
 
         auto cmd = CommandEntry {
-            .id = node_id::make_command(1),
             .instruction_pattern = intern("g++ -c %f -o %o"),
             .inputs = { 3, 5 },
             .outputs = { 4 },
@@ -1023,7 +1017,6 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
     SECTION("get_command_string with %O names the one output without its extension")
     {
         auto cmd = CommandEntry {
-            .id = node_id::make_command(1),
             .instruction_pattern = intern("link %f -o %O"),
             .inputs = { 3 },
             .outputs = { 4 },
@@ -1036,11 +1029,10 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
 
     SECTION("get_command_string with %O expands to nothing when a rule declares two outputs")
     {
-        index.add_file(FileEntry { .id = 5, .parent_id = 2, .type = NodeType::Generated, .name = intern("main.d") });
+        index.add_file(FileEntry { .parent_id = 2, .type = NodeType::Generated, .name = intern("main.d") });
         index.compute_paths();
 
         auto cmd = CommandEntry {
-            .id = node_id::make_command(1),
             .instruction_pattern = intern("link %f -o %O"),
             .inputs = { 3 },
             .outputs = { 4, 5 },
@@ -1053,11 +1045,10 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
 
     SECTION("get_command_string with %Nf (N-th input)")
     {
-        index.add_file(FileEntry { .id = 5, .parent_id = 1, .type = NodeType::File, .name = intern("util.cpp") });
+        index.add_file(FileEntry { .parent_id = 1, .type = NodeType::File, .name = intern("util.cpp") });
         index.compute_paths();
 
         auto cmd = CommandEntry {
-            .id = node_id::make_command(1),
             .instruction_pattern = intern("echo %1f %2f"),
             .inputs = { 3, 5 },
             .outputs = {},
@@ -1071,7 +1062,6 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
     SECTION("get_command_string with %% escape")
     {
         auto cmd = CommandEntry {
-            .id = node_id::make_command(1),
             .instruction_pattern = intern("echo 100%%"),
             .inputs = {},
             .outputs = {},
@@ -1085,7 +1075,6 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
     SECTION("get_command_string with empty template")
     {
         auto cmd = CommandEntry {
-            .id = node_id::make_command(1),
             .instruction_pattern = intern(""),
             .inputs = {},
             .outputs = {},
@@ -1101,17 +1090,16 @@ TEST_CASE("v8 cross-directory path relativization", "[index][v8]")
 {
     auto index = Index {};
 
-    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::Directory, .name = intern("lib"), .path = intern("lib") });
-    index.add_file(FileEntry { .id = 2, .parent_id = 0, .type = NodeType::Directory, .name = intern("app"), .path = intern("app") });
-    index.add_file(FileEntry { .id = 3, .parent_id = 1, .type = NodeType::File, .name = intern("foo.c"), .path = intern("lib/foo.c") });
-    index.add_file(FileEntry { .id = 4, .parent_id = 1, .type = NodeType::Generated, .name = intern("foo.o"), .path = intern("lib/foo.o") });
-    index.add_file(FileEntry { .id = 5, .parent_id = 2, .type = NodeType::File, .name = intern("main.c"), .path = intern("app/main.c") });
-    index.add_file(FileEntry { .id = 6, .parent_id = 2, .type = NodeType::Generated, .name = intern("app"), .path = intern("app/app") });
+    index.add_file(FileEntry { .parent_id = 0, .type = NodeType::Directory, .name = intern("lib"), .path = intern("lib") });
+    index.add_file(FileEntry { .parent_id = 0, .type = NodeType::Directory, .name = intern("app"), .path = intern("app") });
+    index.add_file(FileEntry { .parent_id = 1, .type = NodeType::File, .name = intern("foo.c"), .path = intern("lib/foo.c") });
+    index.add_file(FileEntry { .parent_id = 1, .type = NodeType::Generated, .name = intern("foo.o"), .path = intern("lib/foo.o") });
+    index.add_file(FileEntry { .parent_id = 2, .type = NodeType::File, .name = intern("main.c"), .path = intern("app/main.c") });
+    index.add_file(FileEntry { .parent_id = 2, .type = NodeType::Generated, .name = intern("app"), .path = intern("app/app") });
 
     SECTION("command in subdirectory referencing sibling directory")
     {
         auto cmd = CommandEntry {
-            .id = node_id::make_command(1),
             .dir_id = 2,
             .instruction_pattern = intern("gcc %f -o %o"),
             .inputs = { 5, 4 },
@@ -1126,7 +1114,6 @@ TEST_CASE("v8 cross-directory path relativization", "[index][v8]")
     SECTION("command in root referencing subdirectory files")
     {
         auto cmd = CommandEntry {
-            .id = node_id::make_command(1),
             .dir_id = 0,
             .instruction_pattern = intern("gcc %f -o %o"),
             .inputs = { 5, 4 },
@@ -1141,7 +1128,6 @@ TEST_CASE("v8 cross-directory path relativization", "[index][v8]")
     SECTION("command in subdirectory with same-directory files")
     {
         auto cmd = CommandEntry {
-            .id = node_id::make_command(1),
             .dir_id = 1,
             .instruction_pattern = intern("gcc -c %f -o %o"),
             .inputs = { 3 },
@@ -1158,20 +1144,18 @@ TEST_CASE("v8 build_command_lookup", "[index][v8]")
 {
     auto index = Index {};
 
-    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::File, .name = intern("foo.c") });
-    index.add_file(FileEntry { .id = 2, .parent_id = 0, .type = NodeType::Generated, .name = intern("foo.o") });
-    index.add_file(FileEntry { .id = 3, .parent_id = 0, .type = NodeType::File, .name = intern("bar.c") });
-    index.add_file(FileEntry { .id = 4, .parent_id = 0, .type = NodeType::Generated, .name = intern("bar.o") });
+    index.add_file(FileEntry { .parent_id = 0, .type = NodeType::File, .name = intern("foo.c") });
+    index.add_file(FileEntry { .parent_id = 0, .type = NodeType::Generated, .name = intern("foo.o") });
+    index.add_file(FileEntry { .parent_id = 0, .type = NodeType::File, .name = intern("bar.c") });
+    index.add_file(FileEntry { .parent_id = 0, .type = NodeType::Generated, .name = intern("bar.o") });
     index.compute_paths();
 
     index.add_command(CommandEntry {
-        .id = node_id::make_command(1),
         .instruction_pattern = intern("gcc -c %f -o %o"),
         .inputs = { 1 },
         .outputs = { 2 },
     });
     index.add_command(CommandEntry {
-        .id = node_id::make_command(2),
         .instruction_pattern = intern("gcc -c %f -o %o"),
         .inputs = { 3 },
         .outputs = { 4 },
@@ -1187,11 +1171,11 @@ TEST_CASE("v8 build_command_lookup", "[index][v8]")
 
         auto const* cmd1 = lookup.at("gcc -c foo.c -o foo.o");
         REQUIRE(cmd1 != nullptr);
-        REQUIRE(cmd1->id == node_id::make_command(1));
+        REQUIRE(cmd1 == index.find_command_by_id(node_id::make_command(1)));
 
         auto const* cmd2 = lookup.at("gcc -c bar.c -o bar.o");
         REQUIRE(cmd2 != nullptr);
-        REQUIRE(cmd2->id == node_id::make_command(2));
+        REQUIRE(cmd2 == index.find_command_by_id(node_id::make_command(2)));
     }
 
     SECTION("same template, different operands")
@@ -1212,34 +1196,31 @@ TEST_CASE("v8 roundtrip with operand sections", "[e2e][index][v8]")
 {
     auto index = Index {};
 
-    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::Directory, .name = intern("src") });
-    index.add_file(FileEntry { .id = 2, .parent_id = 0, .type = NodeType::Directory, .name = intern("build") });
-    index.add_file(FileEntry { .id = 3, .parent_id = 1, .type = NodeType::File, .name = intern("main.cpp") });
-    index.add_file(FileEntry { .id = 4, .parent_id = 1, .type = NodeType::File, .name = intern("util.cpp") });
-    index.add_file(FileEntry { .id = 5, .parent_id = 2, .type = NodeType::Generated, .name = intern("main.o") });
-    index.add_file(FileEntry { .id = 6, .parent_id = 2, .type = NodeType::Generated, .name = intern("util.o") });
-    index.add_file(FileEntry { .id = 7, .parent_id = 2, .type = NodeType::Generated, .name = intern("program") });
+    index.add_file(FileEntry { .parent_id = 0, .type = NodeType::Directory, .name = intern("src") });
+    index.add_file(FileEntry { .parent_id = 0, .type = NodeType::Directory, .name = intern("build") });
+    index.add_file(FileEntry { .parent_id = 1, .type = NodeType::File, .name = intern("main.cpp") });
+    index.add_file(FileEntry { .parent_id = 1, .type = NodeType::File, .name = intern("util.cpp") });
+    index.add_file(FileEntry { .parent_id = 2, .type = NodeType::Generated, .name = intern("main.o") });
+    index.add_file(FileEntry { .parent_id = 2, .type = NodeType::Generated, .name = intern("util.o") });
+    index.add_file(FileEntry { .parent_id = 2, .type = NodeType::Generated, .name = intern("program") });
 
     auto cmd1_id = node_id::make_command(1);
     auto cmd2_id = node_id::make_command(2);
     auto cmd3_id = node_id::make_command(3);
 
     index.add_command(CommandEntry {
-        .id = cmd1_id,
         .instruction_pattern = intern("g++ -c %f -o %o"),
         .display = intern("CXX main.cpp"),
         .inputs = { 3 },
         .outputs = { 5 },
     });
     index.add_command(CommandEntry {
-        .id = cmd2_id,
         .instruction_pattern = intern("g++ -c %f -o %o"),
         .display = intern("CXX util.cpp"),
         .inputs = { 4 },
         .outputs = { 6 },
     });
     index.add_command(CommandEntry {
-        .id = cmd3_id,
         .instruction_pattern = intern("g++ %f -o %o"),
         .display = intern("LD program"),
         .inputs = { 5, 6 },
@@ -1369,28 +1350,6 @@ auto require_graph_index_roundtrip(pup::graph::BuildGraph const& bs, std::string
 
 }
 
-TEST_CASE("serialize_index rejects a non-dense file id sequence", "[index]")
-{
-    auto index = Index {};
-    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::Directory, .name = intern("src") });
-    index.add_file(FileEntry { .id = 3, .parent_id = 1, .type = NodeType::File, .name = intern("a.c") });
-
-    REQUIRE_FALSE(serialize_index(index).has_value());
-}
-
-TEST_CASE("serialize_index rejects a non-dense command id sequence", "[index]")
-{
-    auto index = Index {};
-    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::File, .name = intern("a.c") });
-    index.add_command(CommandEntry {
-        .id = node_id::make_command(2),
-        .dir_id = 0,
-        .instruction_pattern = intern("cc a.c"),
-    });
-
-    REQUIRE_FALSE(serialize_index(index).has_value());
-}
-
 TEST_CASE("graph-to-index roundtrip keeps every node and edge endpoint", "[index]")
 {
     auto bs = pup::graph::make_build_graph();
@@ -1514,13 +1473,13 @@ auto temp_index_path(std::string_view stem) -> std::string
 auto index_with_every_node_type() -> Index
 {
     auto index = Index {};
-    index.add_file(FileEntry { .id = 1, .type = NodeType::Directory, .name = intern("src") });
-    index.add_file(FileEntry { .id = 2, .parent_id = 1, .type = NodeType::File, .name = intern("main.cpp") });
-    index.add_file(FileEntry { .id = 3, .parent_id = 1, .type = NodeType::Generated, .name = intern("main.o") });
-    index.add_file(FileEntry { .id = 4, .type = NodeType::Ghost, .name = intern("missing.h") });
-    index.add_file(FileEntry { .id = 5, .type = NodeType::Group, .name = intern("objs") });
-    index.add_file(FileEntry { .id = 6, .type = NodeType::File, .name = intern("Tupfile") });
-    index.add_file(FileEntry { .id = 7, .parent_id = 1, .type = NodeType::Generated, .name = intern("gen.h") });
+    index.add_file(FileEntry { .type = NodeType::Directory, .name = intern("src") });
+    index.add_file(FileEntry { .parent_id = 1, .type = NodeType::File, .name = intern("main.cpp") });
+    index.add_file(FileEntry { .parent_id = 1, .type = NodeType::Generated, .name = intern("main.o") });
+    index.add_file(FileEntry { .type = NodeType::Ghost, .name = intern("missing.h") });
+    index.add_file(FileEntry { .type = NodeType::Group, .name = intern("objs") });
+    index.add_file(FileEntry { .type = NodeType::File, .name = intern("Tupfile") });
+    index.add_file(FileEntry { .parent_id = 1, .type = NodeType::Generated, .name = intern("gen.h") });
     index.compute_paths();
     return index;
 }
@@ -1542,7 +1501,6 @@ auto random_index(std::uint32_t seed) -> Index
     for (auto i = std::size_t { 0 }; i < count; ++i) {
         auto parent = (i == 0 || rng() % 3 == 0) ? NodeId { 0 } : static_cast<NodeId>(1 + rng() % i);
         index.add_file(FileEntry {
-            .id = static_cast<NodeId>(i + 1),
             .parent_id = parent,
             .type = types[rng() % types.size()],
             .name = (rng() % 8 == 0) ? StringId::Empty : intern("n" + std::to_string(i)),
@@ -1569,7 +1527,7 @@ auto sorted_paths_of_type(Index const& index, NodeType type) -> Vec<StringId>
 TEST_CASE("A record too short to hold a header is damage rather than a format this reader skips", "[index]")
 {
     auto index = Index {};
-    index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = intern("main.c") });
+    index.add_file(FileEntry { .parent_id = 0, .name = intern("main.c") });
 
     auto data = serialize_index(index);
     REQUIRE(data.has_value());
@@ -1588,7 +1546,7 @@ TEST_CASE("A record too short to hold a header is damage rather than a format th
 TEST_CASE("A file that does not carry the index magic is damage", "[index]")
 {
     auto index = Index {};
-    index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = intern("main.c") });
+    index.add_file(FileEntry { .parent_id = 0, .name = intern("main.c") });
 
     auto data = serialize_index(index);
     REQUIRE(data.has_value());
@@ -1609,7 +1567,7 @@ TEST_CASE("A file that does not carry the index magic is damage", "[index]")
 TEST_CASE("A record from a version outside the window is a version mismatch rather than damage", "[index]")
 {
     auto index = Index {};
-    index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = intern("main.c") });
+    index.add_file(FileEntry { .parent_id = 0, .name = intern("main.c") });
 
     auto data = serialize_index(index);
     REQUIRE(data.has_value());
@@ -1628,9 +1586,8 @@ TEST_CASE("A record from a version outside the window is a version mismatch rath
 TEST_CASE("An operand count larger than the record makes it unreadable", "[index]")
 {
     auto index = Index {};
-    index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = intern("main.c") });
-    auto cmd_id = node_id::make_command(1);
-    index.add_command(CommandEntry { .id = cmd_id, .instruction_pattern = intern("cc %f"), .inputs = { 1 } });
+    index.add_file(FileEntry { .parent_id = 0, .name = intern("main.c") });
+    index.add_command(CommandEntry { .instruction_pattern = intern("cc %f"), .inputs = { 1 } });
 
     auto data = serialize_index(index);
     REQUIRE(data.has_value());
@@ -1656,10 +1613,9 @@ TEST_CASE("An operand count larger than the record makes it unreadable", "[index
 TEST_CASE("An operand boundary that does not span its operands makes the record unreadable", "[index]")
 {
     auto index = Index {};
-    index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = intern("main.c") });
-    index.add_file(FileEntry { .id = 2, .parent_id = 0, .name = intern("util.c") });
-    auto cmd_id = node_id::make_command(1);
-    index.add_command(CommandEntry { .id = cmd_id, .instruction_pattern = intern("cc %f"), .inputs = { 1, 2 } });
+    index.add_file(FileEntry { .parent_id = 0, .name = intern("main.c") });
+    index.add_file(FileEntry { .parent_id = 0, .name = intern("util.c") });
+    index.add_command(CommandEntry { .instruction_pattern = intern("cc %f"), .inputs = { 1, 2 } });
 
     auto data = serialize_index(index);
     REQUIRE(data.has_value());
@@ -1693,9 +1649,8 @@ static_assert(offsetof(RawFileEntry, size) == 16, "the name wrap test plants its
 TEST_CASE("An operand offset that wraps makes the record unreadable", "[index]")
 {
     auto index = Index {};
-    index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = intern("main.c") });
-    auto cmd_id = node_id::make_command(1);
-    index.add_command(CommandEntry { .id = cmd_id, .instruction_pattern = intern("cc %f"), .inputs = { 1 } });
+    index.add_file(FileEntry { .parent_id = 0, .name = intern("main.c") });
+    index.add_command(CommandEntry { .instruction_pattern = intern("cc %f"), .inputs = { 1 } });
 
     auto data = serialize_index(index);
     REQUIRE(data.has_value());
@@ -1724,7 +1679,7 @@ TEST_CASE("An operand offset that wraps makes the record unreadable", "[index]")
 TEST_CASE("A name offset that wraps makes the record unreadable", "[index]")
 {
     auto index = Index {};
-    index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = intern("main.c") });
+    index.add_file(FileEntry { .parent_id = 0, .name = intern("main.c") });
 
     auto data = serialize_index(index);
     REQUIRE(data.has_value());
@@ -1763,7 +1718,7 @@ TEST_CASE("A name offset that wraps makes the record unreadable", "[index]")
 TEST_CASE("A record whose entry carries a type this putup cannot name is unreadable", "[index]")
 {
     auto index = Index {};
-    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::File, .name = intern("main.c") });
+    index.add_file(FileEntry { .parent_id = 0, .type = NodeType::File, .name = intern("main.c") });
 
     auto data = serialize_index(index);
     REQUIRE(data.has_value());
@@ -1800,7 +1755,7 @@ TEST_CASE("A record whose entry carries a node type no record ever held is unrea
     INFO("type byte " << static_cast<int>(never_recorded));
 
     auto index = Index {};
-    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::File, .name = intern("main.c") });
+    index.add_file(FileEntry { .parent_id = 0, .type = NodeType::File, .name = intern("main.c") });
 
     auto data = serialize_index(index);
     REQUIRE(data.has_value());
@@ -1828,8 +1783,8 @@ TEST_CASE("A record whose entry carries a node type no record ever held is unrea
 TEST_CASE("A record whose edge carries a link type this putup cannot name is unreadable", "[index]")
 {
     auto index = Index {};
-    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::File, .name = intern("main.c") });
-    index.add_file(FileEntry { .id = 2, .parent_id = 0, .type = NodeType::Generated, .name = intern("main.o") });
+    index.add_file(FileEntry { .parent_id = 0, .type = NodeType::File, .name = intern("main.c") });
+    index.add_file(FileEntry { .parent_id = 0, .type = NodeType::Generated, .name = intern("main.o") });
     index.add_edge(EdgeEntry { .from = 1, .to = 2, .type = LinkType::Normal });
 
     auto data = serialize_index(index);
@@ -1859,8 +1814,8 @@ TEST_CASE("A record whose edge carries a link type this putup cannot name is unr
 TEST_CASE("A record whose edge carries link type zero is unreadable", "[index]")
 {
     auto index = Index {};
-    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::File, .name = intern("main.c") });
-    index.add_file(FileEntry { .id = 2, .parent_id = 0, .type = NodeType::Generated, .name = intern("main.o") });
+    index.add_file(FileEntry { .parent_id = 0, .type = NodeType::File, .name = intern("main.c") });
+    index.add_file(FileEntry { .parent_id = 0, .type = NodeType::Generated, .name = intern("main.o") });
     index.add_edge(EdgeEntry { .from = 1, .to = 2, .type = LinkType::Normal });
 
     auto data = serialize_index(index);
@@ -1886,7 +1841,7 @@ TEST_CASE("A record whose edge carries link type zero is unreadable", "[index]")
 TEST_CASE("A record whose entry carries a flag bit this putup cannot name is unreadable", "[index]")
 {
     auto index = Index {};
-    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::File, .name = intern("main.c") });
+    index.add_file(FileEntry { .parent_id = 0, .type = NodeType::File, .name = intern("main.c") });
 
     auto data = serialize_index(index);
     REQUIRE(data.has_value());
@@ -1913,7 +1868,7 @@ TEST_CASE("A record whose entry carries a flag bit this putup cannot name is unr
 TEST_CASE("A record carrying a flag bit retired since it was written stays readable", "[index]")
 {
     auto index = Index {};
-    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::File, .name = intern("main.c") });
+    index.add_file(FileEntry { .parent_id = 0, .type = NodeType::File, .name = intern("main.c") });
 
     auto data = serialize_index(index);
     REQUIRE(data.has_value());
@@ -1934,10 +1889,10 @@ TEST_CASE("A record carrying a flag bit retired since it was written stays reada
 TEST_CASE("A record whose command carries a flag bit this putup cannot name is unreadable", "[index]")
 {
     auto index = Index {};
-    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::File, .name = intern("main.c") });
-    index.add_file(FileEntry { .id = 2, .parent_id = 0, .type = NodeType::Generated, .name = intern("main.o") });
+    index.add_file(FileEntry { .parent_id = 0, .type = NodeType::File, .name = intern("main.c") });
+    index.add_file(FileEntry { .parent_id = 0, .type = NodeType::Generated, .name = intern("main.o") });
     index.add_command(CommandEntry {
-        .id = node_id::make_command(1), .instruction_pattern = intern("cc %f"), .inputs = { 1 }, .outputs = { 2 } });
+        .instruction_pattern = intern("cc %f"), .inputs = { 1 }, .outputs = { 2 } });
 
     auto data = serialize_index(index);
     REQUIRE(data.has_value());
@@ -1964,10 +1919,9 @@ TEST_CASE("A record whose command carries a flag bit this putup cannot name is u
 TEST_CASE("A corrupt operand record still leaves the recorded paths readable", "[index]")
 {
     auto index = Index {};
-    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::File, .name = intern("main.c") });
-    index.add_file(FileEntry { .id = 2, .parent_id = 0, .type = NodeType::Generated, .name = intern("main.o") });
-    auto cmd_id = node_id::make_command(1);
-    index.add_command(CommandEntry { .id = cmd_id, .instruction_pattern = intern("cc %f"), .inputs = { 1 }, .outputs = { 2 } });
+    index.add_file(FileEntry { .parent_id = 0, .type = NodeType::File, .name = intern("main.c") });
+    index.add_file(FileEntry { .parent_id = 0, .type = NodeType::Generated, .name = intern("main.o") });
+    index.add_command(CommandEntry { .instruction_pattern = intern("cc %f"), .inputs = { 1 }, .outputs = { 2 } });
 
     auto data = serialize_index(index);
     REQUIRE(data.has_value());
@@ -1997,9 +1951,9 @@ TEST_CASE("A corrupt operand record still leaves the recorded paths readable", "
 TEST_CASE("An empty recorded string is a value rather than a failure", "[index]")
 {
     auto index = Index {};
-    index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = intern("main.c") });
+    index.add_file(FileEntry { .parent_id = 0, .name = intern("main.c") });
     auto cmd_id = node_id::make_command(1);
-    index.add_command(CommandEntry { .id = cmd_id, .instruction_pattern = intern("cc %f"), .display = StringId::Empty, .env = StringId::Empty, .inputs = { 1 } });
+    index.add_command(CommandEntry { .instruction_pattern = intern("cc %f"), .display = StringId::Empty, .env = StringId::Empty, .inputs = { 1 } });
 
     auto data = serialize_index(index);
     REQUIRE(data.has_value());
@@ -2061,9 +2015,9 @@ TEST_CASE("A record that classifies one path two ways is unreadable", "[index]")
     for (auto const& [first, second] : pairs) {
         INFO("types=" << static_cast<int>(first) << "," << static_cast<int>(second));
         auto index = Index {};
-        index.add_file(FileEntry { .id = 1, .type = NodeType::Directory, .name = intern("src") });
-        index.add_file(FileEntry { .id = 2, .parent_id = 1, .type = first, .name = intern("both.txt") });
-        index.add_file(FileEntry { .id = 3, .parent_id = 1, .type = second, .name = intern("both.txt") });
+        index.add_file(FileEntry { .type = NodeType::Directory, .name = intern("src") });
+        index.add_file(FileEntry { .parent_id = 1, .type = first, .name = intern("both.txt") });
+        index.add_file(FileEntry { .parent_id = 1, .type = second, .name = intern("both.txt") });
         index.compute_paths();
 
         auto const recovered = prior_paths(index);
@@ -2083,9 +2037,9 @@ TEST_CASE("A record that names one path twice with one type is unreadable", "[in
     for (auto const type : { NodeType::File, NodeType::Generated, NodeType::Ghost }) {
         INFO("type=" << static_cast<int>(type));
         auto index = Index {};
-        index.add_file(FileEntry { .id = 1, .type = NodeType::Directory, .name = intern("src") });
-        index.add_file(FileEntry { .id = 2, .parent_id = 1, .type = type, .name = intern("twice.txt") });
-        index.add_file(FileEntry { .id = 3, .parent_id = 1, .type = type, .name = intern("twice.txt") });
+        index.add_file(FileEntry { .type = NodeType::Directory, .name = intern("src") });
+        index.add_file(FileEntry { .parent_id = 1, .type = type, .name = intern("twice.txt") });
+        index.add_file(FileEntry { .parent_id = 1, .type = type, .name = intern("twice.txt") });
         index.compute_paths();
 
         auto const recovered = prior_paths(index);
@@ -2103,10 +2057,10 @@ TEST_CASE("A record that names one path twice with one type is unreadable", "[in
 TEST_CASE("A record that names one path once in each of two directories is readable", "[index]")
 {
     auto index = Index {};
-    index.add_file(FileEntry { .id = 1, .type = NodeType::Directory, .name = intern("a") });
-    index.add_file(FileEntry { .id = 2, .type = NodeType::Directory, .name = intern("build") });
-    index.add_file(FileEntry { .id = 3, .parent_id = 1, .type = NodeType::File, .name = intern("bar.txt") });
-    index.add_file(FileEntry { .id = 4, .parent_id = 2, .type = NodeType::Generated, .name = intern("bar.txt") });
+    index.add_file(FileEntry { .type = NodeType::Directory, .name = intern("a") });
+    index.add_file(FileEntry { .type = NodeType::Directory, .name = intern("build") });
+    index.add_file(FileEntry { .parent_id = 1, .type = NodeType::File, .name = intern("bar.txt") });
+    index.add_file(FileEntry { .parent_id = 2, .type = NodeType::Generated, .name = intern("bar.txt") });
     index.compute_paths();
 
     auto const recovered = prior_paths(index);
@@ -2284,17 +2238,17 @@ TEST_CASE("Recording an index entry registers its path exactly when it has one",
     auto const dir = intern("funnel/dir");
     auto const file = intern("funnel/dir/a.c");
 
-    pup::cli::record_file_entry(index, map, FileEntry { .id = NodeId { 1 }, .type = NodeType::Directory, .path = dir });
-    pup::cli::record_file_entry(index, map, FileEntry { .id = NodeId { 2 }, .type = NodeType::Variable, .path = StringId::Empty });
-    pup::cli::record_file_entry(index, map, FileEntry { .id = NodeId { 3 }, .type = NodeType::File, .path = file });
+    auto const dir_id = pup::cli::record_file_entry(index, map, FileEntry { .type = NodeType::Directory, .path = dir });
+    auto const variable_id = pup::cli::record_file_entry(index, map, FileEntry { .type = NodeType::Variable, .path = StringId::Empty });
+    auto const file_id = pup::cli::record_file_entry(index, map, FileEntry { .type = NodeType::File, .path = file });
 
     REQUIRE(index.files().size() == 3);
-    REQUIRE(index.files()[0].id == NodeId { 1 });
-    REQUIRE(index.files()[1].id == NodeId { 2 });
-    REQUIRE(index.files()[2].id == NodeId { 3 });
+    REQUIRE(dir_id == NodeId { 1 });
+    REQUIRE(variable_id == NodeId { 2 });
+    REQUIRE(file_id == NodeId { 3 });
     REQUIRE(map.entries.size() == 2);
-    REQUIRE(map.find(dir) == NodeId { 1 });
-    REQUIRE(map.find(file) == NodeId { 3 });
+    REQUIRE(map.find(dir) == dir_id);
+    REQUIRE(map.find(file) == file_id);
     REQUIRE_FALSE(map.find(StringId::Empty).has_value());
 }
 
@@ -2304,8 +2258,8 @@ TEST_CASE("Recording a second index entry at one path", "[.][index-abort]")
     auto map = pup::cli::PathIdMap {};
     auto const twin = intern("funnel/twin");
 
-    pup::cli::record_file_entry(index, map, FileEntry { .id = NodeId { 1 }, .type = NodeType::Directory, .path = twin });
-    pup::cli::record_file_entry(index, map, FileEntry { .id = NodeId { 2 }, .type = NodeType::Directory, .path = twin });
+    pup::cli::record_file_entry(index, map, FileEntry { .type = NodeType::Directory, .path = twin });
+    pup::cli::record_file_entry(index, map, FileEntry { .type = NodeType::Directory, .path = twin });
 }
 
 TEST_CASE("Recording a second index entry at one path stops the process and names the path", "[index][e2e]")
@@ -2351,14 +2305,14 @@ SCENARIO("A recorded command and a graph command expand a template the same way"
         REQUIRE(noext.has_value());
 
         auto index = index::Index {};
-        index.add_file(index::FileEntry { .id = 1, .parent_id = 0, .type = NodeType::Directory, .name = intern("src") });
-        index.add_file(index::FileEntry { .id = 2, .parent_id = 0, .type = NodeType::Directory, .name = intern("build") });
-        index.add_file(index::FileEntry { .id = 3, .parent_id = 1, .type = NodeType::File, .name = intern("foo.c") });
-        index.add_file(index::FileEntry { .id = 4, .parent_id = 1, .type = NodeType::File, .name = intern("bar.c") });
-        index.add_file(index::FileEntry { .id = 5, .parent_id = 1, .type = NodeType::File, .name = intern(".bashrc") });
-        index.add_file(index::FileEntry { .id = 6, .parent_id = 2, .type = NodeType::Generated, .name = intern("foo.o") });
-        index.add_file(index::FileEntry { .id = 7, .parent_id = 2, .type = NodeType::Generated, .name = intern("foo.d") });
-        index.add_file(index::FileEntry { .id = 8, .parent_id = 2, .type = NodeType::Generated, .name = intern("image") });
+        index.add_file(index::FileEntry { .parent_id = 0, .type = NodeType::Directory, .name = intern("src") });
+        index.add_file(index::FileEntry { .parent_id = 0, .type = NodeType::Directory, .name = intern("build") });
+        index.add_file(index::FileEntry { .parent_id = 1, .type = NodeType::File, .name = intern("foo.c") });
+        index.add_file(index::FileEntry { .parent_id = 1, .type = NodeType::File, .name = intern("bar.c") });
+        index.add_file(index::FileEntry { .parent_id = 1, .type = NodeType::File, .name = intern(".bashrc") });
+        index.add_file(index::FileEntry { .parent_id = 2, .type = NodeType::Generated, .name = intern("foo.o") });
+        index.add_file(index::FileEntry { .parent_id = 2, .type = NodeType::Generated, .name = intern("foo.d") });
+        index.add_file(index::FileEntry { .parent_id = 2, .type = NodeType::Generated, .name = intern("image") });
         index.compute_paths();
 
         struct Operands {
@@ -2466,7 +2420,6 @@ SCENARIO("A recorded command and a graph command expand a template the same way"
                     REQUIRE(cmd_id.has_value());
 
                     auto record = index::CommandEntry {
-                        .id = cmd_id->id(),
                         .dir_id = operands.dir_id,
                         .instruction_pattern = render_instruction(pup::test::instruction(tmpl)),
                     };

@@ -41,7 +41,8 @@ struct PathIdMap {
 /// Add `entry` to the index being built and register its path, if it has one. The writer's only
 /// route to `Index::add_file`: a producer cannot add an entry without the registration decision
 /// being made here. A path already registered is a defect in the producer, and aborts.
-auto record_file_entry(index::Index& index, PathIdMap& path_to_id, index::FileEntry entry) -> void;
+/// @return The id the entry now has in the index
+auto record_file_entry(index::Index& index, PathIdMap& path_to_id, index::FileEntry entry) -> NodeId;
 
 /// The state a build may not restate. A file this build neither examined nor produced keeps what
 /// the last build that looked at it recorded: stamping a fresh stat instead asserts a currency

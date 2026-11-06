@@ -67,13 +67,15 @@ auto PathIdMap::insert(StringId path, NodeId id) -> bool
     return true;
 }
 
-auto record_file_entry(index::Index& index, PathIdMap& path_to_id, index::FileEntry entry) -> void
+auto record_file_entry(index::Index& index, PathIdMap& path_to_id, index::FileEntry entry) -> NodeId
 {
-    if (!is_empty(entry.path) && !path_to_id.insert(entry.path, entry.id)) {
-        eprint("fatal: index entry for '{}' recorded twice\n", global_pool().get(entry.path));
+    auto const path = entry.path;
+    auto const id = index.add_file(std::move(entry));
+    if (!is_empty(path) && !path_to_id.insert(path, id)) {
+        eprint("fatal: index entry for '{}' recorded twice\n", global_pool().get(path));
         std::abort();
     }
-    index.add_file(std::move(entry));
+    return id;
 }
 
 namespace {
@@ -198,14 +200,14 @@ auto collect_scope_crossing_inputs(
     auto result = Vec<StringId> {};
 
     auto in_scope_cmds = pup::NodeIdMap32 {};
-    for (auto const& cmd : index.commands()) {
-        auto const* dir_file = index.find_file_by_id(cmd.dir_id);
+    for (auto i = std::size_t { 0 }; i < index.commands().size(); ++i) {
+        auto const* dir_file = index.find_file_by_id(index.commands()[i].dir_id);
         if (!dir_file) {
             continue;
         }
         auto dir_path = pool.get(dir_file->path);
         if (pup::is_path_in_any_scope(dir_path, scopes)) {
-            in_scope_cmds.set(cmd.id, 1);
+            in_scope_cmds.set(pup::index::Index::command_id(i), 1);
         }
     }
 
@@ -402,7 +404,6 @@ auto find_changed_files_with_implicit(
 struct ImplicitDepContext {
     pup::index::Index& index;
     PathIdMap& path_to_id;
-    pup::NodeId& next_id;
     pup::NodeIdPairSet& added_edges;
     std::string_view source_root;
     std::string_view output_root;
@@ -456,9 +457,7 @@ auto get_or_create_dir(
     }
 
     if (pup::path::is_root(path_str)) {
-        auto dir_id = ctx.next_id++;
         auto entry = pup::index::FileEntry {
-            .id = dir_id,
             .parent_id = pup::NodeId { 0 },
             .src_id = 0,
             .type = pup::NodeType::Directory,
@@ -469,16 +468,13 @@ auto get_or_create_dir(
             .mtime_ns = 0,
             .content_hash = {},
         };
-        record_file_entry(ctx.index, ctx.path_to_id, std::move(entry));
-        return dir_id;
+        return record_file_entry(ctx.index, ctx.path_to_id, std::move(entry));
     }
 
     auto parent_path = pup::path::parent(path_str);
     auto parent_id = get_or_create_dir(ctx, parent_path);
 
-    auto dir_id = ctx.next_id++;
     auto entry = pup::index::FileEntry {
-        .id = dir_id,
         .parent_id = parent_id,
         .src_id = 0,
         .type = pup::NodeType::Directory,
@@ -489,8 +485,7 @@ auto get_or_create_dir(
         .mtime_ns = 0,
         .content_hash = {},
     };
-    record_file_entry(ctx.index, ctx.path_to_id, std::move(entry));
-    return dir_id;
+    return record_file_entry(ctx.index, ctx.path_to_id, std::move(entry));
 }
 
 struct RecordedContent {
@@ -552,10 +547,7 @@ auto create_implicit_file(
     auto parent_dir = pup::path::parent(rel_sv);
     auto parent_id = get_or_create_dir(ctx, parent_dir);
 
-    auto file_id = ctx.next_id++;
-
     auto entry = pup::index::FileEntry {
-        .id = file_id,
         .parent_id = parent_id,
         .src_id = 0,
         .type = type,
@@ -566,8 +558,7 @@ auto create_implicit_file(
         .mtime_ns = mtime_ns,
         .content_hash = content_hash,
     };
-    record_file_entry(ctx.index, ctx.path_to_id, std::move(entry));
-    return file_id;
+    return record_file_entry(ctx.index, ctx.path_to_id, std::move(entry));
 }
 
 }
@@ -608,6 +599,13 @@ auto serialize_graph_nodes(
 
     for (auto id : pup::graph::file_ids(g)) {
         auto type = pup::graph::get<pup::NodeType>(g, id);
+        auto record = [&index, &path_to_id, id](pup::index::FileEntry entry) -> void {
+            auto const index_id = record_file_entry(index, path_to_id, std::move(entry));
+            if (index_id != id.id()) {
+                eprint("fatal: graph file {} recorded as index file {}\n", id.id(), index_id);
+                std::abort();
+            }
+        };
 
         switch (type) {
         case pup::NodeType::File:
@@ -615,7 +613,6 @@ auto serialize_graph_nodes(
             auto node_path = pup::graph::get_full_path(g, id, state.path_cache);
             if (node_path.empty()) {
                 auto entry = pup::index::FileEntry {
-                    .id = id.id(),
                     .parent_id = pup::graph::get_parent_dir(g, id).id(),
                     .src_id = 0,
                     .type = type,
@@ -626,7 +623,7 @@ auto serialize_graph_nodes(
                     .mtime_ns = 0,
                     .content_hash = {},
                 };
-                record_file_entry(index, path_to_id, std::move(entry));
+                record(std::move(entry));
                 break;
             }
 
@@ -678,7 +675,6 @@ auto serialize_graph_nodes(
                 ? pup::NodeFlags::AbsenceRouted
                 : pup::NodeFlags::None;
             auto entry = pup::index::FileEntry {
-                .id = id.id(),
                 .parent_id = pup::graph::get_parent_dir(g, id).id(),
                 .src_id = 0,
                 .type = type,
@@ -689,7 +685,7 @@ auto serialize_graph_nodes(
                 .mtime_ns = mtime_ns,
                 .content_hash = content_hash,
             };
-            record_file_entry(index, path_to_id, std::move(entry));
+            record(std::move(entry));
             break;
         }
         case pup::NodeType::Directory:
@@ -698,7 +694,6 @@ auto serialize_graph_nodes(
             auto& pool = pup::global_pool();
 
             auto entry = pup::index::FileEntry {
-                .id = id.id(),
                 .parent_id = pup::graph::get_parent_dir(g, id).id(),
                 .src_id = 0,
                 .type = type,
@@ -709,7 +704,7 @@ auto serialize_graph_nodes(
                 .mtime_ns = 0,
                 .content_hash = {},
             };
-            record_file_entry(index, path_to_id, std::move(entry));
+            record(std::move(entry));
             break;
         }
         case pup::NodeType::Ghost: {
@@ -741,7 +736,6 @@ auto serialize_graph_nodes(
             }
 
             auto entry = pup::index::FileEntry {
-                .id = id.id(),
                 .parent_id = pup::graph::get_parent_dir(g, id).id(),
                 .src_id = 0,
                 .type = recorded_type,
@@ -752,14 +746,13 @@ auto serialize_graph_nodes(
                 .mtime_ns = mtime_ns,
                 .content_hash = content_hash,
             };
-            record_file_entry(index, path_to_id, std::move(entry));
+            record(std::move(entry));
             break;
         }
         case pup::NodeType::Variable:
         case pup::NodeType::Group:
         case pup::NodeType::Root: {
             auto entry = pup::index::FileEntry {
-                .id = id.id(),
                 .parent_id = pup::graph::get_parent_dir(g, id).id(),
                 .src_id = 0,
                 .type = type,
@@ -769,7 +762,7 @@ auto serialize_graph_nodes(
                 .size = 0,
                 .content_hash = (type == pup::NodeType::Variable) ? pup::graph::get<pup::Hash256>(g, id) : pup::Hash256 {},
             };
-            record_file_entry(index, path_to_id, std::move(entry));
+            record(std::move(entry));
             break;
         }
         case pup::NodeType::Command:
@@ -794,7 +787,6 @@ auto serialize_command_nodes(
 {
     auto const& g = state.graph;
     auto remap = pup::NodeIdMap32 {};
-    auto next_position = std::uint32_t { 1 };
     for (auto id : pup::graph::command_ids(g)) {
 
         auto inputs = pup::graph::view<pup::graph::Inputs>(g, id);
@@ -811,7 +803,6 @@ auto serialize_command_nodes(
         }
 
         auto entry = pup::index::CommandEntry {
-            .id = pup::node_id::make_command(next_position),
             .dir_id = dir_id,
             .instruction_pattern = pup::graph::get<pup::graph::InstructionPattern>(g, id),
             .display = pup::graph::get<pup::graph::Display>(g, id),
@@ -823,9 +814,8 @@ auto serialize_command_nodes(
             .order_only_inputs = std::move(order_only_inputs),
             .outputs = std::move(outputs),
         };
-        index.add_command(std::move(entry));
-        remap.set(id.id(), next_position);
-        ++next_position;
+        auto const index_id = index.add_command(std::move(entry));
+        remap.set(id.id(), static_cast<std::uint32_t>(pup::node_id::index(index_id)));
     }
     return remap;
 }
@@ -863,16 +853,6 @@ auto serialize_edges(
 }
 
 namespace {
-
-/// Compute the next available NodeId after all existing nodes.
-auto compute_next_id(pup::graph::BuildGraph const& state) -> pup::NodeId
-{
-    auto max_file_id = pup::NodeId { 0 };
-    for (auto id : pup::graph::file_ids(state.graph)) {
-        max_file_id = std::max(max_file_id, id.id());
-    }
-    return pup::NodeId { max_file_id + 1 };
-}
 
 /// Whether anything the scheduler orders by puts `cmd` after `dep`: walk forward from the file's
 /// producers over the edges the live graph also carries, plus the ordering this build injected
@@ -965,11 +945,8 @@ auto process_implicit_deps(
             };
 
             if (ctx.produced_this_build.contains(dep_id) && !ordered_after_dep(dep_id, cmd_id)) {
-                for (auto& entry : ctx.index.commands()) {
-                    if (entry.id == cmd_id) {
-                        entry.must_rerun = true;
-                        break;
-                    }
+                if (auto* entry = ctx.index.find_command_by_id(cmd_id)) {
+                    entry->must_rerun = true;
                 }
             }
 
@@ -1025,10 +1002,10 @@ auto graph_command_address(pup::graph::BuildGraph const& state, pup::graph::Comm
     return address;
 }
 
-auto index_command_address(pup::index::Index const& idx, pup::index::CommandEntry const& cmd) -> CommandAddress
+auto index_command_address(pup::index::Index const& idx, pup::NodeId cmd_id) -> CommandAddress
 {
-    auto address = CommandAddress { .outputs = {}, .key = cmd.key };
-    for (auto const* edge : idx.edges_from(cmd.id)) {
+    auto address = CommandAddress { .outputs = {}, .key = idx.find_command_by_id(cmd_id)->key };
+    for (auto const* edge : idx.edges_from(cmd_id)) {
         auto const* file = idx.find_file_by_id(edge->to);
         if (file && file->type == pup::NodeType::Generated && !pup::is_empty(file->path)) {
             address.outputs.push_back(file->path);
@@ -1056,13 +1033,14 @@ auto graph_command_lookup(pup::graph::BuildGraph const& state) -> CommandLookup
 auto index_command_lookup(pup::index::Index const& idx) -> CommandLookup
 {
     auto lookup = CommandLookup {};
-    for (auto const& cmd : idx.commands()) {
-        auto address = index_command_address(idx, cmd);
+    for (auto i = std::size_t { 0 }; i < idx.commands().size(); ++i) {
+        auto const cmd_id = pup::index::Index::command_id(i);
+        auto address = index_command_address(idx, cmd_id);
         for (auto path : address.outputs) {
-            lookup.by_output.emplace_back(path, cmd.id);
+            lookup.by_output.emplace_back(path, cmd_id);
         }
         if (address.outputs.empty()) {
-            lookup.by_key.emplace_back(address.key, cmd.id);
+            lookup.by_key.emplace_back(address.key, cmd_id);
         }
     }
     sort_lookup(lookup);
@@ -1104,10 +1082,10 @@ auto has_live_producer(CommandLookup const& lookup, StringId path) -> bool
 auto find_joined_command(
     CommandLookup const& lookup,
     pup::index::Index const& idx,
-    pup::index::CommandEntry const& cmd
+    pup::NodeId cmd_id
 ) -> std::optional<pup::NodeId>
 {
-    return find_joined(lookup, index_command_address(idx, cmd));
+    return find_joined(lookup, index_command_address(idx, cmd_id));
 }
 
 /// The ordering a previous build's discoveries imply, as command pairs the scheduler can order
@@ -1125,11 +1103,10 @@ auto collect_discovered_ordering(
         if (edge.type != pup::LinkType::Implicit) {
             continue;
         }
-        auto const* consumer = old_index.find_command_by_id(edge.to);
-        if (!consumer) {
+        if (!old_index.find_command_by_id(edge.to)) {
             continue;
         }
-        auto consumer_node = find_joined_command(join, old_index, *consumer);
+        auto consumer_node = find_joined_command(join, old_index, edge.to);
         if (!consumer_node) {
             continue;
         }
@@ -1172,11 +1149,10 @@ auto preserve_old_implicit_edges(
             continue;
         }
 
-        auto const* old_cmd = old_index.find_command_by_id(edge.to);
-        if (!old_cmd) {
+        if (!old_index.find_command_by_id(edge.to)) {
             continue;
         }
-        auto joined = find_joined(new_lookup, index_command_address(old_index, *old_cmd));
+        auto joined = find_joined(new_lookup, index_command_address(old_index, edge.to));
         if (!joined) {
             continue;
         }
@@ -1288,9 +1264,7 @@ auto merge_out_of_scope_commands(
             new_id = *existing;
         } else {
             auto parent_id = get_or_create_dir(ctx, pup::path::parent(path_sv));
-            new_id = ctx.next_id++;
             auto entry = pup::index::FileEntry {
-                .id = new_id,
                 .parent_id = parent_id,
                 .src_id = 0,
                 .type = old_file->type,
@@ -1301,7 +1275,7 @@ auto merge_out_of_scope_commands(
                 .mtime_ns = old_file->mtime_ns,
                 .content_hash = old_file->content_hash,
             };
-            record_file_entry(ctx.index, ctx.path_to_id, std::move(entry));
+            new_id = record_file_entry(ctx.index, ctx.path_to_id, std::move(entry));
         }
         old_to_new_file.set(old_id, new_id);
         return new_id;
@@ -1319,7 +1293,7 @@ auto merge_out_of_scope_commands(
         auto const* new_file = ctx.index.find_file_by_id(*new_id);
         return new_file && new_file->content_hash != old_file->content_hash;
     };
-    auto any_dep_changed = [&](pup::index::CommandEntry const& cmd) -> bool {
+    auto any_dep_changed = [&](pup::index::CommandEntry const& cmd, pup::NodeId cmd_id) -> bool {
         for (auto id : cmd.inputs) {
             if (dep_state_changed(id)) {
                 return true;
@@ -1330,12 +1304,12 @@ auto merge_out_of_scope_commands(
                 return true;
             }
         }
-        for (auto const* edge : old_index.edges_to(cmd.id)) {
+        for (auto const* edge : old_index.edges_to(cmd_id)) {
             if (dep_state_changed(edge->from)) {
                 return true;
             }
         }
-        for (auto const* edge : old_index.edges_from(cmd.id)) {
+        for (auto const* edge : old_index.edges_from(cmd_id)) {
             auto const* file = old_index.find_file_by_id(edge->to);
             if (file && file->type == pup::NodeType::Generated && dep_state_changed(edge->to)) {
                 return true;
@@ -1345,14 +1319,16 @@ auto merge_out_of_scope_commands(
     };
 
     auto old_to_new_cmd = pup::NodeIdMap32 {};
-    for (auto const& cmd : old_index.commands()) {
+    for (auto i = std::size_t { 0 }; i < old_index.commands().size(); ++i) {
+        auto const& cmd = old_index.commands()[i];
+        auto const old_cmd_id = pup::index::Index::command_id(i);
         if (is_dir_authoritative(old_index, cmd.dir_id, parse_scopes, excludes, parsed_dirs, available_dirs, pruned_dirs)) {
             continue;
         }
-        if (find_joined(new_lookup, index_command_address(old_index, cmd))) {
+        if (find_joined(new_lookup, index_command_address(old_index, old_cmd_id))) {
             continue;
         }
-        auto must_rerun = cmd.must_rerun || any_dep_changed(cmd);
+        auto must_rerun = cmd.must_rerun || any_dep_changed(cmd, old_cmd_id);
 
         auto unresolved = false;
         auto new_dir_id = pup::SOURCE_ROOT_ID;
@@ -1389,9 +1365,7 @@ auto merge_out_of_scope_commands(
         auto new_outputs = resolve_operands(cmd.outputs);
         must_rerun = must_rerun || unresolved;
 
-        auto new_cmd_id = pup::node_id::make_command(static_cast<std::uint32_t>(ctx.index.commands().size()) + 1);
-        ctx.index.add_command(pup::index::CommandEntry {
-            .id = new_cmd_id,
+        auto const new_cmd_id = ctx.index.add_command(pup::index::CommandEntry {
             .dir_id = new_dir_id,
             .instruction_pattern = cmd.instruction_pattern,
             .display = cmd.display,
@@ -1403,7 +1377,7 @@ auto merge_out_of_scope_commands(
             .order_only_inputs = std::move(new_order_only_inputs),
             .outputs = std::move(new_outputs),
         });
-        old_to_new_cmd.set(cmd.id, new_cmd_id);
+        old_to_new_cmd.set(old_cmd_id, new_cmd_id);
     }
 
     for (auto const& edge : old_index.edges()) {
@@ -1461,8 +1435,8 @@ auto for_each_consuming_command(
                 continue;
             }
             auto to = pup::NodeId { edge->to };
-            if (auto const* cmd = idx.find_command_by_id(to)) {
-                if (auto cmd_node_id = find_joined_command(join, idx, *cmd)) {
+            if (idx.find_command_by_id(to)) {
+                if (auto cmd_node_id = find_joined_command(join, idx, to)) {
                     emit(*cmd_node_id);
                 }
                 continue;
@@ -1533,7 +1507,7 @@ auto expand_implicit_deps(
         for_each_consuming_command(
             index,
             join,
-            pup::NodeId { file->id },
+            index.file_id_of(*file),
             pup::graph::edge_mask::discovered_consumers,
             [&](pup::NodeId cmd_node_id) {
                 propagate_command_effect(
@@ -1598,7 +1572,6 @@ auto build_index(
 
     serialize_edges(state, index, cmd_remap);
 
-    auto next_id = compute_next_id(state);
     auto added_edges = pup::NodeIdPairSet {};
 
     auto produced_this_build = pup::NodeIdMap32 {};
@@ -1631,7 +1604,6 @@ auto build_index(
     auto ctx = ImplicitDepContext {
         .index = index,
         .path_to_id = path_to_id,
-        .next_id = next_id,
         .added_edges = added_edges,
         .source_root = source_root,
         .output_root = output_root,
@@ -1931,7 +1903,7 @@ auto reconcile_input_set(
             continue;
         }
         for_each_consuming_command(
-            idx, join, pup::NodeId { file->id }, pup::graph::edge_mask::parsed_consumers, [&](pup::NodeId cmd_node_id) {
+            idx, join, idx.file_id_of(*file), pup::graph::edge_mask::parsed_consumers, [&](pup::NodeId cmd_node_id) {
                 orphaned.push_back(cmd_node_id);
                 if (verbose) {
                     auto const command = pup::graph::find_command(g, cmd_node_id);
@@ -1983,12 +1955,14 @@ auto remove_stale_outputs(
 {
     auto deleted = pup::Vec<pup::StringId> {};
     auto retired_commands = false;
-    for (auto const& cmd : idx.commands()) {
+    for (auto i = std::size_t { 0 }; i < idx.commands().size(); ++i) {
+        auto const& cmd = idx.commands()[i];
+        auto const cmd_id = pup::index::Index::command_id(i);
         if (!is_dir_authoritative(idx, cmd.dir_id, parse_scopes, excludes, parsed_dirs, available_dirs, pruned_dirs)) {
             continue;
         }
 
-        for (auto const* edge : idx.edges_from(cmd.id)) {
+        for (auto const* edge : idx.edges_from(cmd_id)) {
             auto const* file = idx.find_file_by_id(edge->to);
             if (!file || file->type != pup::NodeType::Generated) {
                 continue;
@@ -2016,7 +1990,7 @@ auto remove_stale_outputs(
             }
         }
 
-        if (!find_joined_command(join, idx, cmd)) {
+        if (!find_joined_command(join, idx, cmd_id)) {
             retired_commands = true;
             if (verbose) {
                 auto label = pup::is_empty(cmd.display) ? pup::index::get_command_string(idx, cmd) : cmd.display;
