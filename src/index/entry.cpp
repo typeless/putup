@@ -146,7 +146,7 @@ auto Index::add_edge(EdgeEntry entry) -> void
 
 auto Index::find_file_by_id(NodeId id) const -> FileEntry const*
 {
-    if (id == 0 || node_id::is_command(id)) {
+    if (id == 0 || !node_id::is_file(id)) {
         return nullptr;
     }
     auto const idx = node_id::index(id) - 1;

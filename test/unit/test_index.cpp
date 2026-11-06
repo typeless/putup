@@ -288,6 +288,8 @@ TEST_CASE("Index in-memory operations", "[index]")
         REQUIRE(by_id_2->name == intern("bar.c"));
 
         REQUIRE(index.find_file_by_id(999) == nullptr);
+        REQUIRE(index.find_file_by_id(node_id::make(node_id::Tag::Condition, 1)) == nullptr);
+        REQUIRE(index.find_file_by_id(node_id::make(node_id::Tag::Phi, 1)) == nullptr);
 
         for (auto position = std::size_t { 0 }; position < index.files().size(); ++position) {
             auto const& entry = index.files()[position];
