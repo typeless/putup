@@ -35,8 +35,10 @@ Options:
   -j, --jobs N       Run N jobs in parallel
   -k, --keep-going   Continue after failures
   --no-stat-cache    Hash every file's contents (skip the size+mtime fast path)
+  --rerun            Re-execute up-to-date commands (scoped by targets if given)
   -n, --dry-run      Print commands without executing
-  -v, --verbose      Verbose output
+  -v, --verbose      Name each command by its full command line
+  -q, --quiet        Name only commands that fail or write output
   -D, --define VAR=value
                      Override config variable (-D VAR is shorthand for -D VAR=y)
   -S DIR             Source directory (where source files live)
