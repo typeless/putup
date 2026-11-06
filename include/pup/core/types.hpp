@@ -143,8 +143,9 @@ enum class LinkRole : std::uint8_t {
 
 /// The one place a new LinkType must be classified: no `default`, so -Wswitch makes
 /// omitting one a build error here instead of a silent exclusion from every mask.
-/// The recovery read consumes this across the whole readable window: retiring an enumerator without
-/// a format bump would need the retired set NodeFlags has and this does not (#399).
+/// The recovery read consumes this across the whole readable window, so a recorded enumerator is
+/// retired only by raising INDEX_LAYOUT_FLOOR past it; format.hpp pins the recorded values, so
+/// deleting, renumbering or reusing one fails the build (#410).
 [[nodiscard]]
 constexpr auto link_role(LinkType type) -> LinkRole
 {
@@ -165,8 +166,9 @@ constexpr auto link_role(LinkType type) -> LinkRole
 /// Whether a recorded entry's type byte is one some version in the readable window writes. Any
 /// other byte is damage, not a value from a future version (#399), and that includes the types no
 /// record holds: commands live in their own table and conditions are never recorded (#410).
-/// The recovery read consumes this across the whole readable window: retiring an enumerator without
-/// a format bump would need the retired set NodeFlags has and this does not (#399).
+/// The recovery read consumes this across the whole readable window, so a recorded enumerator is
+/// retired only by raising INDEX_LAYOUT_FLOOR past it; format.hpp pins the recorded values, so
+/// deleting, renumbering or reusing one fails the build (#410).
 [[nodiscard]]
 constexpr auto names_node_type(std::uint8_t value) -> bool
 {

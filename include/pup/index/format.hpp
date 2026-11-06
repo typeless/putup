@@ -5,8 +5,10 @@
 
 #include "pup/core/types.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
+#include <initializer_list>
 #include <string_view>
 
 namespace pup::index {
@@ -335,6 +337,70 @@ static_assert(
 /// Which bits a recorded node flags word may carry, over every version the readers accept.
 inline constexpr auto READABLE_NODE_FLAGS_MASK
     = static_cast<std::uint16_t>(RECORDED_NODE_FLAGS_MASK | RETIRED_NODE_FLAGS_MASK);
+
+/// A type byte some version in the readable window writes, spelled by the enumerator that writes it.
+template<typename Enum>
+struct RecordedValue {
+    Enum enumerator;
+    std::uint8_t value;
+};
+
+/// Whether `names` accepts exactly the listed bytes, and each listed enumerator still holds its byte.
+template<typename Enum>
+consteval auto pins_recorded_vocabulary(
+    bool (*names)(std::uint8_t),
+    std::initializer_list<RecordedValue<Enum>> recorded
+) -> bool
+{
+    for (auto byte = 0; byte < 256; ++byte) {
+        auto const listed = std::ranges::any_of(recorded, [byte](auto const& entry) -> bool {
+            return entry.value == byte;
+        });
+        if (names(static_cast<std::uint8_t>(byte)) != listed) {
+            return false;
+        }
+    }
+    return std::ranges::all_of(recorded, [](auto const& entry) -> bool {
+        return static_cast<std::uint8_t>(entry.enumerator) == entry.value;
+    });
+}
+
+static_assert(
+    pins_recorded_vocabulary<NodeType>(
+        names_node_type,
+        {
+            { NodeType::File, 0 },
+            { NodeType::Directory, 2 },
+            { NodeType::Variable, 3 },
+            { NodeType::Generated, 4 },
+            { NodeType::Ghost, 5 },
+            { NodeType::Group, 6 },
+            { NodeType::GeneratedDir, 7 },
+            { NodeType::Root, 8 },
+        }
+    ),
+    "the recorded NodeType values are on-disk format across the readable window: deleting, renumbering "
+    "or reusing one makes an old record read as damage or as another type. Retire one only by bumping "
+    "INDEX_VERSION and raising INDEX_LAYOUT_FLOOR past the last version that wrote it, then drop it "
+    "here; add a newly recorded type here deliberately (#410)"
+);
+
+static_assert(
+    pins_recorded_vocabulary<LinkType>(
+        names_link_type,
+        {
+            { LinkType::Normal, 1 },
+            { LinkType::Sticky, 2 },
+            { LinkType::Group, 3 },
+            { LinkType::Implicit, 4 },
+            { LinkType::OrderOnly, 5 },
+        }
+    ),
+    "the recorded LinkType values are on-disk format across the readable window: deleting, renumbering "
+    "or reusing one makes an old edge read as damage or as another type. Retire one only by bumping "
+    "INDEX_VERSION and raising INDEX_LAYOUT_FLOOR past the last version that wrote it, then drop it "
+    "here; add a newly recorded type here deliberately (#410)"
+);
 
 /// Helper to get NodeFlags from entry
 [[nodiscard]]

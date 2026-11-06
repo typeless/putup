@@ -29,8 +29,9 @@ string table's offset 0 is a legitimate empty string and reads as one. Each read
 reads, so the recovery read of the file table (`read_prior_paths`, issue #291) is unaffected by
 damage in sections it never looks at — which is what makes whole-record rejection safe rather than a
 wider outage than the damage warrants. And the vocabulary a value is judged against spans every
-version the readable window admits, not today's alone: type vocabularies only ever grew, so the
-floor admits only prefixes of this one's, but a flag bit retired without a format change
+version the readable window admits, not today's alone: no recorded type value has been retired or
+reused — a reader has no disposition for a type it no longer names, so one is retired only by
+raising the floor past the last version that wrote it — but a flag bit retired without a format change
 (`NodeFlags` bit 5, index version 13) was legitimate when written and stays readable. That span is
 uniform rather than per-version, because a read word is carried whole into the record the next
 build writes — so a current-version record holding a retired bit is an honest descendant of one
