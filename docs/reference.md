@@ -348,7 +348,7 @@ putup configure --config configs/toolchain.config -C . -S ../src -B ../build
 **Important:** You must run `putup configure` before `putup build`. If you skip the configure step, `putup build` will error:
 
 ```
-Error: No tup.config found. Run 'putup configure' first.
+Error: No tup.config found. Run 'pup configure' first.
 ```
 
 This ensures a consistent workflow: configure sets up the build environment, then build executes.
@@ -909,7 +909,7 @@ command, putup's `-v` shows displays; use `show script` to see the commands a bu
 CC = gcc
 CFLAGS = -Wall -O2
 CFLAGS += -g          # Append
-LITERAL := $(VAR)     # No expansion (literal string)
+SAME := $(VAR)        # Same as =
 DEFAULT ?= value      # Soft set (if undefined, first wins)
 FALLBACK ??= value    # Weak set (if undefined, last wins)
 ```
@@ -920,7 +920,7 @@ FALLBACK ??= value    # Weak set (if undefined, last wins)
 |----------|------|-------------|
 | `=` | Set | Assign value (replaces existing) |
 | `+=` | Append | Append to existing value (space-separated) |
-| `:=` | Define | Assign literal string (no variable expansion) |
+| `:=` | Define | Same as `=`; the value is expanded at assignment |
 | `?=` | Soft Set | Set only if variable is undefined (first wins) |
 | `??=` | Weak Set | Deferred default - set at end if undefined (last wins) |
 
@@ -970,7 +970,10 @@ CC = gcc
 CFLAGS = -Wall -I$(TUP_CWD)/../include
 
 # Use config variable with default
-OPTIMIZE = @(OPTIMIZE:-O2)
+OPTIMIZE = @(OPTIMIZE)
+ifeq ($(OPTIMIZE),)
+OPTIMIZE = -O2
+endif
 
 : foreach *.c |> $(CC) $(CFLAGS) -c %f -o %o |> %B.o
 ```
@@ -1075,8 +1078,9 @@ that is in range but names an entry the rule does not have expands to nothing, a
 # Multiple outputs with numbered flags
 : input.dat |> split %f -a %1o -b %2o |> part_a.dat part_b.dat
 
-# Using %d for directory-aware output
-: foreach src/*.c |> gcc -c %f -o %o |> %d/%B.o
+# Using %d for directory-aware output (in src/Tupfile, %d is "src")
+: foreach *.c |> gcc -c %f -o %o |> %d-%B.o
+# foo.c → src-foo.o
 
 # Using %g for glob match portion
 : foreach *_test.c |> run_test %f -o %o |> %g_result.txt
@@ -1354,7 +1358,10 @@ CLI overrides have highest precedence and apply to all scoped configs.
 CC = @(CC)              # Gets value of CONFIG_CC
 
 # Access with default value
-DEBUG = @(DEBUG:-n)     # Use "n" if CONFIG_DEBUG not set
+DEBUG = @(DEBUG)
+ifeq ($(DEBUG),)
+DEBUG = n
+endif
 
 # Full name also works
 CFLAGS = $(CONFIG_CFLAGS)
@@ -2268,10 +2275,10 @@ directory nothing provides) name the rule at fault, the later one for a duplicat
 message about no particular line, such as a component directory missing its
 `Tupfile.ini`, prints as `severity: message`.
 
-**"Not in a putup/tup project"**
+**"Not in a pup/tup project"**
 
 ```
-Error: Not in a putup/tup project (no Tupfile.ini found)
+Error: Not in a pup/tup project (no Tupfile.ini found)
 ```
 
 Cause: No `Tupfile.ini` or `Tupfile` found in current or parent directories.
@@ -2280,10 +2287,10 @@ Fix: Create `Tupfile.ini` at project root, or cd into the project.
 
 ---
 
-**"Circular dependency detected"**
+**"Dependency cycle detected"**
 
 ```
-Error: Circular dependency: a.o -> b.o -> a.o
+Build failed: Dependency cycle detected
 ```
 
 Cause: Rules create a dependency cycle.
@@ -2292,10 +2299,11 @@ Fix: Review rules to break the cycle. Use `putup show graph` to visualize.
 
 ---
 
-**"Output already defined"**
+**"already owned by command"**
 
 ```
-Error: Output 'foo.o' already defined by another rule
+Tupfile:2: error: Unable to create output 'foo.o' because it is already owned by command:
+  touch foo.o
 ```
 
 Cause: Multiple rules produce the same output file.
@@ -2304,34 +2312,22 @@ Fix: Ensure each output is produced by exactly one rule.
 
 ---
 
-**"Unknown variable"**
+**"Unable to find bin"**
 
 ```
-Error: Unknown variable: $(UNDEFINED_VAR)
+Tupfile:1: error: Unable to find bin 'objs'
 ```
 
-Cause: Variable referenced but never assigned.
+Cause: A rule uses `{objs}` as input, but no earlier rule in the same Tupfile outputs to it.
 
-Fix: Define the variable, or use a default: `$(VAR:-default)`
-
----
-
-**"Group not found"**
-
-```
-Error: Group {objs} referenced but not defined
-```
-
-Cause: Using a group as input before any rule outputs to it.
-
-Fix: Ensure rules outputting to the group are in scope.
+Fix: Declare the bin on an earlier rule's output list in the same Tupfile. A bin cannot cross directories; use a `<group>` for that.
 
 ---
 
 **"No tup.config found"**
 
 ```
-Error: No tup.config found. Run 'putup configure' first.
+Error: No tup.config found. Run 'pup configure' first.
 ```
 
 Cause: You ran `putup build` without first running `putup configure`.

@@ -12,6 +12,12 @@ cd /path/to/pup/examples/bsp && \
   putup -C . -S ../../source-root -B ../../build-gcc -j$(nproc)
 ```
 
+On a macOS host use `configs/darwin-x86_64-linux.config`.
+
+- `-C .` — config tree (BSP root: Tupfiles, Tuprules.tup, `configs/*.config`)
+- `-S ../../source-root` — assembled source tree (`gcc/` + `binutils/` subdirs, read-only)
+- `-B ../../build-gcc` — build tree; `--config` installs the root `tup.config` here
+
 ## Build Phases
 
 GCC builds in 14 ordered phases inside `gcc/gcc/Tupfile`:
@@ -85,7 +91,7 @@ When input paths break after cd, capture CWD:
 
 ### genmatch (special case)
 
-genmatch uses `getpwd()` for include search. Must cd to build dir AND pass source-relative match.pd:
+genmatch uses `getpwd()` for include search, and `match.pd` includes `cfn-operators.pd`, which is generated into the build dir. Must cd to build dir AND pass source-relative match.pd:
 
 ```tup
 : $(SRC)/match.pd | genmatch cfn-operators.pd |> ^ GEN gimple-match-*^ \
@@ -102,7 +108,9 @@ gengtype uses `-DHOST_GENERATOR_FILE` (NOT `-DGENERATOR_FILE`) because it needs 
 
 ```tup
 # Pass 1: write state file
-gengtype -S $(SRC) -I gtyp-input.list -w gtype.state
+$(TUP_VARIANT_OUTPUTDIR)/gengtype -S $(SRC) \
+  -I $(TUP_VARIANT_OUTPUTDIR)/gtyp-input.list \
+  -w $(TUP_VARIANT_OUTPUTDIR)/gtype.state
 # Pass 2: generate from state
 cd $(TUP_VARIANT_OUTPUTDIR) && ./gengtype -r gtype.state
 ```
@@ -148,7 +156,7 @@ Each library (gmp, mpfr, mpc, libiberty, libcpp, libdecnumber, libbacktrace, lib
 - Its own `defaults.config` for library-specific config
 - Its own `Tupfile` for compilation rules
 
-The root `Tuprules.tup` sets prefixed DIR vars (`GMP_DIR = gmp`, `MPFR_DIR = mpfr`) that override the `?=` defaults when building as part of the larger project.
+The DIR vars are set in three layers. The BSP root `Tuprules.tup` force-sets them (`GMP_DIR = gcc/gmp`, `MPFR_DIR = gcc/mpfr`); `gcc/Tuprules.tup` sets `?=` defaults for building the `gcc/` group standalone (`GMP_DIR ?= gmp`); each library's `Tuprules.tup` sets `?=` defaults for building it alone. `include_rules` runs root first, so the outermost assignment wins.
 
 ## Debugging Workflow
 
@@ -159,6 +167,8 @@ The root `Tuprules.tup` sets prefixed DIR vars (`GMP_DIR = gmp`, `MPFR_DIR = mpf
    - Undeclared symbol -- check which generator produces the header
    - Read-only filesystem -- generator needs cd to build dir
    - Wrong define -- check tup.config and `!gen-config` output
+   - `uchar` not declared -- remove `CONFIG_HAVE_UCHAR` from tup.config
+   - `register_operand` undeclared -- `tm_p.h` is missing `#include "tm-preds.h"`
 4. Fix the Tupfile or tup.config
-5. If tup.config changed, re-run `putup configure`
+5. If a `defaults.config` changed, re-run `putup configure`; if the platform config changed, re-run it with `--config`
 6. Rebuild and repeat

@@ -34,7 +34,7 @@ Guide the user through converting a Make/Kbuild project to putup Tupfiles.
 
 4. **Handle special cases:**
    - Assembly files: separate `!as` bang macro with appropriate flags
-   - Generated headers: `!gen-config` pattern or explicit rules with `<gen-headers>` group
+   - Generated headers: the `!gen-config` pattern (`putup:cross-compile` skill, "Config Headers" section) or explicit rules with `<gen-headers>` group
    - Negative conditionals: putup supports `ifneq` directly — write `ifneq (@(CONFIG),y)` (parens required); no `ifdef/else` rewrite needed. See the `putup:tupfile-authoring` migration patterns.
    - Recursive make: each subdirectory becomes a separate Tupfile
 

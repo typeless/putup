@@ -18,10 +18,14 @@ putup -S source_dir -C config_dir -B build_dir
 | Flag | Tree    | Description                                       |
 |------|---------|---------------------------------------------------|
 | `-S` | Source  | Read-only source code (upstream, git submodules)   |
-| `-C` | Config  | Tupfiles, Tuprules.tup, tup.config                |
-| `-B` | Build   | Outputs, .pup/ index, generated files              |
+| `-C` | Config  | Tupfiles, Tuprules.tup, platform `*.config` files |
+| `-B` | Build   | Outputs, .pup/ index, root tup.config              |
 
 Commands run with CWD = source directory. The source tree is read-only.
+
+The root `tup.config` is read from the build tree, where `putup configure --config FILE` installs it; a `tup.config` in the config tree is ignored. Every directory holding a Tupfile must also exist in the source tree: a rule in a config-only directory fails because its CWD is missing.
+
+putup refuses the Tupfiles tup refuses; see "What putup refuses" in the tupfile-authoring skill.
 
 ### When to use each mode
 
@@ -86,7 +90,7 @@ The `CROSS_COMPILE`-prefix pattern is for GNU-style toolchains. Windows (MSVC AB
 - `--target=x86_64-pc-windows-msvc` to select the MSVC ABI.
 - The MSVC CRT and Windows SDK come from an xwin-splatted tree injected via the `XWIN_SPLAT` environment variable.
 - `/MT` links the static CRT.
-- Flag syntax differs from GNU: `clang-cl` uses `/Fo` for object output and `/OUT:` for the link target (no `-o`), and has no `-MD` dep-scan flag — so the `CROSS_COMPILE` bang-macro shapes above do not carry over.
+- Flag syntax differs from GNU: `clang-cl` uses `/Fo` for object output and `/OUT:` for the link target (no `-o`), and reaches the dep-file flags through `/clang:-MD /clang:-MF%o.d` — so the `CROSS_COMPILE` bang-macro shapes above do not carry over.
 
 CI runs the resulting test binary natively on a `windows-latest` runner; Wine runs it locally when no Windows host is at hand.
 
@@ -144,10 +148,12 @@ import HOSTCC=gcc
 |> hex2bin
 
 # Use host tool in a generator rule
-: input.dat | tools/gen_table \
-|> tools/gen_table %f > %o \
+: input.dat | tools/hex2bin \
+|> $(TUP_VARIANT_OUTPUTDIR)/tools/hex2bin %f > %o \
 |> generated_table.h <gen-headers>
 ```
+
+The tool is an output, so it lives in the build tree; a bare `tools/hex2bin` resolves against the source directory and fails under `-B`.
 
 ## Config Headers
 
@@ -192,18 +198,21 @@ Generators compile with `-DGENERATOR_FILE` to gate which headers they see. Targe
 
 2. **Configure** with platform-specific config:
    ```bash
-   putup configure --config configs/arm-linux.config \
-     -C . -S ../../source-root -B ../../build-arm
+   putup configure --config configs/x86_64-linux.config \
+     -C . -S ../../source-root -B ../../build-gcc
    ```
+   `examples/bsp/configs/` also has `darwin-x86_64-linux.config` (macOS host) and `aarch64-linux.config`.
 
 3. **Build** with parallelism:
    ```bash
-   putup -C . -S ../../source-root -B ../../build-arm -j$(nproc)
+   putup -C . -S ../../source-root -B ../../build-gcc -j$(nproc)
    ```
 
 4. **Debug failures** by reading the first error, ignoring cascading failures. Check group deps for missing headers, check generator patterns for read-only filesystem errors.
 
-5. **Iterate** -- after editing tup.config, re-run `putup configure` to propagate changes to the build dir, then rebuild.
+5. **Iterate** -- after editing a component's `defaults.config`, re-run `putup configure` so its copy rule reinstalls `tup.config` in the build dir; a plain build does not. After editing the platform config, re-run `putup configure --config FILE`; without `--config` the installed copy stays unchanged. Edits made directly to the build tree's `tup.config` apply on the next build.
+
+The GCC + binutils BSP in `examples/bsp/` is the worked example: see [references/gcc-bsp-example.md](references/gcc-bsp-example.md).
 
 ## Common Errors
 
@@ -211,8 +220,8 @@ Generators compile with `-DGENERATOR_FILE` to gate which headers they see. Targe
 |-------|-------|-----|
 | `Read-only file system` | Generator writes to CWD (source dir) | cd to build dir before running |
 | `No such file or directory` (output) | Same as above | cd to build dir |
-| `undeclared` from generated header | Missing order-only group dependency | Add `\| <gen-headers>` to the rule |
-| `/bin/sh: ^: not found` | Display text on continuation line | Move `^ ... ^` to same line as `\|>` |
-| Config define missing at compile time | tup.config not propagated | Re-run `putup configure` |
+| `undeclared` from generated header | Missing order-only group dependency | Add `\| <gen-headers>` (another directory's group: `\| $(S)/dir/<gen-headers>`) to the rule |
+| Config define missing at compile time | Edited config not installed in the build tree | Re-run `putup configure` (with `--config FILE` for the platform config) |
+| `FAILED:` with no error output, in a config-only directory | CWD is the source directory, which does not exist | Keep each Tupfile's directory present in the source tree |
 | Generator reads wrong input after cd | `%f` paths are source-relative | Capture `SRCDIR=$PWD` before cd |
 | Circular dependency on generated header | Generator depends on its own output group | Split into separate generation phases |

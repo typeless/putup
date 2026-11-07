@@ -5,7 +5,7 @@ description: Writing dual-mode Tupfiles for standalone and component builds. Use
 
 # Composable Libraries
 
-Write Tupfiles that build both standalone (`cd libfoo && putup -B build`) and as part of a larger project (`cd big-project && putup -B build`) with zero changes.
+Write Tupfiles that build both standalone (`cd libfoo && putup configure -B build && putup -B build`) and as part of a larger project (`cd big-project && putup configure -B build && putup -B build`) with zero changes.
 
 Full reference: <https://github.com/typeless/putup/blob/main/docs/reference.md>
 
@@ -113,17 +113,21 @@ exit code stays 0; `--check=error` makes error-severity findings fail.
 
 ### Errors (fail the exit code at `--check=error`)
 
-| Code | Rule | Example violation |
-|------|------|-------------------|
-| E1 | `S` must use `?=` in component Tuprules.tup | `S = $(TUP_CWD)` in mpfr/Tuprules.tup |
-| E2 | `B` must use `?=` in component Tuprules.tup | `B = $(TUP_VARIANT_OUTPUTDIR)/$(S)` in mpfr/Tuprules.tup |
+| Rule | Example violation |
+|------|-------------------|
+| `S` must use `?=` in component Tuprules.tup | `S = $(TUP_CWD)` in mpfr/Tuprules.tup |
+| `B` must use `?=` in component Tuprules.tup | `B = $(TUP_VARIANT_OUTPUTDIR)/$(S)` in mpfr/Tuprules.tup |
 
 ### Warnings (advisory; never change the exit code)
 
-| Code | Rule | Example violation |
-|------|------|-------------------|
-| W1 | Toolchain vars (`CC`, `CXX`, `AR`, etc.) should use `?=` in components | `CC = gcc` in mpfr/Tuprules.tup |
-| W2 | Component directories should contain `Tupfile.ini` for standalone builds | mpfr/ missing Tupfile.ini |
+| Rule | Example violation |
+|------|-------------------|
+| `S ?=` should be set to `$(TUP_CWD)` | `S ?= ..` in mpfr/Tuprules.tup |
+| `B ?=` should reference `$(S)` | `B ?= $(TUP_VARIANT_OUTPUTDIR)` in mpfr/Tuprules.tup |
+| Toolchain vars (`CC`, `CXX`, `AR`, `LD`, `AS`, `HOSTCC`, `HOSTCXX`) should use `?=` in components | `CC = gcc` in mpfr/Tuprules.tup |
+| Component directories should contain `Tupfile.ini` for standalone builds | mpfr/ missing Tupfile.ini |
+
+putup prints each finding as `file:line: error: ...` or `warning: ...`; findings carry no codes.
 
 The tree roots are exempt -- they ARE the authority for anchor and toolchain
 variables. This covers the source root and, in 3-tree builds, the config-tree root.
@@ -132,7 +136,7 @@ variables. This covers the source root and, in 3-tree builds, the config-tree ro
 
 A subdirectory carrying its own `Tupfile.ini` is a **separate project**: the
 outer build's discovery prunes it, so its Tupfiles are neither parsed nor
-built. Adding the standalone marker (W2) therefore takes the component OUT of
+built. Adding the standalone marker therefore takes the component OUT of
 the composed build until the outer project *depends* on it — a rule input
 referencing a group (or generated file) under the nested root composes the
 whole nested project back in:
@@ -197,7 +201,7 @@ $(S)/$(MPFR_DIR)/src  = ../src            (correct)
 
 ### Scoped tup.config
 
-Components ship defaults in a `defaults.config` file. During configure, the parent config overrides child values on collision:
+Components ship defaults in a `defaults.config` file. `putup configure` runs each component's copy rule (`: defaults.config |> cp %f %o |> tup.config`) to install it in the build tree; when Tupfiles are evaluated, the parent config overrides child values on collision:
 
 ```
 project/tup.config         # CC=gcc, AR=ar
@@ -214,5 +218,5 @@ project/tup.config         # CC=gcc, AR=ar
 - [ ] Each marker-bearing component is composed by a group/file reference from the outer build (nested project roots are otherwise pruned)
 - [ ] `CFLAGS` and `!cc` are unprefixed (subtree-scoped, no collision risk)
 - [ ] `putup parse --check=error` reports no errors (alias: `--strict`)
-- [ ] Component builds standalone: `cd gmp && putup -B build && ls build/`
-- [ ] Component builds composed: `cd project && putup -B build && ls build/gmp/`
+- [ ] Component builds standalone: `cd gmp && putup configure -B build && putup -B build && ls build/`
+- [ ] Component builds composed: `cd project && putup configure -B build && putup -B build && ls build/gmp/`

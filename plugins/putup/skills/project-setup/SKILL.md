@@ -72,11 +72,11 @@ putup                    # build
 ./hello                  # run
 ```
 
-Required files:
+Project files:
 
 | File | Purpose |
 |------|---------|
-| `Tupfile.ini` | Marks project root (can be empty). A subdirectory with its own `Tupfile.ini` is a separate project — pruned from this build unless a rule references a group/file under it |
+| `Tupfile.ini` | Marks project root (can be empty). Without one, putup takes the topmost directory holding a `Tupfile` as the root. A subdirectory with its own `Tupfile.ini` is a separate project — pruned from this build unless a rule references a group/file under it |
 | `Tupfile` | Build rules |
 | `tup.config` | Config variables (created by `putup configure`) |
 
@@ -99,6 +99,9 @@ Required files:
 | `-k` | Continue after failures |
 | `-n` | Dry run (print commands, don't execute) |
 | `-v` | Verbose output |
+| `-q` | Name only the commands that fail or write output |
+| `--rerun` | Re-execute commands even if up to date (scoped by targets) |
+| `--no-stat-cache` | Hash every file's contents; skip the size+mtime fast path |
 | `-A` | Build everything (ignore CWD scoping) |
 | `-a` | Include upstream deps in scoped builds |
 | `-D VAR=val` | Override a CONFIG_ variable |
@@ -262,7 +265,15 @@ Names must start with `CONFIG_`. Access in Tupfiles with `@(NAME)`:
 
 ```tup
 CC = @(CC)                         # resolves to "clang"
-DEBUG = @(DEBUG:-n)                # default value if unset
+```
+
+There is no default syntax for `@(NAME)`. Supply a default with `ifeq`:
+
+```tup
+DEBUG = @(DEBUG)
+ifeq ($(DEBUG),)
+DEBUG = n
+endif
 ```
 
 ### CLI Overrides (`-D`)
@@ -316,12 +327,11 @@ anchor variables (`S`, `B`) and toolchain variables (`CC`, `CXX`, `AR`);
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| `Not in a putup project` | No `Tupfile.ini` found | Create `Tupfile.ini` at project root |
+| `Not in a pup/tup project (no Tupfile.ini found)` | No `Tupfile.ini` or `Tupfile` in the current directory or above | Create `Tupfile.ini` at project root |
 | `No tup.config found` | Skipped configure step | Run `putup configure` |
 | Build outputs in wrong directory | In-tree when variant intended | Use `-B build` |
-| `Tupfile.ini not found` with `-B` | Source root missing marker | Add `Tupfile.ini` to source root |
 | Stale outputs after rule change | Normal behavior | putup auto-cleans; `putup clean` for full reset |
-| Variant not discovered | Missing `tup.config` or `.pup/` | Run `putup configure -B <dir>` |
+| `no build directory specified; found: ...` | Variant directories exist but none was selected | Pass `-B <dir>`, a path target, or a glob like `build-*` |
 
 **Standard workflow:**
 

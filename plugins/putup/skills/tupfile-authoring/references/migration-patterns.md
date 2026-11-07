@@ -31,10 +31,8 @@ import CC=gcc
 import HOSTCC=gcc
 import AR=ar
 
-# Export for subprocesses that need environment variables
+# Export passes putup's environment variable of that name to commands
 export HOSTCC
-srctree = .
-export srctree
 
 # Flags -- use $(S) for source paths, $(B) for generated-file paths
 CFLAGS = -Wall -Os
@@ -113,13 +111,14 @@ asm_srcs += accelerated.S
 : $(S)/tools/gen_tables.c | autoconf.h |> ^ HOSTCC gen_tables^ \
   $(HOSTCC) -I. %f -o %o |> gen_tables
 
-# Run host tool to produce header
-: gen_tables |> ^ GEN tables.h^ ./gen_tables %o |> tables.h <gen-headers>
+# Run host tool to produce header (commands run in the source dir, so
+# name the built tool through $(TUP_VARIANT_OUTPUTDIR))
+: gen_tables |> ^ GEN tables.h^ $(TUP_VARIANT_OUTPUTDIR)/gen_tables %o |> tables.h <gen-headers>
 ```
 
 Scripts that use environment variables like `$srctree` need explicit
-assignment in the tup rule -- tup does not inherit the outer environment
-unless `export` is used.
+assignment in the tup rule: `srctree=$(S) $(S)/scripts/conf ...`. `export`
+passes only putup's own environment, never a Tupfile variable.
 
 ## Cross-Directory Library Aggregation
 
@@ -128,7 +127,7 @@ unless `export` is used.
 : {objs} |> !ar |> lib.a $(S)/<libs>
 
 # root/Tupfile -- link from group
-: <libs> |> $(CC) -Wl,--start-group %f -Wl,--end-group -o %o |> binary
+: <libs> |> $(CC) -Wl,--start-group %<libs> -Wl,--end-group -o %o |> binary
 ```
 
 ## Manual Fixes After Automated Conversion
@@ -136,7 +135,7 @@ unless `export` is used.
 1. **Assembly files** -- converter assumes `.o` maps to `.c`; fix `.S` sources
 2. **Negative conditionals** -- `ifneq` patterns need manual review
 3. **Shared source groups** -- complex Kbuild patterns may need deduplication
-4. **Environment variables** -- scripts needing `srctree` etc. need `export`
+4. **Environment variables** -- scripts needing `srctree` etc. need it set in the command
 
 ## Validation
 
