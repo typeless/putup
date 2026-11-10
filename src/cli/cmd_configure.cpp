@@ -186,7 +186,7 @@ auto configure_single_variant(
 
     auto scheduler = pup::exec::Scheduler { sched_opts };
 
-    auto use_tty_progress = pup::stdout_is_tty() && !opts.verbose;
+    auto use_tty_progress = pup::stdout_is_tty() && !opts.verbose && !opts.dry_run;
     auto progress = pup::exec::ProgressState { .total = all_commands.size() };
     auto prev_lines = std::size_t { 0 };
 
