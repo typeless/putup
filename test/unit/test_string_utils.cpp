@@ -146,6 +146,38 @@ TEST_CASE("tokenize_shell_command keeps a backslash inside double quotes that es
     REQUIRE(sv(result[1]) == expected);
 }
 
+TEST_CASE("tokenize_shell_command removes a backslash-newline outside single quotes", "[string_utils]")
+{
+    auto const [command, expected] = GENERATE(table<std::string, std::vector<std::string>>({
+        { "echo a\\\nb", { "echo", "ab" } },
+        { "echo \"c\\\nd\"", { "echo", "cd" } },
+        { "echo \\\n x", { "echo", "x" } },
+        { "echo 'e\\\nf'", { "echo", "e\\\nf" } },
+    }));
+    CAPTURE(command);
+
+    auto words = std::vector<std::string> {};
+    for (auto const& token : tokenize_shell_command(command)) {
+        words.emplace_back(sv(token));
+    }
+    REQUIRE(words == expected);
+}
+
+TEST_CASE("tokenize_shell_command keeps a backslash that ends the command", "[string_utils]")
+{
+    auto const [command, expected] = GENERATE(table<std::string, std::vector<std::string>>({
+        { "echo a\\", { "echo", "a\\" } },
+        { "echo \\", { "echo", "\\" } },
+    }));
+    CAPTURE(command);
+
+    auto words = std::vector<std::string> {};
+    for (auto const& token : tokenize_shell_command(command)) {
+        words.emplace_back(sv(token));
+    }
+    REQUIRE(words == expected);
+}
+
 TEST_CASE("tokenize_shell_command single quotes", "[string_utils]")
 {
     SECTION("simple single quotes")

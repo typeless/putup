@@ -133,6 +133,24 @@ a word of the invocation, as the shell does.
 If a backslash inside double quotes precedes a character other than `$`, `` ` ``, `"`, `\` or a
 newline, then putup shall keep that backslash in the word, as the shell does.
 
+### REQ-SCAN-BACKSLASH-NEWLINE
+
+- conformance: putup-only
+- discharge: test "tokenize_shell_command removes a backslash-newline outside single quotes"
+- discharge: test "tokenize_shell_command splits quotes and backslashes into the words sh passes"
+
+If a backslash outside single quotes precedes a newline, then putup shall remove both from the
+word, as the shell does.
+
+### REQ-SCAN-TRAILING-BACKSLASH
+
+- conformance: putup-only
+- reference: POSIX leaves a backslash at the end of the input unspecified, and the hosts' `/bin/sh` disagree: dash, the `/bin/sh` of the Linux hosts CI runs on, keeps it as a character, and bash, macOS's `/bin/sh`, drops it. putup follows dash, so the differential test against the host shell does not exercise this case
+- discharge: test "tokenize_shell_command keeps a backslash that ends the command"
+
+If a command ends in a backslash outside quotes, then putup shall keep that backslash as a
+character of the last word.
+
 ### REQ-SCAN-SUBSTITUTION-WORD
 
 - conformance: putup-only

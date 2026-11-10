@@ -41,7 +41,8 @@ auto main(int argc, char** argv) -> int
 {
     if (argc >= 2 && std::string_view { argv[1] } == "--dump-argv") {
         for (auto i = 2; i < argc; ++i) {
-            std::printf("%s\n", argv[i]);
+            std::fputs(argv[i], stdout);
+            std::fputc('\0', stdout);
         }
         return 0;
     }

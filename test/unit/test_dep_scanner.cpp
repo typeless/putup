@@ -794,15 +794,11 @@ auto dump_argv_through_shell(std::string_view arguments) -> std::optional<ShellR
     };
     auto start = std::size_t { 0 };
     while (start < out.size()) {
-        auto end = out.find('\n', start);
+        auto end = out.find('\0', start);
         if (end == std::string::npos) {
             end = out.size();
         }
-        auto line = out.substr(start, end - start);
-        if (!line.empty() && line.back() == '\r') {
-            line.pop_back();
-        }
-        result.argv.push_back(line);
+        result.argv.push_back(out.substr(start, end - start));
         start = end + 1;
     }
     return result;
@@ -953,7 +949,7 @@ TEST_CASE("quoted words reach the child intact through the real shell", "[dep_sc
 #ifndef _WIN32
 TEST_CASE("tokenize_shell_command splits quotes and backslashes into the words sh passes", "[dep_scanner][quoting][property]")
 {
-    auto constexpr alphabet = std::string_view { "ab \\\"'" };
+    auto constexpr alphabet = std::array<std::string_view, 7> { "a", "b", " ", "\\", "\"", "'", "\\\n" };
     auto state = std::uint64_t { 0x585 };
     auto next = [&](std::uint64_t bound) -> std::uint64_t {
         state = state * 6364136223846793005ULL + 1442695040888963407ULL;
@@ -980,6 +976,9 @@ TEST_CASE("tokenize_shell_command splits quotes and backslashes into the words s
 
         auto words = std::vector<std::string> {};
         for (auto const& token : pup::core::tokenize_shell_command(arguments)) {
+            if (token.kind == pup::core::ShellTokenKind::Operator) {
+                break;
+            }
             words.emplace_back(pup::global_pool().get(token.text));
         }
         INFO("arguments: " << arguments << "\ncommand: " << result->command);
