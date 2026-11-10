@@ -827,93 +827,93 @@ auto Scheduler::execute_parallel(
     auto output_root_sv = pool.get(impl_->options.output_root);
     auto output_root_prefix = pool.get(pup::path::relative(output_root_sv, source_root_sv));
 
+    auto const may_launch = [&]() -> bool { return !failed || impl_->options.keep_going; };
+
     while (finished_count < jobs.size()) {
         // 1. Launch: fill empty slots from ready_queue
-        if (!failed || impl_->options.keep_going) {
-            for (auto s = std::size_t { 0 }; s < max_jobs; ++s) {
-                auto& slot = slots[s];
-                if (slot.active() || ready_queue.empty()) {
-                    continue;
-                }
+        for (auto s = std::size_t { 0 }; s < max_jobs && may_launch(); ++s) {
+            auto& slot = slots[s];
+            if (slot.active() || ready_queue.empty()) {
+                continue;
+            }
 
-                auto job_idx = ready_queue.front();
-                auto const& job = jobs[job_idx];
+            auto job_idx = ready_queue.front();
+            auto const& job = jobs[job_idx];
 
-                auto prepared = prepare_job_launch(job, env_cache, base_env, impl_->options, source_root_sv, output_root_sv, output_root_prefix);
+            auto prepared = prepare_job_launch(job, env_cache, base_env, impl_->options, source_root_sv, output_root_sv, output_root_prefix);
 
-                if (impl_->options.dry_run) {
-                    // Dry run: don't fork, just report success
-                    ready_queue.pop();
-
-                    if (impl_->on_start) {
-                        impl_->on_start(job);
-                    }
-
-                    auto result = JobResult {
-                        .id = job.id,
-                        .success = true,
-                    };
-
-                    if (impl_->on_complete) {
-                        impl_->on_complete(job, result);
-                    }
-
-                    ++impl_->stats.completed_jobs;
-                    ++finished_count;
-                    impl_->stats.build_time += result.duration;
-
-                    for (auto dep_idx : dependents[job_idx]) {
-                        if (--in_degree[dep_idx] == 0) {
-                            ready_queue.push(dep_idx);
-                        }
-                    }
-
-                    if (impl_->on_progress) {
-                        impl_->on_progress(finished_count, impl_->stats.total_jobs);
-                    }
-                    continue;
-                }
-
-                if (!launch_job(slot, job, job_idx, prepared.working_dir, prepared.env_ids, false)) {
-                    // Fork failed -- treat as job failure
-                    ready_queue.pop();
-
-                    if (impl_->on_start) {
-                        impl_->on_start(job);
-                    }
-
-                    auto result = JobResult {
-                        .id = job.id,
-                        .success = false,
-                        .output = pool.intern("Failed to launch process\n"),
-                    };
-
-                    if (impl_->on_complete) {
-                        impl_->on_complete(job, result);
-                    }
-
-                    ++impl_->stats.failed_jobs;
-                    ++finished_count;
-                    failed = true;
-
-                    if (impl_->on_progress) {
-                        impl_->on_progress(finished_count, impl_->stats.total_jobs);
-                    }
-                    continue;
-                }
-
+            if (impl_->options.dry_run) {
+                // Dry run: don't fork, just report success
                 ready_queue.pop();
-                ++running;
 
                 if (impl_->on_start) {
                     impl_->on_start(job);
                 }
+
+                auto result = JobResult {
+                    .id = job.id,
+                    .success = true,
+                };
+
+                if (impl_->on_complete) {
+                    impl_->on_complete(job, result);
+                }
+
+                ++impl_->stats.completed_jobs;
+                ++finished_count;
+                impl_->stats.build_time += result.duration;
+
+                for (auto dep_idx : dependents[job_idx]) {
+                    if (--in_degree[dep_idx] == 0) {
+                        ready_queue.push(dep_idx);
+                    }
+                }
+
+                if (impl_->on_progress) {
+                    impl_->on_progress(finished_count, impl_->stats.total_jobs);
+                }
+                continue;
+            }
+
+            if (!launch_job(slot, job, job_idx, prepared.working_dir, prepared.env_ids, false)) {
+                // Fork failed -- treat as job failure
+                ready_queue.pop();
+
+                if (impl_->on_start) {
+                    impl_->on_start(job);
+                }
+
+                auto result = JobResult {
+                    .id = job.id,
+                    .success = false,
+                    .output = pool.intern("Failed to launch process\n"),
+                };
+
+                if (impl_->on_complete) {
+                    impl_->on_complete(job, result);
+                }
+
+                ++impl_->stats.failed_jobs;
+                ++finished_count;
+                failed = true;
+
+                if (impl_->on_progress) {
+                    impl_->on_progress(finished_count, impl_->stats.total_jobs);
+                }
+                continue;
+            }
+
+            ready_queue.pop();
+            ++running;
+
+            if (impl_->on_start) {
+                impl_->on_start(job);
             }
         }
 
         // If nothing is running and queue is empty, we're done
         // (remaining jobs are blocked by failed dependencies)
-        if (running == 0 && ready_queue.empty()) {
+        if (running == 0 && (ready_queue.empty() || !may_launch())) {
             break;
         }
 
@@ -1093,7 +1093,7 @@ auto Scheduler::execute_parallel(
         }
 
         // 6. Check termination
-        if (impl_->cancelled || (failed && !impl_->options.keep_going)) {
+        if (impl_->cancelled || !may_launch()) {
             // Kill remaining children
             for (auto si = std::size_t { 0 }; si < max_jobs; ++si) {
                 kill_slot(slots[si]);

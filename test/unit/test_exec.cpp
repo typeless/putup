@@ -17,6 +17,11 @@
 #include <cstdlib>
 #include <filesystem>
 
+#ifndef _WIN32
+#include <sys/resource.h>
+#include <unistd.h>
+#endif
+
 using namespace pup;
 using namespace pup::exec;
 
@@ -530,6 +535,56 @@ TEST_CASE("Scheduler exported_vars", "[exec]")
 
         pup::platform::unset_env("PUP_TEST_HIDDEN_VAR");
     }
+}
+
+TEST_CASE("Scheduler without keep-going starts no command after a command fails to launch", "[exec]")
+{
+    auto bs = graph::make_build_graph();
+    for (auto const* name : { "a", "b" }) {
+        (void)graph::add_command_node(bs.graph, graph::CommandNode {
+            .instruction = pup::test::instruction(std::string { "true " } + name),
+        });
+    }
+
+    auto scheduler = Scheduler { SchedulerOptions { .jobs = 2 } };
+    auto started = std::size_t { 0 };
+    scheduler.on_job_start([&](BuildJob const&) { ++started; });
+
+    auto original_limit = rlimit {};
+    REQUIRE(getrlimit(RLIMIT_NOFILE, &original_limit) == 0);
+    auto const lowest_free_fd = dup(0);
+    REQUIRE(lowest_free_fd >= 0);
+    close(lowest_free_fd);
+    auto exhausted_limit = original_limit;
+    exhausted_limit.rlim_cur = static_cast<rlim_t>(lowest_free_fd);
+    REQUIRE(setrlimit(RLIMIT_NOFILE, &exhausted_limit) == 0);
+
+    auto result = scheduler.build(bs);
+
+    REQUIRE(setrlimit(RLIMIT_NOFILE, &original_limit) == 0);
+    REQUIRE(result.has_value());
+    CHECK(result->failed_jobs == 1);
+    CHECK(started == 1);
+}
+
+TEST_CASE("Scheduler without keep-going starts no command after a command exits nonzero", "[exec]")
+{
+    auto bs = graph::make_build_graph();
+    for (auto const* name : { "a", "b" }) {
+        (void)graph::add_command_node(bs.graph, graph::CommandNode {
+            .instruction = pup::test::instruction(std::string { "false " } + name),
+        });
+    }
+
+    auto scheduler = Scheduler { SchedulerOptions { .jobs = 1 } };
+    auto started = std::size_t { 0 };
+    scheduler.on_job_start([&](BuildJob const&) { ++started; });
+
+    auto result = scheduler.build(bs);
+
+    REQUIRE(result.has_value());
+    CHECK(result->failed_jobs == 1);
+    CHECK(started == 1);
 }
 
 #endif // !_WIN32
