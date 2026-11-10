@@ -243,7 +243,7 @@ TEST_CASE("Topological sort", "[graph]")
         (void)add_edge(g, id2->id(), id3->id());
 
         auto result = topological_sort(g);
-        REQUIRE_FALSE(result.has_cycle);
+        REQUIRE(result.cycle.empty());
         // 3 nodes we added + BUILD_ROOT_ID = 4
         REQUIRE(result.order.size() == 4);
 
@@ -274,7 +274,7 @@ TEST_CASE("Topological sort", "[graph]")
         (void)add_edge(g, id_c->id(), id_d->id());
 
         auto result = topological_sort(g);
-        REQUIRE_FALSE(result.has_cycle);
+        REQUIRE(result.cycle.empty());
         // 4 nodes we added + BUILD_ROOT_ID = 5
         REQUIRE(result.order.size() == 5);
 
@@ -295,7 +295,6 @@ TEST_CASE("Topological sort", "[graph]")
         (void)add_edge(g, id3->id(), id1->id()); // Creates cycle
 
         auto result = topological_sort(g);
-        REQUIRE(result.has_cycle);
         REQUIRE_FALSE(result.cycle.empty());
     }
 
@@ -542,7 +541,7 @@ TEST_CASE("Order-only dependencies in topological sort", "[graph]")
     SECTION("topological sort respects order-only dependencies")
     {
         auto result = topological_sort(g);
-        REQUIRE_FALSE(result.has_cycle);
+        REQUIRE(result.cycle.empty());
 
         // Find positions in the sorted order
         auto find_pos = [&](pup::NodeId id) -> std::size_t {
@@ -574,7 +573,7 @@ TEST_CASE("Order-only dependencies in topological sort", "[graph]")
         (void)add_edge(g, output_id->id(), header_id->id(), LinkType::OrderOnly);
 
         auto result = topological_sort(g);
-        REQUIRE(result.has_cycle);
+        REQUIRE_FALSE(result.cycle.empty());
     }
 }
 
@@ -1163,7 +1162,7 @@ TEST_CASE("Topological sort respects order-only deps through groups", "[topo][gr
     (void)add_edge(g, group1->id(), c2->id(), LinkType::OrderOnly);
 
     auto result = topological_sort(g);
-    REQUIRE_FALSE(result.has_cycle);
+    REQUIRE(result.cycle.empty());
 
     auto find_pos = [&](pup::NodeId id) -> std::size_t {
         for (auto i = std::size_t { 0 }; i < result.order.size(); ++i) {
