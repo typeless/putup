@@ -800,6 +800,29 @@ TEST_CASE("Parser reports an error at the end of a line on that line", "[parser]
     CHECK(result.errors[0].location.column == 9);
 }
 
+TEST_CASE("Parser reports a rejected display annotation once", "[parser][location]")
+{
+    auto const* source = GENERATE(
+        ": |> ^ open echo a |> a\n",
+        ": |> ^flag^ echo a |> a\n"
+    );
+    CAPTURE(source);
+
+    auto result = parse_tupfile(source, "test.tup");
+
+    REQUIRE(result.errors.size() == 1);
+    CHECK(result.errors[0].location.line == 1);
+}
+
+TEST_CASE("Parser resumes on the next line after a rejected display annotation that ends its line", "[parser][location]")
+{
+    auto result = parse_tupfile(": |> ^ open echo a\n: |> ^flag^ echo b |> b\n", "test.tup");
+
+    REQUIRE(result.errors.size() == 2);
+    CHECK(result.errors[0].location.line == 1);
+    CHECK(result.errors[1].location.line == 2);
+}
+
 TEST_CASE("Parser rejects a token that ends a path where a path should start", "[parser][path-list]")
 {
     auto const* source = GENERATE(
