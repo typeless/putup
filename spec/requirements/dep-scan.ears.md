@@ -124,6 +124,17 @@ the redirection, as the shell does.
 If a control operator or a redirection is quoted or escaped, then putup shall read it as part of
 a word of the invocation, as the shell does.
 
+### REQ-SCAN-SUBSTITUTION-WORD
+
+- conformance: putup-only
+- reference: a scan carries no word that holds a command substitution, since running it would run the substitution a second time; split, the substitution's middle words carry no shell syntax and reached the scan as flags and sources of their own (#585)
+- discharge: test "tokenize_shell_command keeps a command substitution inside the word it is written in"
+- discharge: test "tokenize_shell_command reads no operator inside a command substitution"
+- discharge: test "A scanner drops a command substitution as one word with the flag it is written in"
+
+When an unquoted or double-quoted `` `…` `` or `$(…)` is written in a word, putup shall read the
+whole substitution, its blanks and operators included, as part of that word, as the shell does.
+
 ### REQ-SCAN-NEWLINE-SEPARATOR
 
 - conformance: putup-only
