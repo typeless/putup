@@ -934,6 +934,7 @@ auto parse_command(ParserState& s, std::optional<Expression>& display) -> Result
         cmd_buf += tok.text;
         tok = Token { s.lexer.next() };
     }
+    s.current = tok;
 
     // Work with string_view for trimming
     auto cmd_sv = cmd_buf.view();
@@ -952,7 +953,6 @@ auto parse_command(ParserState& s, std::optional<Expression>& display) -> Result
     if (!cmd_sv.empty() && cmd_sv[0] == '^') {
         auto second_caret = cmd_sv.find('^', 1);
         if (second_caret == std::string_view::npos) {
-            report_error(s, "Missing ending '^' flag");
             return make_error<Expression>(ErrorCode::ParseError, "Missing ending '^' flag");
         }
         {
@@ -960,7 +960,6 @@ auto parse_command(ParserState& s, std::optional<Expression>& display) -> Result
             // Upstream reads the non-space run after '^' as flags (t, o), so this is not
             // display text and rendering it as a label would honour neither (#217).
             if (!annotation.empty() && annotation[0] != ' ' && annotation[0] != '\t') {
-                report_error(s, "Caret flags are not supported; a display annotation must begin with a space");
                 return make_error<Expression>(ErrorCode::ParseError, "Caret flags are not supported; a display annotation must begin with a space");
             }
             auto start = annotation.find_first_not_of(" \t");
@@ -988,9 +987,6 @@ auto parse_command(ParserState& s, std::optional<Expression>& display) -> Result
     if (!cmd_sv.empty()) {
         expr.parts.emplace_back(Expression::Literal { global_pool().intern(cmd_sv) });
     }
-
-    // Put back the |> token
-    s.current = tok;
 
     return expr;
 }
