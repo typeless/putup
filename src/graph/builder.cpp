@@ -2085,9 +2085,7 @@ auto process_generated_rules(
         (void)add_edge(ctx.state->graph, *gen_cmd_id, parent_cmd_id);
 
         if (auto* node = get_command_node(ctx.state->graph, *gen_cmd_id)) {
-            node->generated_output = gen_rule.outputs.empty() ? GeneratedOutput {} : gen_rule.outputs[0];
-            node->output_action = gen_rule.action;
-            node->parent_command = gen_rule.parent_command;
+            node->parent_command = parent_cmd_id;
             node->inputs = std::move(gen_input_ids);
         }
     }

@@ -50,10 +50,6 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
         REQUIRE(rule.inputs.size() == 1);
         REQUIRE(rule.inputs[0] == intern("foo.c"));
         REQUIRE(rule.command == intern("gcc -M foo.c"));
-        REQUIRE(rule.action == OutputAction::InjectImplicitDeps);
-        REQUIRE(rule.parent_command == 42);
-        REQUIRE(rule.outputs.size() == 1);
-        REQUIRE(rule.outputs[0].type == GeneratedOutput::Type::Stdout);
     }
 
     SECTION("matches clang compile command")
@@ -807,27 +803,5 @@ TEST_CASE("Generated rules inherit order-only inputs", "[rule_pattern]")
         REQUIRE(generated.size() == 1);
         REQUIRE(generated[0].order_only_inputs.size() == 1);
         REQUIRE(generated[0].order_only_inputs[0] == intern("gen-headers/config.h"));
-    }
-}
-
-TEST_CASE("GeneratedOutput types", "[rule_pattern]")
-{
-    SECTION("stdout type")
-    {
-        auto output = GeneratedOutput {
-            .type = GeneratedOutput::Type::Stdout,
-            .path = {},
-        };
-        REQUIRE(output.type == GeneratedOutput::Type::Stdout);
-    }
-
-    SECTION("file type")
-    {
-        auto output = GeneratedOutput {
-            .type = GeneratedOutput::Type::File,
-            .path = intern("output.d"),
-        };
-        REQUIRE(output.type == GeneratedOutput::Type::File);
-        REQUIRE(output.path == intern("output.d"));
     }
 }

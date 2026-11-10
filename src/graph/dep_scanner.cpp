@@ -96,22 +96,12 @@ auto DepScannerRegistry::match_and_generate(CommandInfo const& cmd, CommandToken
             continue;
         }
 
-        auto spec = scanner->dep_spec();
-
         for (auto const& scan : scanner->build_dep_scans(cmd, tokens)) {
-            auto outputs = Vec<GeneratedOutput> {};
-            if (spec.output_mode == DepOutputMode::Stdout) {
-                outputs.push_back({ .type = GeneratedOutput::Type::Stdout, .path = StringId::Empty });
-            }
-
             result.push_back(GeneratedRule {
                 .inputs = cmd.inputs,
                 .order_only_inputs = cmd.order_only_inputs,
                 .command = scan.command,
                 .display = make_dep_display(cmd.inputs),
-                .outputs = std::move(outputs),
-                .action = OutputAction::InjectImplicitDeps,
-                .parent_command = cmd.node_id,
                 .covered_object = scan.object,
             });
         }

@@ -30,10 +30,7 @@ struct BuildJob {
     Vec<StringId> order_only_inputs = {}; ///< Order-only dependencies
     Vec<StringId> exported_vars = {};     ///< Env vars to export to command
 
-    // For auto-generated rules (from pattern matching)
-    bool capture_stdout = false;               ///< Capture stdout for depfile parsing
-    bool inject_implicit_deps = false;         ///< Parse stdout as depfile
-    std::optional<NodeId> parent_command = {}; ///< Parent command for implicit deps
+    std::optional<NodeId> parent_command = {}; ///< Set on a dependency scan: its stdout is parsed as a depfile for this command
 };
 
 /// Result of executing a build job

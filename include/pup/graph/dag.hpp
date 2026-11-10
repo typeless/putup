@@ -17,7 +17,6 @@
 #include "pup/core/token_list.hpp"
 #include "pup/core/types.hpp"
 #include "pup/core/vec.hpp"
-#include "pup/graph/rule_pattern.hpp"
 
 #include <cstdint>
 #include <limits>
@@ -76,9 +75,7 @@ struct CommandNode {
 
     SortedIdVec exported_vars = {}; ///< Env vars to export to command (interned StringIds)
 
-    std::optional<GeneratedOutput> generated_output = {}; ///< Output specification
-    OutputAction output_action = {};                      ///< What to do with output
-    std::optional<NodeId> parent_command = {};            ///< Parent command for InjectImplicitDeps
+    std::optional<NodeId> parent_command = {}; ///< Set on a dependency scan: the command whose implicit dependencies its stdout names
 
     Vec<Guard> guards = {};
 };
@@ -285,9 +282,9 @@ auto add_command_node(Graph& graph, CommandNode node) -> Result<CommandId>;
 [[nodiscard]]
 auto add_edge(Graph& graph, NodeId from, NodeId to, LinkType type = LinkType::Normal) -> Result<void>;
 
-/// Role tags for scalar-property access via get<Tag>. The four tags that
-/// are also concrete types (NodeType, Hash256, OutputAction,
-/// SourcePosition) identify themselves by their return type. The four below
+/// Role tags for scalar-property access via get<Tag>. The three tags that
+/// are also concrete types (NodeType, Hash256, SourcePosition) identify
+/// themselves by their return type. The four below
 /// are pure role tags whose storage type is StringId.
 struct Name { };
 struct Display { };
@@ -307,11 +304,6 @@ template<>
 struct get_storage<Hash256> {
     using type = Hash256;
     using handle = FileId;
-};
-template<>
-struct get_storage<OutputAction> {
-    using type = OutputAction;
-    using handle = CommandId;
 };
 template<>
 struct get_storage<SourcePosition> {
@@ -389,13 +381,9 @@ auto view(Graph const& graph, typename view_storage<Tag>::handle id) -> typename
 [[nodiscard]]
 auto get_parent_dir(Graph const& graph, FileId id) -> FileId;
 
-/// Get the parent command for InjectImplicitDeps commands
+/// The command a dependency scan records implicit dependencies for; empty for any other command
 [[nodiscard]]
 auto get_parent_command(Graph const& graph, CommandId id) -> std::optional<CommandId>;
-
-/// Check if a command captures stdout (generated rule with Stdout output type)
-[[nodiscard]]
-auto is_stdout_capture(Graph const& graph, CommandId id) -> bool;
 
 /// Collect the nodes that untaken-branch rules declare as outputs and no command produces
 [[nodiscard]]

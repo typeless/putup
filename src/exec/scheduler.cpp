@@ -16,7 +16,6 @@
 #include "pup/core/types.hpp"
 #include "pup/core/vec.hpp"
 #include "pup/graph/dag.hpp"
-#include "pup/graph/rule_pattern.hpp"
 #include "pup/graph/topo.hpp"
 #include "pup/parser/depfile.hpp"
 #include "pup/platform/env.hpp"
@@ -162,7 +161,7 @@ auto parse_stdout_depfile(
     bool& out_rejected
 ) -> void
 {
-    if (job.inject_implicit_deps) {
+    if (job.parent_command) {
         auto depfile_result = parser::parse_depfile(stdout_sv);
         if (!depfile_result || !parser::is_scan_output(*depfile_result)) {
             out_rejected = true;
@@ -696,10 +695,7 @@ auto Scheduler::build_job_list(
             working_dir_id = pool.intern(source_root_sv);
         }
 
-        // Check if this is a generated rule that captures stdout
-        auto capture_stdout = graph::is_stdout_capture(g, id);
-        auto inject_implicit = capture_stdout && graph::get<graph::OutputAction>(g, id) == graph::OutputAction::InjectImplicitDeps;
-        auto parent_cmd = inject_implicit ? graph::get_parent_command(g, id) : std::nullopt;
+        auto parent_cmd = graph::get_parent_command(g, id);
 
         // Expand command from instruction pattern + operands
         auto cmd_id = graph::expand_instruction(g, id, cache, source_root_sv, config_root_sv);
@@ -723,8 +719,6 @@ auto Scheduler::build_job_list(
             .outputs = {},
             .order_only_inputs = {},
             .exported_vars = std::move(exported_ids),
-            .capture_stdout = capture_stdout,
-            .inject_implicit_deps = inject_implicit,
             .parent_command = parent_cmd ? std::optional<NodeId> { parent_cmd->id() } : std::nullopt,
         };
 
@@ -1039,7 +1033,7 @@ auto Scheduler::execute_parallel(
             auto stdout_deps_cmd = std::optional<NodeId> {};
             auto scan_rejected = false;
             parse_stdout_depfile(job, slot.stdout_buf.view(), stdout_deps, stdout_deps_cmd, scan_rejected);
-            if (job.inject_implicit_deps && !scan_rejected && status.exit_code == 0) {
+            if (job.parent_command && !scan_rejected && status.exit_code == 0) {
                 slot.stdout_buf.clear();
             }
 

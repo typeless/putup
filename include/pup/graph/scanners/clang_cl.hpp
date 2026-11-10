@@ -23,8 +23,6 @@ public:
     auto build_dep_scans(CommandInfo const& cmd, CommandTokens const& tokens) const
         -> Vec<DepScan> override;
     [[nodiscard]]
-    auto dep_spec() const -> DepSpec override;
-    [[nodiscard]]
     auto name() const -> std::string_view override
     {
         return "clang-cl";
