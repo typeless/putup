@@ -464,6 +464,8 @@ TEST_CASE("tokenize_shell_command keeps a command substitution inside the word i
         { "echo $(a $(b c) d) e", { "echo", "$(a $(b c) d)", "e" } },
         { "echo $((1 + 2)) e", { "echo", "$((1 + 2))", "e" } },
         { R"sh(echo $(echo ")" x) e)sh", { "echo", R"sh($(echo ")" x))sh", "e" } },
+        { R"sh(echo $(echo ')' x) e)sh", { "echo", R"sh($(echo ')' x))sh", "e" } },
+        { R"sh(echo $(echo \) x) e)sh", { "echo", R"sh($(echo \) x))sh", "e" } },
         { R"sh(echo "$(echo "x y")" e)sh", { "echo", R"sh($(echo "x y"))sh", "e" } },
         { R"(echo `a \` b` e)", { "echo", R"(`a \` b`)", "e" } },
         { "echo `a b", { "echo", "`a b" } },
