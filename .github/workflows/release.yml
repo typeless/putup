@@ -67,7 +67,7 @@ jobs:
           done
       - name: Fetch MSVC CRT + Windows SDK (xwin)
         run: |
-          curl -fsSL https://github.com/Jake-Shadle/xwin/releases/download/0.9.0/xwin-0.9.0-x86_64-unknown-linux-musl.tar.gz | tar -xz
+          curl -fsSL https://github.com/Jake-Shadle/xwin/releases/download/0.10.0/xwin-0.10.0-x86_64-unknown-linux-musl.tar.gz | tar -xz
           ./xwin-*/xwin --accept-license --arch x86_64 splat --output "$HOME/.xwin/splat"
       - name: Cross-build putup.exe
         run: |
