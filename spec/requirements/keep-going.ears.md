@@ -40,3 +40,15 @@ resolvable.
 
 While keep-going is in effect, when a rule's input is an output that no accepted directory
 declares and that does not already exist, putup shall not run that rule.
+
+## Group: without keep-going
+
+### REQ-KEEPGOING-OFF-STARTS-NOTHING-AFTER-FAILURE
+
+- conformance: tup-conformant
+- reference: upstream's dispatch loop in `execute_graph` (`updater.c`) tests `(!failed || keep_going)` before handing each node to a worker, so once a job has failed no further node is dispatched; jobs already running are reaped by the inner `check_empties` loop, where any nonzero worker rc increments `failed`
+- discharge: test "Scheduler without keep-going starts no command after a command exits nonzero"
+- discharge: test "Scheduler without keep-going starts no command after a command fails to launch"
+
+While keep-going is not in effect, when a command fails to start or exits nonzero, putup shall
+start no further command.
