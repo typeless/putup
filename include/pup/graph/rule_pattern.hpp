@@ -8,9 +8,6 @@
 #include "pup/core/types.hpp"
 #include "pup/core/vec.hpp"
 
-#include <cstdint>
-#include <optional>
-
 namespace pup::graph {
 
 /// Information about a matched command for rule generation
@@ -25,33 +22,12 @@ struct CommandInfo {
     StringId working_dir = StringId::Empty;
 };
 
-/// Output specification for generated rules
-struct GeneratedOutput {
-    enum class Type : std::uint8_t {
-        File,   ///< Regular file output
-        Stdout, ///< Capture stdout
-        Stderr, ///< Capture stderr
-    };
-
-    Type type = Type::File;
-    StringId path = StringId::Empty; ///< For File type: output path
-};
-
-/// What to do with the output of a generated rule
-enum class OutputAction : std::uint8_t {
-    Normal,            ///< Regular file output
-    InjectImplicitDeps ///< Parse as depfile, add edges to parent command
-};
-
-/// A generated rule (same structure as user-defined rules)
+/// A dependency scan of one command: its stdout is parsed as a depfile and the headers it names become that command's implicit dependencies
 struct GeneratedRule {
     Vec<StringId> inputs;
     Vec<StringId> order_only_inputs; ///< Order-only deps (e.g., gen-headers)
     StringId command = StringId::Empty;
     StringId display = StringId::Empty;
-    Vec<GeneratedOutput> outputs;
-    OutputAction action = OutputAction::Normal;
-    std::optional<NodeId> parent_command = {}; ///< For InjectImplicitDeps
     StringId covered_object = StringId::Empty; ///< The parent's object this rule records headers for
 };
 

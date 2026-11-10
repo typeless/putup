@@ -300,13 +300,6 @@ auto ClangClScanner::build_dep_scans(CommandInfo const& /*cmd*/, CommandTokens c
     return scans;
 }
 
-auto ClangClScanner::dep_spec() const -> DepSpec
-{
-    return DepSpec {
-        .output_mode = DepOutputMode::Stdout,
-    };
-}
-
 auto clang_cl_flag_tables() -> FlagTables
 {
     return FlagTables {

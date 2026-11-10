@@ -13,16 +13,6 @@
 
 namespace pup::graph {
 
-/// How to capture dependency output from a tool
-enum class DepOutputMode : std::uint8_t {
-    Stdout, ///< Parse stdout as depfile (e.g., gcc -M)
-};
-
-/// Specification for dependency extraction
-struct DepSpec {
-    DepOutputMode output_mode = DepOutputMode::Stdout;
-};
-
 /// One scan and the object file whose compile it reproduces. The object travels with the scan
 /// because only the scanner's own parse of the invocation can say which one it is.
 struct DepScan {
@@ -101,10 +91,6 @@ public:
         CommandInfo const& cmd,
         CommandTokens const& tokens
     ) const -> Vec<DepScan> = 0;
-
-    /// Get the dependency extraction specification
-    [[nodiscard]]
-    virtual auto dep_spec() const -> DepSpec = 0;
 
     /// Human-readable name for display/debugging
     [[nodiscard]]

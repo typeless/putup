@@ -196,7 +196,7 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
         auto const command = graph::find_command(ctx.graph().graph, node);
         assert(command);
         auto const id = *command;
-        if (graph::get<graph::OutputAction>(ctx.graph().graph, id) == graph::OutputAction::InjectImplicitDeps) {
+        if (graph::get_parent_command(ctx.graph().graph, id)) {
             continue;
         }
 

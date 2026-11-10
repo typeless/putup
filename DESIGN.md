@@ -578,9 +578,7 @@ struct CommandNode {
     Vec<NodeId> inputs = {};           // Operand file NodeIds for %f expansion
     Vec<NodeId> outputs = {};          // Operand file NodeIds for %o expansion
     SortedIdVec exported_vars = {};            // Env vars to export (interned StringIds)
-    std::optional<GeneratedOutput> generated_output = {};  // Output specification
-    OutputAction output_action = {};           // What to do with output
-    std::optional<NodeId> parent_command = {}; // Parent command for InjectImplicitDeps
+    std::optional<NodeId> parent_command = {}; // Set on a dependency scan: the command whose implicit dependencies its stdout names
 
     // Guards of the taken branch the rule sits in, all satisfied: a rule in an
     // untaken branch becomes no command (see "Why Untaken Branches Become No Commands")
@@ -710,14 +708,13 @@ auto all_nodes(Graph const&) -> Vec<NodeId>;  // mixed kinds: topological sort, 
 
 // Field accessors: file tags take FileId, command tags take CommandId
 auto get<NodeType | Hash256 | Name>(Graph const&, FileId);
-auto get<OutputAction | SourcePosition | Display | SourceDir | InstructionPattern>(Graph const&, CommandId);
+auto get<SourcePosition | Display | SourceDir | InstructionPattern>(Graph const&, CommandId);
 auto view<Inputs | OrderOnlyInputs | Outputs | ExportedVars>(Graph const&, CommandId);
 auto get_parent_dir(Graph const&, FileId) -> FileId;
 auto get_full_path(Graph const&, FileId, PathCache&) -> std::string_view;
 auto get_full_path(Graph const&, FileId) -> StringId;
 auto find_by_dir_name(Graph const&, FileId parent, name) -> std::optional<NodeId>;
 auto get_parent_command(Graph const&, CommandId) -> std::optional<CommandId>;
-auto is_stdout_capture(Graph const&, CommandId) -> bool;
 auto collect_inactive_outputs(Graph const&) -> NodeIdMap32;  // declared only by untaken branches
 auto expand_instruction(Graph const&, CommandId, PathCache&) -> StringId;
 auto expand_instruction(Graph const&, CommandId) -> StringId;
@@ -746,8 +743,7 @@ auto get_build_root_name(Graph const&) -> std::string_view;
 ```cpp
 struct TopoSortResult {
     Vec<NodeId> order;
-    bool has_cycle;
-    Vec<NodeId> cycle;  // Path if cycle found
+    Vec<NodeId> cycle;  // Cycle path; empty when the graph has none
 };
 
 auto topological_sort(graph) -> TopoSortResult;
@@ -875,28 +871,13 @@ struct CommandInfo {
     StringId working_dir;
 };
 
-/// Output specification for generated rules
-struct GeneratedOutput {
-    enum class Type { File, Stdout, Stderr };
-    Type type = Type::File;
-    StringId path;
-};
-
-/// How to process generated rule output
-enum class OutputAction {
-    Normal,            // Regular file output
-    InjectImplicitDeps // Parse as depfile, add edges to parent command
-};
-
-/// Complete specification of an auto-generated rule
+/// A dependency scan of one command: its stdout is parsed as a depfile and
+/// the headers it names become that command's implicit dependencies
 struct GeneratedRule {
     Vec<StringId> inputs;
     Vec<StringId> order_only_inputs;
     StringId command;
     StringId display;
-    Vec<GeneratedOutput> outputs;
-    OutputAction action = OutputAction::Normal;
-    std::optional<NodeId> parent_command = {};
 };
 ```
 
@@ -967,7 +948,7 @@ User rule: : main.c |> gcc -c %f -o %o |> main.o
 
 ### Execution Integration
 
-When the scheduler executes a command with `OutputAction::InjectImplicitDeps`:
+When the scheduler executes a dependency scan (a command whose `parent_command` is set):
 
 1. Capture stdout (DEP command outputs dependency list)
 2. Parse as depfile format: `target: dep1 dep2 dep3`
@@ -1178,10 +1159,7 @@ struct BuildJob {
     Vec<StringId> order_only_inputs = {};  // Order-only dependencies
     Vec<StringId> exported_vars = {};      // Env vars to export to command
 
-    // For auto-generated rules (from pattern matching)
-    bool capture_stdout = false;             // Capture stdout for depfile parsing
-    bool inject_implicit_deps = false;       // Parse stdout as depfile
-    std::optional<NodeId> parent_command = {}; // Parent command for implicit deps
+    std::optional<NodeId> parent_command = {}; // Set on a dependency scan: its stdout is parsed as a depfile for this command
 };
 
 struct JobResult {

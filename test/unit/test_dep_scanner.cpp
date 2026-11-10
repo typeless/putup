@@ -158,8 +158,6 @@ TEST_CASE("DepScannerRegistry match_and_generate", "[dep_scanner]")
         auto rules = registry.match_and_generate(cmd, tokens_of(cmd));
         REQUIRE(rules.size() == 1);
         REQUIRE(rules[0].command == intern("gcc -M foo.c"));
-        REQUIRE(rules[0].action == OutputAction::InjectImplicitDeps);
-        REQUIRE(rules[0].parent_command == 10);
     }
 
     SECTION("skips command with existing dep flags")
@@ -202,12 +200,6 @@ TEST_CASE("GccScanner interface", "[dep_scanner][gcc]")
     SECTION("name returns gcc")
     {
         REQUIRE(scanner.name() == "gcc");
-    }
-
-    SECTION("dep_spec returns stdout mode")
-    {
-        auto spec = scanner.dep_spec();
-        REQUIRE(spec.output_mode == DepOutputMode::Stdout);
     }
 
     SECTION("matches gcc compile command")
@@ -631,11 +623,6 @@ TEST_CASE("ClangClScanner dep command construction", "[dep_scanner][clang_cl]")
 {
     auto scanner = scanners::ClangClScanner {};
 
-    SECTION("dep_spec returns stdout mode")
-    {
-        REQUIRE(scanner.dep_spec().output_mode == DepOutputMode::Stdout);
-    }
-
     SECTION("carries compile flags and drops output paths")
     {
         auto scan = only_scan(scanner, 
@@ -717,8 +704,6 @@ TEST_CASE("Registry generates dep rules for clang-cl", "[dep_scanner][clang_cl]"
         auto rules = generated_for(registry, clang_cl_compile(1, "clang-cl -Isrc -c foo.cpp -o foo.obj"));
         REQUIRE(rules.size() == 1);
         REQUIRE(rules[0].command == intern("clang-cl /clang:-M -Isrc foo.cpp"));
-        REQUIRE(rules[0].action == OutputAction::InjectImplicitDeps);
-        REQUIRE(rules[0].parent_command == 1);
     }
 
     SECTION("clang-cl compile that already emits a depfile putup can find gets none")

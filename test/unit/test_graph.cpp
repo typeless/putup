@@ -424,11 +424,6 @@ TEST_CASE("get<T> template accessor for unique-return-type properties", "[graph]
         CHECK(result[0] == std::byte { 0xAB });
         CHECK(result[31] == std::byte { 0xCD });
     }
-
-    SECTION("get<OutputAction>")
-    {
-        CHECK(get<OutputAction>(g, *cmd) == OutputAction::Normal);
-    }
 }
 
 TEST_CASE("BuildGraph edge types", "[graph]")
@@ -2217,13 +2212,11 @@ TEST_CASE("compute_command_key separates dep-scan commands by parent", "[graph][
     auto scan_a = add_command_node(g, CommandNode {
         .source_dir = intern("a"),
         .instruction = pup::test::instruction("g++ -M ggc.cc"),
-        .output_action = OutputAction::InjectImplicitDeps,
         .parent_command = compile_a->id(),
     });
     auto scan_b = add_command_node(g, CommandNode {
         .source_dir = intern("a"),
         .instruction = pup::test::instruction("g++ -M ggc.cc"),
-        .output_action = OutputAction::InjectImplicitDeps,
         .parent_command = compile_b->id(),
     });
     REQUIRE(scan_a.has_value());

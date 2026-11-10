@@ -289,13 +289,6 @@ auto GccScanner::build_dep_scans(CommandInfo const& /*cmd*/, CommandTokens const
     return scans;
 }
 
-auto GccScanner::dep_spec() const -> DepSpec
-{
-    return DepSpec {
-        .output_mode = DepOutputMode::Stdout,
-    };
-}
-
 auto gcc_flag_tables() -> FlagTables
 {
     return FlagTables {

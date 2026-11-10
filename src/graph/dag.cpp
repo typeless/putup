@@ -369,12 +369,6 @@ auto get_parent_command(Graph const& graph, CommandId id) -> std::optional<Comma
     return command;
 }
 
-auto is_stdout_capture(Graph const& graph, CommandId id) -> bool
-{
-    auto const& generated = command_at(graph, id).generated_output;
-    return generated && generated->type == GeneratedOutput::Type::Stdout;
-}
-
 template<>
 auto get<NodeType>(Graph const& graph, FileId id) -> NodeType
 {
@@ -385,12 +379,6 @@ template<>
 auto get<Hash256>(Graph const& graph, FileId id) -> Hash256
 {
     return file_at(graph, id).content_hash;
-}
-
-template<>
-auto get<OutputAction>(Graph const& graph, CommandId id) -> OutputAction
-{
-    return command_at(graph, id).output_action;
 }
 
 template<>
