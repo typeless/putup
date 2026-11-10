@@ -258,11 +258,17 @@ auto GccScanner::build_dep_scans(CommandInfo const& /*cmd*/, CommandTokens const
                 continue;
             }
 
+            auto const argument = separate_arg(w);
+            if (argument && i + 1 < invocation.size() && has_shell_special(invocation[i + 1])) {
+                ++i;
+                continue;
+            }
+
             dep_cmd += ' ';
             auto norm = Buf {};
             normalize_flag_path_into(norm, w);
             shell_quote_into(dep_cmd, norm.view());
-            pending = separate_arg(w);
+            pending = argument;
         }
 
         if (source_files.empty()) {

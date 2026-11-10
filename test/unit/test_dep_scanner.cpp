@@ -1763,6 +1763,30 @@ TEST_CASE("A scanner drops a command substitution as one word with the flag it i
     }
 }
 
+TEST_CASE("A scanner drops a flag together with the substitution it takes as its next word", "[dep_scanner]")
+{
+    SECTION("gcc include path")
+    {
+        auto scanner = scanners::GccScanner {};
+        auto scan = only_scan(scanner, gcc_compile(66, "gcc -O2 -I `pwd`/inc -Iinc -c main.c -o main.o"));
+        REQUIRE(pup::global_pool().get(scan.command) == "gcc -M -O2 -Iinc main.c");
+    }
+
+    SECTION("gcc macro value")
+    {
+        auto scanner = scanners::GccScanner {};
+        auto scan = only_scan(scanner, gcc_compile(67, "gcc -D $(echo ID=1) -DX -c main.c -o main.o"));
+        REQUIRE(pup::global_pool().get(scan.command) == "gcc -M -DX main.c");
+    }
+
+    SECTION("clang-cl include path")
+    {
+        auto scanner = scanners::ClangClScanner {};
+        auto scan = only_scan(scanner, clang_cl_compile(68, "clang-cl /O2 /I $(pwd)/inc /I inc -c main.cpp -o main.obj"));
+        REQUIRE(pup::global_pool().get(scan.command) == "clang-cl /clang:-M /O2 /I inc main.cpp");
+    }
+}
+
 TEST_CASE("GccScanner carries the compile's other flags into the scan", "[dep_scanner][gcc]")
 {
     auto scanner = scanners::GccScanner {};

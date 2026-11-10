@@ -135,6 +135,15 @@ a word of the invocation, as the shell does.
 When an unquoted or double-quoted `` `…` `` or `$(…)` is written in a word, putup shall read the
 whole substitution, its blanks and operators included, as part of that word, as the shell does.
 
+### REQ-SCAN-SUBSTITUTION-ARGUMENT
+
+- conformance: putup-only
+- reference: a flag and the word it takes are one argument to the compiler, so the scan gives them the fate it gives the same flag written joined to a substitution, which it drops as one word; carried alone, the substitution reached the scan quoted as a literal path the compile never searched
+- discharge: test "A scanner drops a flag together with the substitution it takes as its next word"
+
+Where a flag that takes its argument as a separate word is followed by a word holding a command
+substitution, putup shall carry neither word into the scan.
+
 ### REQ-SCAN-NEWLINE-SEPARATOR
 
 - conformance: putup-only
