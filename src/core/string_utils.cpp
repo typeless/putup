@@ -23,6 +23,8 @@ constexpr auto stop_at = [] {
     auto table = std::array<std::uint8_t, 256> {};
     table[static_cast<unsigned char>('\\')] = stop_normal | stop_double;
     table[static_cast<unsigned char>('"')] = stop_normal | stop_double;
+    table[static_cast<unsigned char>('`')] = stop_normal | stop_double;
+    table[static_cast<unsigned char>('$')] = stop_normal | stop_double;
     table[static_cast<unsigned char>('\'')] = stop_normal | stop_single;
     table[static_cast<unsigned char>(' ')] = stop_normal;
     table[static_cast<unsigned char>('\t')] = stop_normal;
@@ -34,6 +36,52 @@ constexpr auto stop_at = [] {
     table[static_cast<unsigned char>('\n')] = stop_normal;
     return table;
 }();
+
+auto opens_substitution(std::string_view cmd, std::size_t i) -> bool
+{
+    return cmd[i] == '`' || (cmd[i] == '$' && i + 1 < cmd.size() && cmd[i + 1] == '(');
+}
+
+auto substitution_end(std::string_view cmd, std::size_t start) -> std::size_t
+{
+    if (cmd[start] == '`') {
+        for (auto i = start + 1; i < cmd.size(); ++i) {
+            if (cmd[i] == '\\') {
+                ++i;
+            } else if (cmd[i] == '`') {
+                return i + 1;
+            }
+        }
+        return cmd.size();
+    }
+
+    auto depth = 0;
+    auto in_double_quote = false;
+    for (auto i = start + 1; i < cmd.size();) {
+        if (cmd[i] == '\\') {
+            i += 2;
+            continue;
+        }
+        if (opens_substitution(cmd, i)) {
+            i = substitution_end(cmd, i);
+            continue;
+        }
+        auto const c = cmd[i++];
+        if (c == '"') {
+            in_double_quote = !in_double_quote;
+        } else if (in_double_quote) {
+            continue;
+        } else if (c == '\'') {
+            auto const close = cmd.find('\'', i);
+            i = close == std::string_view::npos ? cmd.size() : close + 1;
+        } else if (c == '(') {
+            ++depth;
+        } else if (c == ')' && --depth == 0) {
+            return i;
+        }
+    }
+    return cmd.size();
+}
 
 } // namespace
 
@@ -76,6 +124,13 @@ auto tokenize_shell_command(std::string_view cmd) -> Vec<ShellToken>
             continue;
         }
 
+        if (opens_substitution(cmd, i)) {
+            auto const end = substitution_end(cmd, i);
+            current.append(cmd.substr(i, end - i));
+            i = end;
+            continue;
+        }
+
         // The run scan stopped here, so c is special for this state's mask: the branches re-test nothing.
         auto c = cmd[i++];
 
@@ -84,9 +139,13 @@ auto tokenize_shell_command(std::string_view cmd) -> Vec<ShellToken>
         } else if (in_double_quote) {
             if (c == '\\') {
                 escaped = true;
-            } else {
+            } else if (c == '"') {
                 in_double_quote = false;
+            } else {
+                current += c;
             }
+        } else if (c == '$') {
+            current += c;
         } else if (c == '\\') {
             escaped = true;
             word_quoted = true;

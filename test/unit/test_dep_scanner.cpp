@@ -1746,6 +1746,23 @@ TEST_CASE("GccScanner drops a macro the shell would expand and scans anyway", "[
     REQUIRE(pup::global_pool().get(scan.command) == "gcc -M foo.c");
 }
 
+TEST_CASE("A scanner drops a command substitution as one word with the flag it is written in", "[dep_scanner]")
+{
+    SECTION("gcc")
+    {
+        auto scanner = scanners::GccScanner {};
+        auto scan = only_scan(scanner, gcc_compile(64, R"(gcc -O2 -DID=\"`expr 1 + 2`\" -c main.c -o main.o)"));
+        REQUIRE(pup::global_pool().get(scan.command) == "gcc -M -O2 main.c");
+    }
+
+    SECTION("clang-cl")
+    {
+        auto scanner = scanners::ClangClScanner {};
+        auto scan = only_scan(scanner, clang_cl_compile(65, "clang-cl /O2 -DID=$(git rev-parse --short HEAD) -c main.cpp -o main.obj"));
+        REQUIRE(pup::global_pool().get(scan.command) == "clang-cl /clang:-M /O2 main.cpp");
+    }
+}
+
 TEST_CASE("GccScanner carries the compile's other flags into the scan", "[dep_scanner][gcc]")
 {
     auto scanner = scanners::GccScanner {};

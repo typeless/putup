@@ -456,6 +456,44 @@ TEST_CASE("tokenize_shell_command keeps a quoted empty word", "[string_utils]")
     REQUIRE(sv(result[3]) == "x");
 }
 
+TEST_CASE("tokenize_shell_command keeps a command substitution inside the word it is written in", "[string_utils]")
+{
+    auto const [command, expected] = GENERATE(table<std::string, std::vector<std::string>>({
+        { R"(gcc -DID=\"`expr 1 + 2`\" -c)", { "gcc", "-DID=\"`expr 1 + 2`\"", "-c" } },
+        { "echo $(a b)c d", { "echo", "$(a b)c", "d" } },
+        { "echo $(a $(b c) d) e", { "echo", "$(a $(b c) d)", "e" } },
+        { "echo $((1 + 2)) e", { "echo", "$((1 + 2))", "e" } },
+        { R"sh(echo $(echo ")" x) e)sh", { "echo", R"sh($(echo ")" x))sh", "e" } },
+        { R"sh(echo "$(echo "x y")" e)sh", { "echo", R"sh($(echo "x y"))sh", "e" } },
+        { R"(echo `a \` b` e)", { "echo", R"(`a \` b`)", "e" } },
+        { "echo `a b", { "echo", "`a b" } },
+        { "echo $(a b", { "echo", "$(a b" } },
+        { "echo '`a b`' e", { "echo", "`a b`", "e" } },
+        { R"(echo \`a b)", { "echo", "`a", "b" } },
+        { "echo $HOME $ e", { "echo", "$HOME", "$", "e" } },
+    }));
+    CAPTURE(command);
+
+    auto words = std::vector<std::string> {};
+    for (auto const& token : tokenize_shell_command(command)) {
+        REQUIRE(token.kind == pup::core::ShellTokenKind::Word);
+        words.emplace_back(sv(token));
+    }
+    REQUIRE(words == expected);
+}
+
+TEST_CASE("tokenize_shell_command reads no operator inside a command substitution", "[string_utils]")
+{
+    auto const command = GENERATE(as<std::string> {}, "echo `a | b; c` && d", "echo $(a | b; c) && d");
+    CAPTURE(command);
+
+    auto const result = tokenize_shell_command(command);
+    REQUIRE(result.size() == 4);
+    REQUIRE(result[1].kind == pup::core::ShellTokenKind::Word);
+    REQUIRE(result[2].kind == pup::core::ShellTokenKind::Operator);
+    REQUIRE(sv(result[2]) == "&&");
+}
+
 TEST_CASE("escape_json writes every byte so that a JSON string decoder returns it", "[string_utils][json]")
 {
     auto decode = [](std::string_view escaped) -> std::string {
