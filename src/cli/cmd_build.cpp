@@ -2038,22 +2038,16 @@ auto intersect_filters(
 }
 
 struct BuildFilter {
-    pup::NodeIdMap32 set;
-    bool active = false;
+    std::optional<pup::NodeIdMap32> set;
 
     auto intersect_with(pup::NodeIdMap32 next) -> void
     {
-        if (active) {
-            set = intersect_filters(set, next);
-        } else {
-            set = std::move(next);
-            active = true;
-        }
+        set = set ? intersect_filters(*set, next) : std::move(next);
     }
 
     auto ptr() const -> pup::NodeIdMap32 const*
     {
-        return active ? &set : nullptr;
+        return set ? &*set : nullptr;
     }
 };
 
