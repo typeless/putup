@@ -322,9 +322,7 @@ auto run_process_with_callback(
     if (sys::exited(status)) {
         result.exit_code = sys::exit_code(status);
     } else if (sys::signaled(status)) {
-        result.signaled = true;
-        result.signal = sys::term_signal(status);
-        result.exit_code = 128 + result.signal;
+        result.exit_code = 128 + sys::term_signal(status);
     }
 
     auto end_time = pup::SteadyClock::time_point { pup::SteadyClock::now() };

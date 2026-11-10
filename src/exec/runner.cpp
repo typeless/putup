@@ -85,8 +85,6 @@ auto CommandRunner::run_with_output(
     result.stderr_output = platform_result->stderr_output;
     result.duration = platform_result->duration;
     result.timed_out = platform_result->timed_out;
-    result.signaled = platform_result->signaled;
-    result.signal = platform_result->signal;
 
     return result;
 }

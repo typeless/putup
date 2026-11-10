@@ -22,8 +22,6 @@ struct ProcessResult {
     StringId stderr_output = StringId::Empty;
     std::chrono::milliseconds duration = {};
     bool timed_out = false;
-    bool signaled = false;
-    int signal = 0;
 };
 
 /// Options for process execution
