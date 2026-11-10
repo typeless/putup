@@ -134,10 +134,15 @@ auto tokenize_shell_command(std::string_view cmd) -> Vec<ShellToken>
         // The run scan stopped here, so c is special for this state's mask: the branches re-test nothing.
         auto c = cmd[i++];
 
+        if (c == '\\' && i < cmd.size() && cmd[i] == '\n') {
+            ++i;
+            continue;
+        }
+
         if (in_single_quote) {
             in_single_quote = false;
         } else if (in_double_quote) {
-            if (c == '\\' && i < cmd.size() && std::string_view { "$`\"\\\n" }.find(cmd[i]) != std::string_view::npos) {
+            if (c == '\\' && i < cmd.size() && std::string_view { "$`\"\\" }.find(cmd[i]) != std::string_view::npos) {
                 escaped = true;
             } else if (c == '\\') {
                 current += c;
@@ -147,6 +152,8 @@ auto tokenize_shell_command(std::string_view cmd) -> Vec<ShellToken>
                 current += c;
             }
         } else if (c == '$') {
+            current += c;
+        } else if (c == '\\' && i == cmd.size()) {
             current += c;
         } else if (c == '\\') {
             escaped = true;
