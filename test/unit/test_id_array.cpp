@@ -129,3 +129,13 @@ TEST_CASE("IdArray32 move semantics", "[id_array]")
     }
 }
 
+TEST_CASE("IdArray32 reads zero for an id after it is removed", "[id_array]")
+{
+    auto arr = pup::IdArray32 {};
+    arr.set(7, 42);
+
+    arr.remove(7);
+
+    REQUIRE_FALSE(arr.contains(7));
+    REQUIRE(arr.get(7) == 0);
+}

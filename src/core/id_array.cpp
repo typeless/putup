@@ -49,6 +49,9 @@ auto IdArray32::contains(std::uint32_t id) const -> bool
 
 auto IdArray32::remove(std::uint32_t id) -> void
 {
+    if (static_cast<std::size_t>(id) < capacity()) {
+        data()[id] = 0;
+    }
     present_.remove(id);
 }
 
