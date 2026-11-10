@@ -663,7 +663,7 @@ auto Scheduler::build_job_list(
 
     // Get topological order
     auto topo_result = graph::TopoSortResult { graph::topological_sort(state.graph) };
-    if (topo_result.has_cycle) {
+    if (!topo_result.cycle.empty()) {
         return make_error<Vec<BuildJob>>(
             ErrorCode::CyclicDependency, "Dependency cycle detected"
         );

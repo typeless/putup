@@ -11,9 +11,8 @@ namespace pup::graph {
 
 /// Result of topological sort
 struct TopoSortResult {
-    Vec<NodeId> order;      ///< Nodes in topological order
-    bool has_cycle = false; ///< True if cycle detected
-    Vec<NodeId> cycle;      ///< Cycle path if detected
+    Vec<NodeId> order; ///< Nodes in topological order
+    Vec<NodeId> cycle; ///< Cycle path; empty when the graph has none
 };
 
 /// Perform topological sort on the graph

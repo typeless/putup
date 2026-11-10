@@ -27,7 +27,6 @@ struct DfsState {
     NodeIdMap32 parent;
     Vec<NodeId> order;
     Vec<NodeId> cycle;
-    bool has_cycle = false;
 };
 
 auto dfs_visit(Graph const& graph, NodeId u, DfsState& state) -> void;
@@ -41,14 +40,13 @@ auto visit_neighbors(
 ) -> void
 {
     edges_for_each(graph, u, dir, mask, [&](NodeId v) {
-        if (state.has_cycle) {
+        if (!state.cycle.empty()) {
             return;
         }
         if (state.color.get(v) == WHITE) {
             state.parent.set(v, u);
             dfs_visit(graph, v, state);
         } else if (state.color.get(v) == GRAY) {
-            state.has_cycle = true;
             state.cycle.clear();
             state.cycle.push_back(v);
             auto curr = u;
@@ -64,13 +62,13 @@ auto visit_neighbors(
 
 auto dfs_visit(Graph const& graph, NodeId u, DfsState& state) -> void
 {
-    if (state.has_cycle) {
+    if (!state.cycle.empty()) {
         return;
     }
     state.color.set(u, GRAY);
     visit_neighbors(graph, u, EdgeDirection::Forward, edge_mask::data_flow, state);
     visit_neighbors(graph, u, EdgeDirection::Forward, edge_mask::order_only, state);
-    if (!state.has_cycle) {
+    if (state.cycle.empty()) {
         state.color.set(u, BLACK);
         state.order.push_back(u);
     }
@@ -90,7 +88,7 @@ auto topological_sort(Graph const& graph) -> TopoSortResult
         if (state.color.get(id) == WHITE) {
             dfs_visit(graph, id, state);
         }
-        if (state.has_cycle) {
+        if (!state.cycle.empty()) {
             break;
         }
     }
@@ -99,7 +97,6 @@ auto topological_sort(Graph const& graph) -> TopoSortResult
 
     return TopoSortResult {
         .order = std::move(state.order),
-        .has_cycle = state.has_cycle,
         .cycle = std::move(state.cycle),
     };
 }
