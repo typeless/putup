@@ -162,7 +162,6 @@ struct TupfileParseState {
     Vec<StringId> pruned;
     Vec<StringId> parsed;
     Vec<StringId> parsing;
-    Vec<StringId> failed;
     Vec<StringId> refused;
     std::size_t errors_printed = 0;
     Vec<StringId> errors_reported;
@@ -496,7 +495,7 @@ auto parse_directory(std::string_view rel_dir, ParseContext& ctx) -> pup::Result
         return {};
     }
 
-    if (sorted_contains(ctx.state.failed, normalized_dir)) {
+    if (sorted_contains(ctx.state.refused, normalized_dir)) {
         return pup::unexpected<pup::Error>(make_already_refused_error(normalized_dir));
     }
 
@@ -518,7 +517,6 @@ auto parse_directory(std::string_view rel_dir, ParseContext& ctx) -> pup::Result
     auto source = read_file(tupfile_path_sv);
     if (!source) {
         sorted_erase(ctx.state.parsing, normalized_dir);
-        sorted_insert(ctx.state.failed, normalized_dir);
         sorted_insert(ctx.state.refused, normalized_dir);
         return pup::unexpected<pup::Error>(make_read_error(tupfile_path_sv));
     }
@@ -527,7 +525,6 @@ auto parse_directory(std::string_view rel_dir, ParseContext& ctx) -> pup::Result
     auto parse_result = pup::parser::parse_tupfile(source_sv, tupfile_path_sv);
     if (!parse_result.success()) {
         sorted_erase(ctx.state.parsing, normalized_dir);
-        sorted_insert(ctx.state.failed, normalized_dir);
         sorted_insert(ctx.state.refused, normalized_dir);
         auto const tupfile_path = global_pool().intern(tupfile_path_sv);
         for (auto const& err : parse_result.errors) {
@@ -638,7 +635,6 @@ auto parse_directory(std::string_view rel_dir, ParseContext& ctx) -> pup::Result
             eprint("{}\n", line.view());
         }
         ctx.state.errors_printed = ctx.builder_state.errors.size();
-        sorted_insert(ctx.state.failed, normalized_dir);
         sorted_insert(ctx.state.refused, normalized_dir);
         return pup::unexpected<pup::Error>(make_eval_failed_error(normalized_dir));
     }
@@ -1033,7 +1029,7 @@ auto build_context(
             .on_statement = &ctx_opts.on_statement,
         };
 
-        auto const failed_before = ctx.impl_->state.failed.size();
+        auto const refused_before = ctx.impl_->state.refused.size();
 
         // Parse to a fixpoint: a group reference under a nested project root
         // composes that subtree into the available set mid-pass, and the new
@@ -1062,7 +1058,7 @@ auto build_context(
             }
         }
 
-        auto const new_refusals = ctx.impl_->state.failed.size() != failed_before;
+        auto const new_refusals = ctx.impl_->state.refused.size() != refused_before;
 
         if (!new_refusals) {
             // The configure pass parses only the root config, so a partial match set there
@@ -1109,7 +1105,6 @@ auto build_context(
         ctx.impl_->state.parsing.clear();
         ctx.impl_->state.errors_printed = 0;
         if (!new_refusals) {
-            ctx.impl_->state.failed.clear();
             ctx.impl_->state.refused.clear();
         }
     }
