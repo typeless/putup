@@ -128,6 +128,24 @@ TEST_CASE("tokenize_shell_command double quotes", "[string_utils]")
     }
 }
 
+TEST_CASE("tokenize_shell_command keeps a backslash inside double quotes that escapes nothing", "[string_utils]")
+{
+    auto const [command, expected] = GENERATE(table<std::string, std::string>({
+        { R"(echo "a\b")", R"(a\b)" },
+        { R"(echo "C:\dir\x.h")", R"(C:\dir\x.h)" },
+        { R"(echo "a\'b")", R"(a\'b)" },
+        { R"(echo "\$x")", "$x" },
+        { R"(echo "\`x")", "`x" },
+        { R"(echo "\"x")", "\"x" },
+        { R"(echo "\\x")", R"(\x)" },
+    }));
+    CAPTURE(command);
+
+    auto const result = tokenize_shell_command(command);
+    REQUIRE(result.size() == 2);
+    REQUIRE(sv(result[1]) == expected);
+}
+
 TEST_CASE("tokenize_shell_command single quotes", "[string_utils]")
 {
     SECTION("simple single quotes")

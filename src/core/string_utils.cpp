@@ -137,8 +137,10 @@ auto tokenize_shell_command(std::string_view cmd) -> Vec<ShellToken>
         if (in_single_quote) {
             in_single_quote = false;
         } else if (in_double_quote) {
-            if (c == '\\') {
+            if (c == '\\' && i < cmd.size() && std::string_view { "$`\"\\\n" }.find(cmd[i]) != std::string_view::npos) {
                 escaped = true;
+            } else if (c == '\\') {
+                current += c;
             } else if (c == '"') {
                 in_double_quote = false;
             } else {

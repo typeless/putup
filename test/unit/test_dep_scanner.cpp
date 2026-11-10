@@ -8,6 +8,7 @@
 #include "pup/core/path_id.hpp"
 #include "pup/core/path_pool.hpp"
 #include "pup/core/string_pool.hpp"
+#include "pup/core/string_utils.hpp"
 #include "e2e_fixture.hpp"
 #include "pup/cli/context.hpp"
 #include "pup/graph/dep_scanner.hpp"
@@ -19,6 +20,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -750,17 +752,12 @@ struct ShellRoundTrip {
     std::vector<std::string> argv;
 };
 
-/// Quotes `words`, spawns them through the same path a build job takes, and
-/// reports the argv the child actually received.
-auto round_trip_through_shell(std::vector<std::string> const& words) -> std::optional<ShellRoundTrip>
+auto dump_argv_through_shell(std::string_view arguments) -> std::optional<ShellRoundTrip>
 {
     auto command = pup::Buf {};
     scanners::shell_quote_into(command, pup::test::test_executable());
-    command += " --dump-argv";
-    for (auto const& word : words) {
-        command += ' ';
-        scanners::shell_quote_into(command, word);
-    }
+    command += " --dump-argv ";
+    command += arguments;
 
     auto proc = pup::platform::spawn_async(
         pup::platform::SpawnOptions { .command = command.view(), .working_dir = {} }
@@ -809,6 +806,18 @@ auto round_trip_through_shell(std::vector<std::string> const& words) -> std::opt
         start = end + 1;
     }
     return result;
+}
+
+/// Quotes `words`, spawns them through the same path a build job takes, and
+/// reports the argv the child actually received.
+auto round_trip_through_shell(std::vector<std::string> const& words) -> std::optional<ShellRoundTrip>
+{
+    auto arguments = pup::Buf {};
+    for (auto const& word : words) {
+        arguments += ' ';
+        scanners::shell_quote_into(arguments, word);
+    }
+    return dump_argv_through_shell(arguments.view());
 }
 
 } // namespace
@@ -940,6 +949,45 @@ TEST_CASE("quoted words reach the child intact through the real shell", "[dep_sc
     REQUIRE(result->exit_code == 0);
     REQUIRE(result->argv == words);
 }
+
+#ifndef _WIN32
+TEST_CASE("tokenize_shell_command splits quotes and backslashes into the words sh passes", "[dep_scanner][quoting][property]")
+{
+    auto constexpr alphabet = std::string_view { "ab \\\"'" };
+    auto state = std::uint64_t { 0x585 };
+    auto next = [&](std::uint64_t bound) -> std::uint64_t {
+        state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+        return (state >> 33) % bound;
+    };
+
+    auto compared = 0;
+    for (auto trial = 0; trial < 400; ++trial) {
+        auto arguments = std::string {};
+        auto const length = 1 + next(10);
+        for (auto k = std::uint64_t { 0 }; k < length; ++k) {
+            arguments += alphabet[next(alphabet.size())];
+        }
+        if (arguments.back() == '\\') {
+            continue;
+        }
+
+        auto result = dump_argv_through_shell(arguments);
+        REQUIRE(result.has_value());
+        if (result->exit_code != 0) {
+            continue;
+        }
+        ++compared;
+
+        auto words = std::vector<std::string> {};
+        for (auto const& token : pup::core::tokenize_shell_command(arguments)) {
+            words.emplace_back(pup::global_pool().get(token.text));
+        }
+        INFO("arguments: " << arguments << "\ncommand: " << result->command);
+        REQUIRE(words == result->argv);
+    }
+    REQUIRE(compared > 100);
+}
+#endif
 
 TEST_CASE("Default scanner registry covers both compiler drivers", "[dep_scanner][clang_cl]")
 {

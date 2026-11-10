@@ -124,6 +124,15 @@ the redirection, as the shell does.
 If a control operator or a redirection is quoted or escaped, then putup shall read it as part of
 a word of the invocation, as the shell does.
 
+### REQ-SCAN-DOUBLE-QUOTED-BACKSLASH
+
+- conformance: putup-only
+- discharge: test "tokenize_shell_command keeps a backslash inside double quotes that escapes nothing"
+- discharge: test "tokenize_shell_command splits quotes and backslashes into the words sh passes"
+
+If a backslash inside double quotes precedes a character other than `$`, `` ` ``, `"`, `\` or a
+newline, then putup shall keep that backslash in the word, as the shell does.
+
 ### REQ-SCAN-SUBSTITUTION-WORD
 
 - conformance: putup-only
