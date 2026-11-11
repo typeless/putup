@@ -1,24 +1,8 @@
 # Modern C++ Style Guide
 
-**Version:** 1.8.0
-**Updated:** 2025-12-20
 **C++ Standard:** C++20/23
 
 A concise style guide for modern C++ projects.
-
-## Changelog
-
-| Version | Date | Changes |
-|---------|------|---------|
-| 1.8.0 | 2025-12-20 | Null pointer initialization: use static_cast for AAA |
-| 1.7.0 | 2025-12-18 | Attributes on their own line |
-| 1.6.0 | 2025-12-18 | Multiline lambdas: same formatting as functions |
-| 1.5.0 | 2025-12-16 | Multiline declarations: return type follows closing paren |
-| 1.4.0 | 2025-12-14 | Remove explicit type wrapper requirement for function calls |
-| 1.3.0 | 2025-12-10 | Always use braces for if/for/while statements |
-| 1.2.0 | 2025-12-10 | Call site arguments follow same formatting as declarations |
-| 1.1.0 | 2025-12-10 | Long parameter lists: one parameter per line |
-| 1.0.0 | 2024-12-10 | Initial release |
 
 ## Core Principles
 

@@ -182,25 +182,6 @@ Workaround: Run the script manually before building, or use a rule:
 : generate-sources.sh |> ./generate-sources.sh |> generated.c
 ```
 
-## Testing Compatibility
-
-Putup includes E2E tests that verify tup-compatible behavior:
-
-```bash
-./build/test/unit/putup_test '[e2e]'
-```
-
-Test fixtures cover:
-- Simple C compilation
-- Multi-file projects
-- Bang macros
-- Groups (bins and order-only)
-- Conditionals
-- Incremental builds
-- Variant builds
-- Multi-variant parallel builds
-- Multi-directory projects (tested with ctos - 75 Tupfiles, 681 commands)
-
 ## Putup-Specific Features
 
 Features in putup that extend beyond tup:
@@ -220,14 +201,6 @@ Features in putup that extend beyond tup:
 | **Tracked tools** | `CONFIG_TRACKED_TOOLS` folds tool binaries' (path, size, mtime) into command identity — toolchain upgrades trigger rebuilds |
 | **Scoped tup.config** | Per-subdirectory configs: nearest `tup.config` in parent chain is used |
 | **Configure command** | `putup configure` runs config rules and ensures `tup.config` exists |
-
-## Known Compiler Issues
-
-### MSVC: NRVO not applied to `make_graph()` return value
-
-**Affected**: MSVC 19.38+ (Visual Studio 2022 17.8) with `/Zc:nrvo /std:c++20 /O2`
-
-**Status**: Fixed. The root cause was `DirNameKeyHash`/`DirNameKeyEqual` functors holding raw `StringPool*` pointers into the same `Graph` object. When MSVC failed to apply NRVO on `make_graph()`, the move left dangling pointers. The `DirNameKey` hash map has been replaced with `std::vector<SortedPairVec> dir_children` (per-directory sorted arrays), eliminating the pointer coupling entirely. The Windows target is now built as an MSVC-ABI binary via clang-cl + xwin, cross-compiled from Linux and tested natively on a Windows CI runner; the native `cl.exe` build path has been removed since clang-cl covers the MSVC ABI without needing a Windows host to build on.
 
 ## Reporting Issues
 

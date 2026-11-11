@@ -1,4 +1,4 @@
-# Putup - Testing Skills
+# Putup Testing Guide
 
 Quick reference for testing workflows and conventions.
 
@@ -278,33 +278,6 @@ SCENARIO("My feature works", "[e2e][my_feature]")
 Renaming or deleting a cited test therefore breaks `make spec-check`, which CI runs as its own
 job. Behaviour added to an area that already has requirements wants a requirement too — see
 [spec/requirements/README.md](spec/requirements/README.md).
-
-## Recent Features
-
-### Assignment Operators
-
-| Operator | Name | Behavior |
-|----------|------|----------|
-| `=` | Set | Always sets the variable |
-| `+=` | Append | Appends to existing value |
-| `?=` | Soft set | Sets only if undefined (first wins) |
-| `??=` | Weak set | Deferred default (last wins, applied before rules) |
-
-Example fixture for testing `?=`:
-```
-# test/e2e/fixtures/soft_assign/Tupfile.fixture
-VAR ?= default
-VAR ?= ignored
-: |> echo $(VAR) |>
-```
-
-### Ghost Nodes (Variant Builds)
-
-When testing cross-directory dependencies in variant builds, ghost nodes handle references to files that don't exist yet during parse.
-
-Related fixtures:
-- `variant_cross_dir_order_only/` - Order-only deps across directories
-- `variant_cross_dir_regular_input/` - Regular input deps (alphabetical parse order)
 
 ## Debugging Tests
 

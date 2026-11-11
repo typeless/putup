@@ -107,7 +107,3 @@ Key points:
 ## Reference Projects
 
 For development context, the original tup source (C) can be found at https://github.com/gittup/tup
-
-## Design Decisions
-
-See [DESIGN.md](DESIGN.md) for internal architecture, data structures, and design rationale.
