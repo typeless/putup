@@ -45,7 +45,7 @@ With libstdc++ eliminated, putup provides its own runtime primitives:
 | `Function<Sig>` | `std::function<Sig>` | Move-only type-erased callable (32-byte SBO) |
 | `SteadyClock` / `SystemClock` | `std::chrono` clocks | Platform-implemented clocks |
 | `CPath` | manual `.c_str()` | Null-termination wrapper for string_view at C API boundary |
-| `throw_stubs.cpp` | libstdc++ runtime | operator new/delete, `__cxa_guard_*`, `__throw_*` stubs, macOS `__libcpp_verbose_abort` |
+| `throw_stubs.cpp` | libstdc++ runtime | operator new/delete (in `new_delete.cpp` on Windows), `__cxa_guard_*`, `__throw_*` stubs, macOS `__libcpp_verbose_abort` |
 
 There is no threading (`std::thread`, `std::mutex`, `std::atomic`, `std::future`). The scheduler uses a single-threaded `poll()`-based event loop. Multi-variant parallelism uses `fork()`+`waitpid()` via `platform::run_parallel_tasks()`.
 
@@ -59,14 +59,15 @@ pup/
 │   ├── graph/      # DAG, Builder, Topological sort
 │   ├── index/      # Binary format, Reader, Writer
 │   ├── exec/       # Scheduler, CommandRunner
-│   ├── platform/   # OS abstraction: env, file_io, path, process (POSIX + Win32 backends)
+│   ├── platform/   # OS abstraction: env, file_io, process, vm (POSIX + Win32 backends), sys (POSIX)
 │   └── cli/        # Command-line interface, options, output, subcommands
 ├── src/            # Implementation files (incl. *-posix.cpp / *-win32.cpp backends)
 └── third_party/    # sha256, expected-lite, Catch2
 ```
 
-Dependencies flow one direction: `cli → exec → graph → parser → core`, with `platform` under
-everything as the OS-abstraction layer. The `platform/` module isolates OS specifics behind a
+Dependencies flow `cli → exec → graph → parser → core`, except that the evaluator reads
+`graph::VarDepTracker`. `platform` is the OS-abstraction layer; it and `core` use each other
+(`core/region` calls `platform/vm`, the platform backends use the core string and buffer types). The `platform/` module isolates OS specifics behind a
 uniform API: POSIX backends (`*-posix.cpp`) use `fork`/`waitpid`/`poll`; Win32 backends
 (`*-win32.cpp`) use `CreateProcessW`. The Windows binary is cross-compiled from Linux with
 clang-cl + lld-link against an xwin-splatted MSVC CRT, and its tests run natively on a Windows CI runner.
@@ -83,7 +84,7 @@ Tupfile (text)
     ▼ Lexer + Parser
 Tupfile (AST)
     │
-    ▼ GraphBuilder + Evaluator
+    ▼ Builder (add_tupfile) + Evaluator
 BuildGraph (DAG)
     │
     ▼ Topological Sort
@@ -103,7 +104,7 @@ Output files
 | **Lexer** | Context-aware tokenization of Tupfile syntax |
 | **Parser** | Recursive descent parsing, AST construction |
 | **Evaluator** | Variable expansion, pattern substitution |
-| **GraphBuilder** | AST to dependency graph transformation |
+| **Builder** (`add_tupfile`, `finalize_graph`) | AST to dependency graph transformation |
 | **Scheduler** | Parallel job execution with dependency ordering |
 | **read_index / write_index** | Binary index persistence |
 
@@ -182,6 +183,7 @@ Pup uses `Result<T>` (alias for `expected<T, Error>`) for explicit error propaga
 struct Error {
     ErrorCode code;
     StringId message;
+    std::optional<SourcePosition> location;
 };
 
 template<typename T>
@@ -231,10 +233,11 @@ an announcement filter is safe by default for the reason above — the default a
 ## Memory Management
 
 All working memory is OS virtual memory owned by containers — libc `malloc`/`free` do not
-appear in production code (the only `mmap`/`VirtualAlloc` calls live in `platform/vm-*.cpp`).
+appear in production code (the only `mmap`/`VirtualAlloc` calls live in `platform/sys-posix.cpp`, `sys-linux.cpp` and
+`vm-win32.cpp`).
 The design follows the container-as-allocator model (Racordon, *"Who Owns the Contents of a
-Doubly-Linked List?"*, OASIcs.Programming.2025.25): a container reserves address space once,
-commits pages lazily as it grows, and never moves. Allocation failure aborts with a message;
+Doubly-Linked List?"*, OASIcs.Programming.2025.25): a container reserves address space on first
+use, commits pages lazily as it grows, and never moves. Allocation failure aborts with a message;
 no null pointer ever propagates.
 
 ### Layer stack
@@ -243,19 +246,19 @@ Each layer obtains memory only from the layer below it:
 
 | Layer | Where | Role |
 |-------|-------|------|
-| Handles | application code | 4-byte values (`StringId`, `NodeId`, `ArenaSlice`) — no owning pointers |
+| Handles | application code | plain values (4-byte `StringId` and `NodeId`; `ArenaSlice` is two `uint32_t`) — no owning pointers |
 | Owners | `StringPool`, `Arena32`, `StableVec`, `IdArray32`/`IdBitSet`, `RobinHoodIndex`, `Buf` | one container per entity kind; each owns its Region(s) |
-| `operator new` | `core/bump_alloc`, `core/new_delete` | process-wide bump region for everything else; all `delete`s are no-ops |
+| `operator new` | `core/bump_alloc`; operators in `core/throw_stubs` (POSIX), `core/new_delete` (Windows) | process-wide bump region for everything else; all `delete`s are no-ops |
 | `Region` | `core/region` | reserve big (default 1 GiB), commit incrementally, base never moves |
 | vm primitive | `platform/vm-posix.cpp`, `vm-win32.cpp` | reserve / commit / decommit / release; no `mremap` (macOS/Windows lack it) |
 
 ### Region
 
 ```cpp
-Region r { reserve_bytes };   // reserves address space, commits nothing
-r.ensure(n);                  // commits pages so n bytes are usable; aborts past the reservation
-r.data();                     // base pointer — stable for the Region's lifetime
-r.shrink(0);                  // releases committed pages wholesale
+Region r { reserve_bytes };   // records the size; reserves and commits nothing
+r.ensure(n);                  // reserves on the first call with n > 0, commits pages so n bytes are usable; aborts past the reservation
+r.data();                     // base pointer — null before the first reservation, then stable until shrink(0)
+r.shrink(0);                  // releases the whole reservation; the next ensure reserves again
 ```
 
 Because the base never moves, both integer handles and raw pointers into a Region survive
@@ -337,7 +340,7 @@ Key token categories:
 
 ```cpp
 struct VarRef {
-    enum Kind { Regular, Config, Node };  // $(X), @(X), &(X)
+    enum class Kind { Regular, Config, Node };  // $(X), @(X), &(X)
     Kind kind;
     StringId name;
 };
@@ -379,8 +382,6 @@ struct Rule {
     Vec<PathPattern> outputs;
     Vec<PathPattern> extra_outputs;
     std::optional<StringId> output_group;               // {binname} at end
-    std::optional<StringId> output_order_only_group;    // <groupname> at end
-    std::optional<Expression> output_order_only_group_dir; // path/ prefix for <group>
 };
 ```
 
@@ -396,23 +397,21 @@ struct BangMacro {
     Vec<PathPattern> outputs;
     Vec<PathPattern> extra_outputs;
     std::optional<StringId> output_group;               // {binname} at end
-    std::optional<StringId> output_order_only_group;    // <groupname> at end
-    std::optional<Expression> output_order_only_group_dir; // path/ prefix for <group>
 };
 ```
 
 ### Parser
 
-Recursive descent parser with these entry points:
+Recursive descent parser with one entry point; `parse_rule`, `parse_expression` and the other
+productions are file-local functions in `src/parser/parser.cpp`:
 
 ```cpp
-class Parser {
-    auto parse() -> Result<Tupfile>;
-    auto parse_statement() -> Result<Statement>;
-    auto parse_rule() -> Result<Rule>;
-    auto parse_expression() -> Result<Expression>;
-    // ...
+struct ParseResult {
+    Tupfile tupfile;
+    Vec<ParseError> errors;
 };
+
+auto parse_tupfile(std::string_view source, std::string_view filename, ParserOptions opts = {}) -> ParseResult;
 ```
 
 ### Evaluator
@@ -421,7 +420,7 @@ class Parser {
 
 ```cpp
 class VarDb {
-    explicit VarDb(StringPool* pool);
+    VarDb() = default;                   // All interning goes through global_pool()
     auto set(name, value) -> void;       // Interns both name and value
     auto append(name, value) -> void;    // Space-separated concatenation
     auto get(name) -> std::string_view;  // O(log n) via interned StringId lookup
@@ -472,12 +471,19 @@ struct EvalContext {
     Function<Vec<StringId>(std::string_view)> resolve_order_only_group; // <groupname>
     Function<Result<void>(std::string_view)> request_directory;         // Demand-driven parsing
     Vec<StringId> const* available_tupfile_dirs;
+    Function<bool(std::string_view)> compose_nested_project;            // Subdir with its own Tupfile.ini
 
     // Callbacks for fine-grained dependency tracking
     Function<void(std::string_view)> on_config_var_used;
     SortedIdVec const* imported_vars;         // Interned env var names
     StringPool const* string_pool;
     Function<void(std::string_view)> on_env_var_used;
+    graph::VarDepTracker const* var_config_deps;  // Config vars a regular variable's value read
+    graph::VarDepTracker const* var_env_deps;     // Env vars a regular variable's value read
+
+    // Callbacks for parse --check and show var
+    Function<void(Statement const&, std::string_view dir)> on_statement;
+    Function<void(name, op, value_before, value_after, filename, line, column, is_effective)> on_var_assigned;
 };
 ```
 
@@ -488,7 +494,7 @@ struct EvalContext {
 | `%f` | All inputs | `main.c util.c` |
 | `%i` | Order-only inputs | `config.h` |
 | `%o` | All outputs | `main.o` |
-| `%O` | Output basename | `main` |
+| `%O` | The one output without its extension, keeping its directory | `sub/main` |
 | `%b` | Basename with ext, every input | `main.c util.c` |
 | `%B` | Basename no ext, every input | `main util` |
 | `%e` | Extension (foreach, file must have one) | `c` |
@@ -560,6 +566,7 @@ struct FileNode {
     NodeType type;          // File, Directory, Generated, Ghost, Group, Variable, etc.
     StringId name;          // Basename only (interned, tup-style identification)
     NodeId parent_dir;      // Parent directory node (used with name for lookup)
+    PathId path_id;         // Structured path handle (NodeId → PathId)
     Hash256 content_hash;   // Content hash for files (directories have zero hash)
 };
 
@@ -575,9 +582,11 @@ struct CommandNode {
     NodeId id = 0;
     StringId display = StringId::Empty;        // Display text (from ^ ^ markers)
     StringId source_dir = StringId::Empty;     // Tupfile directory (relative to root)
-    StringId instruction_id = StringId::Empty; // Instruction pattern (e.g., "gcc -c %f -o %o")
-    Vec<NodeId> inputs = {};           // Operand file NodeIds for %f expansion
-    Vec<NodeId> outputs = {};          // Operand file NodeIds for %o expansion
+    SourcePosition rule_location = {};         // Where the rule is written; a dependency scan carries its compile's
+    Instruction instruction = {};              // Instruction atoms (e.g., "gcc -c %f -o %o")
+    TokenList<NodeId> inputs = {};             // Operand file NodeIds for %f expansion
+    TokenList<NodeId> order_only_inputs = {};  // The rule's own order-only operands for %i expansion
+    TokenList<NodeId> outputs = {};            // Operand file NodeIds for %o expansion
     SortedIdVec exported_vars = {};            // Env vars to export (interned StringIds)
     std::optional<NodeId> parent_command = {}; // Set on a dependency scan: the command whose implicit dependencies its stdout names
 
@@ -620,7 +629,7 @@ namespace node_id {
     enum class Tag : NodeId { File = 0, Command = 1, Condition = 2, Phi = 3 };
 
     constexpr auto tag(NodeId id) -> Tag;            // Top 2 bits
-    constexpr auto is_file(NodeId id) -> bool;       // tag == File && id != 0
+    constexpr auto is_file(NodeId id) -> bool;       // tag == File
     constexpr auto is_command(NodeId id) -> bool;    // tag == Command
     constexpr auto is_condition(NodeId id) -> bool;  // tag == Condition
     constexpr auto is_phi(NodeId id) -> bool;        // tag == Phi
@@ -636,13 +645,10 @@ namespace node_id {
 
 ```cpp
 struct Graph {
-    StringPool strings;               // Interned string storage
-
-    Vec<FileNode> files;              // Files, directories, groups
-    Vec<CommandNode> commands;        // Command nodes only
-    Vec<Edge> edges;                  // Central edge storage
-
-    Vec<ConditionNode> conditions;    // Conditional guards
+    StableVec<FileNode> files;            // Files, directories, groups
+    StableVec<CommandNode> commands;      // Command nodes only
+    StableVec<ConditionNode> conditions;  // Conditional guards
+    Vec<Edge> edges;                      // Central edge storage
 
     // One row per output an untaken-branch rule declares: the rule becomes no command
     Vec<InactiveDeclaration> inactive_declarations;  // { output, guards, command_text }
@@ -655,9 +661,8 @@ struct Graph {
     // Order-only edges use LinkType::OrderOnly in the unified edges vector
 
     // Node lookup indices
+    mutable PathPool paths;          // Interning trie of (parent PathId, basename StringId) entries
     SortedPairVec path_to_node;      // PathId -> NodeId, the only path binding; in-tree, a build-root path resolves to its source twin's node
-    StringPool command_strings;               // Interned expanded command strings
-    SortedPairVec command_index;              // StringId(command) -> NodeId
 
     // ID generators (next available ID for each type)
     NodeId next_file_id = 2;                               // Starts at 2 (BUILD_ROOT is 1)
@@ -671,9 +676,9 @@ struct PathCache {
     StringPool pool;    // Owns the full path strings
 };
 
-class BuildGraph {
-    Graph graph_;
-    mutable PathCache path_cache_;  // Cache for get_full_path()
+struct BuildGraph {
+    Graph graph;
+    mutable PathCache path_cache;  // Cache for get_full_path()
 };
 ```
 
@@ -748,23 +753,21 @@ struct TopoSortResult {
 };
 
 auto topological_sort(graph) -> TopoSortResult;
-auto reverse_topological_sort(graph) -> TopoSortResult;
-auto detect_cycles(graph) -> std::optional<Vec<NodeId>>;
+auto detect_cycles(graph) -> Vec<NodeId>;  // Cycle path; empty when the graph has none
 ```
 
 Additional graph analysis:
 
 ```cpp
-auto reachable_from(graph, start) -> NodeIdMap32;
-auto node_depth(graph, id) -> std::size_t;
-auto critical_path(graph) -> Vec<NodeId>;
+auto is_dag(graph) -> bool;
+auto has_path(graph, source, target) -> bool;
 ```
 
 ### Ghost Nodes
 
 Ghost nodes are placeholder nodes for files that don't exist yet during parsing. They enable cross-directory dependencies in variant builds where parse order matters.
 
-**The problem**: When subdirectories are parsed alphabetically, a consumer directory (e.g., `aaa_consumer`) may be parsed before a producer directory (e.g., `zzz_producer`). If the consumer references a file that will be generated by the producer, that file doesn't exist yet.
+**The problem**: The directory walk visits longest paths first (equal lengths alphabetically), so a consumer directory (e.g., `aaa_consumer`) may be parsed before a producer directory (e.g., `zzz_producer`). If the consumer references a file that will be generated by the producer, that file doesn't exist yet.
 
 **Solution**: When `resolve_input_node()` encounters a non-existent file:
 1. Create a Ghost node as a placeholder
@@ -781,7 +784,7 @@ Ghost nodes are placeholder nodes for files that don't exist yet during parsing.
 
 **Index serialization**: every live ghost node gets a record entry, because ids stay dense (id == position + 1). Three kinds carry meaning there. A consumed ghost backed by a file no rule produces is a foreign input — the variant's `tup.config` is the standing example — recorded with its content so change detection can see it change. And a path this build has no authority over, an output whose producing directory a scoped build never parsed, arrives here as a ghost too: a ghost is the graph's own encoding of "referenced, awaiting its producer", which is what such a path is from this build's point of view. The record then re-asserts its previous owner rather than downgrading it to a source (#369) — the entry is written back as `Generated` from the previous record's output set, and `merge_out_of_scope_commands` carries its producing command forward and re-attaches the output edge (#125). The third kind is a path declared only by rules in an untaken branch: `Generated` means produced by a rule this configuration runs, so an inactive branch's declared output rests as a ghost rather than reclassifying whatever is at that path (#386). Such a rule becomes no command, so the ghost has no producer edge; the declaration lives in `Graph::inactive_declarations`, and `collect_inactive_outputs` names the ghosts it alone declares. Turning the branch back off after a build that ran it routes through the same #369 re-assertion, which is what keeps the build's ownership of a file it genuinely made.
 
-### GraphBuilder
+### Builder
 
 Transforms AST to BuildGraph:
 
@@ -793,11 +796,18 @@ struct BuilderOptions {
     StringId config_path;          // Path to tup.config (for sticky edge tracking)
     bool expand_globs;
     bool validate_inputs;
+    bool verbose;
+    bool reject_empty_commands;    // Off for the configure pass, which evaluates before tup.config exists
+    DepScannerRegistry const* scanner_registry;
+    Vec<std::pair<StringId, StringId>> cached_env_vars;  // From the previous build
+    Vec<GeneratedPath> generated_seed;       // Paths a previous parse round generated
+    Vec<StringId> prior_generated;           // Paths the previous record classified as outputs
+    Vec<StringId> parsed_prior_generated;    // The same, in directories this parse covers
 };
 
-class GraphBuilder {
-    auto build(Tupfile, EvalContext) -> Result<BuildGraph>;
-};
+auto make_builder(BuilderOptions) -> Builder;  // Session state shared by every Tupfile
+auto add_tupfile(BuildGraph&, parser::Tupfile const&, parser::EvalContext&, Builder&) -> Result<void>;
+auto finalize_graph(BuildGraph&, Builder&) -> Result<void>;  // Resolves deferred group edges
 ```
 
 **Rule expansion process:**
@@ -879,6 +889,7 @@ struct GeneratedRule {
     Vec<StringId> order_only_inputs;
     StringId command;
     StringId display;
+    StringId covered_object;  // The parent's object this rule records headers for
 };
 ```
 
@@ -890,12 +901,13 @@ Scanners detect compiler commands and generate dependency extraction commands:
 class DepScanner {
     virtual auto matches(CommandInfo const&, CommandTokens const&) const -> bool = 0;
     virtual auto has_dep_flags(CommandTokens const&) const -> bool = 0;
-    virtual auto build_dep_scans(CommandInfo const&, CommandTokens const&) -> Vec<DepScan> = 0;
+    virtual auto build_dep_scans(CommandInfo const&, CommandTokens const&) const -> Vec<DepScan> = 0;
+    virtual auto name() const -> std::string_view = 0;
 };
 
 class DepScannerRegistry {
     auto register_scanner(std::unique_ptr<DepScanner>) -> void;
-    auto match_and_generate(CommandInfo const&) -> Vec<GeneratedRule>;
+    auto match_and_generate(CommandInfo const&, CommandTokens const&) const -> Vec<GeneratedRule>;
 };
 ```
 
@@ -1001,7 +1013,7 @@ it will do, for deciding whether to re-run).
 
 **Instruction deduplication**: Bang macros like `!cc = |> $(CC) -c %f -o %o |>` produce the same instruction for all source files. With 1000 C files, instead of storing 1000 nearly-identical command strings, the record stores 1 instruction + 1000 operand records.
 
-**Lazy reconstruction**: Full command strings are computed on demand via `expand_instruction()`, which substitutes operand paths into the instruction pattern. CommandNode stores `instruction_id` (the pattern) plus explicit `inputs`/`order_only_inputs`/`outputs` operand vectors. This keeps index loading fast and avoids storing redundant expanded strings.
+**Lazy reconstruction**: Full command strings are computed on demand via `expand_instruction()`, which substitutes operand paths into the instruction pattern. CommandNode stores `instruction` (the pattern, as atoms) plus explicit `inputs`/`order_only_inputs`/`outputs` operand vectors. This keeps index loading fast and avoids storing redundant expanded strings.
 
 Design principles:
 - Fixed-size entries for O(1) random access
@@ -1011,7 +1023,7 @@ Design principles:
 - SHA-256 checksum for corruption detection
 - 8-byte aligned structures for efficient memory access
 - Bounds checking on all offset/count fields
-- 32-bit IDs sufficient for ~4B nodes (AOSP has <10M)
+- 32-bit IDs: a 2-bit kind tag and a 30-bit index, ~1.07B nodes per kind (AOSP has <10M)
 - 32-bit offsets sufficient for 4GB index files
 
 ### What a record claims
@@ -1180,6 +1192,8 @@ struct BuildStats {
     std::size_t skipped_jobs = 0;
     std::chrono::milliseconds total_time = {};
     std::chrono::milliseconds build_time = {};  // Time spent in commands
+    bool injected_ordering_applied = true;      // False when the extra ordering contradicted the graph and was dropped
+    Vec<OrderingEdge> enforced_ordering = {};   // The ordering edges this build put into the dependency map
 };
 
 struct SchedulerOptions {
@@ -1198,7 +1212,7 @@ using JobCompleteCallback = Function<void(BuildJob const&, JobResult const&)>;
 using ProgressCallback = Function<void(std::size_t completed, std::size_t total)>;
 
 class Scheduler {
-    auto build(state, filter = nullptr) -> Result<BuildStats>;
+    auto build(state, filter = nullptr, ordering = {}) -> Result<BuildStats>;
     auto on_job_start(callback) -> void;
     auto on_job_complete(callback) -> void;
     auto on_progress(callback) -> void;
@@ -1266,8 +1280,7 @@ Win32 backend uses `CreateProcessW`.
 auto root = find_project_root();
 
 // 2. Parse Tupfile
-auto parser = Parser { read_file(pup::path::join(root, "Tupfile")), resolver };
-auto tupfile = parser.parse();
+auto parsed = parser::parse_tupfile(read_file(pup::path::join(root, "Tupfile")), "Tupfile");
 
 // 3. Load configuration
 auto config = parse_config(pup::path::join(variant_dir, "tup.config"));
@@ -1278,63 +1291,64 @@ auto ctx = EvalContext {
     .vars = &vars,
     .config_vars = &config,
     .tup_cwd = root,
-    .tup_platform = detect_platform(),
-    .tup_variantdir = compute_variantdir(root, variant_dir),
+    .tup_platform = get_platform(),
+    .tup_variantdir = compute_tup_variantdir(dir, source_root, output_root),
 };
 
 // 5. Build graph
-auto builder = GraphBuilder { options };
-auto graph = builder.build(*tupfile, ctx);
+auto builder = graph::make_builder(options);
+graph::add_tupfile(state, parsed.tupfile, ctx, builder);   // once per Tupfile
+graph::finalize_graph(state, builder);
 
 // 6. Execute build
 auto scheduler = Scheduler { sched_options };
 scheduler.on_job_start([](job) { print_start(job); });
-scheduler.on_job_complete([](result) { print_result(result); });
-auto stats = scheduler.build(*graph);
+scheduler.on_job_complete([](job, result) { print_result(job, result); });
+auto stats = scheduler.build(state);
 
 // 7. Save index for incremental builds
-index::write_index(pup::path::join(pup::path::join(root, ".pup"), "index"), make_index(*graph));
+//    serialize_graph_nodes, serialize_command_nodes and serialize_edges fill `index`
+index::write_index(pup::path::join(pup::path::join(root, ".pup"), "index"), index);
 ```
 
 ### Incremental Build
 
-The incremental build pipeline performs seven steps to determine what needs rebuilding:
+Build scopes are computed before parsing (`compute_build_scopes`: from path targets or the CWD; `-A`
+disables scoping). After the graph is built, six steps determine what needs rebuilding:
 
 ```cpp
-// 1. Build command index for find_by_command() lookups
-//    Must happen after parsing when operands are set
-graph.build_command_index();
+// 1. Index the graph's commands by output path, or by key when a command has no outputs
+//    (the "Command index" line of --stat); the steps below join the old index against it
+auto join = graph_command_lookup(state);
+auto upstream_files = collect_upstream_files(graph, scopes);   // only with -a and a scope
 
-// 2. Compute build scopes (if scoped build via -d or CWD)
-auto scopes = compute_build_scopes(opts, layout);
-auto upstream_files = collect_upstream_files(graph, scopes);
+// 2. Remove stale outputs from deleted commands
+remove_stale_outputs(old_index, join, ...);
 
 // 3. Find changed files with scope filtering
-//    Compares size then hash against old index
+//    Compares size, stat cache, then hash against old index
 auto changed = find_changed_files_with_implicit(
-    source_root, old_index, scopes, upstream_files);
+    source_root, old_index, scopes, upstream_files, ...);
 
-// 4. Expand implicit dependencies
+// 4. Reconcile each command's input set with the one the old index recorded
+auto input_delta = reconcile_input_set(graph, old_index, changed, ...);
+changed.insert(changed.end(), input_delta.changed_paths.begin(), input_delta.changed_paths.end());
+
+// 5. Expand implicit dependencies
 //    Header changes → affected command outputs added
-changed = expand_implicit_deps(changed, old_index, graph);
-
-// 5. Force output targets to rebuild (if --output-targets specified)
-for (auto const& target : output_targets) {
-    changed.push_back(build_root_prefix + target);
-}
+changed = expand_implicit_deps(changed, old_index, graph, ...).changed_paths;
 
 // 6. Detect new commands (in graph but not index)
-auto new_outputs = detect_new_commands(graph, old_index);
-changed.insert(changed.end(), new_outputs.begin(), new_outputs.end());
-
-// 7. Remove stale outputs from deleted commands
-remove_stale_outputs(graph, old_index, source_root);
+auto new_cmds = detect_new_commands(graph, old_index, ...);
+changed.insert(changed.end(), new_cmds.changed_outputs.begin(), new_cmds.changed_outputs.end());
 
 // Build with composable filter (affected ∩ required ∩ scope ∩ non_config)
 auto filter = BuildFilter {};
 filter.intersect_with(collect_affected_commands(graph, changed));
-// ... intersect with required/scope/non_config if active ...
-auto stats = scheduler.build(state, filter.ptr());
+// Output targets on the command line narrow the filter; they add nothing to `changed`
+filter.intersect_with(collect_required_commands(graph, target_node_ids));
+// ... intersect with scope/non_config if active ...
+auto stats = scheduler.build(state, filter.ptr(), injected_ordering);
 ```
 
 **Change detection algorithm:**
@@ -1365,8 +1379,9 @@ On startup, pup recursively scans for all directories containing `Tupfile`:
 ```cpp
 auto discover_tupfile_dirs(root) -> Vec<StringId>
 {
-    // Skip variant directories (contain tup.config)
-    // Return sorted vector of relative paths to Tupfile directories
+    // Skip ignored directories (.git/, .pup/, node_modules/)
+    // Skip nested project roots (subdirs with their own Tupfile.ini) unless a scope names them
+    // Return vector of relative paths to Tupfile directories, sorted by interning handle
 }
 ```
 
@@ -1375,12 +1390,12 @@ auto discover_tupfile_dirs(root) -> Vec<StringId>
 Instead of parsing all Tupfiles upfront, pup uses **demand-driven parsing**:
 
 ```
-1. Start with root Tupfile
+1. Walk the available directories: longest path first, equal lengths
+   alphabetically, the root last
 2. When a rule references a path in another directory:
    - Check if that directory has a Tupfile
    - Parse it if not already parsed
-3. Repeat until all dependencies resolved
-4. Parse remaining "orphan" Tupfiles
+3. Repeat the walk until it makes no new directory available
 ```
 
 This approach:
@@ -1392,11 +1407,16 @@ This approach:
 
 ```cpp
 struct TupfileParseState {
-    Vec<StringId> available;  // Dirs with Tupfiles (sorted)
-    Vec<StringId> parsed;     // Already processed (sorted)
-    Vec<StringId> parsing;    // Currently processing (cycle detection, sorted)
+    Vec<StringId> available;  // Dirs with Tupfiles (sorted by interning handle at discovery)
+    Vec<StringId> pruned;     // Nested project roots left out of the walk
+    Vec<StringId> parsed;     // Already processed (insertion order)
+    Vec<StringId> parsing;    // Currently processing (cycle detection, insertion order)
+    Vec<StringId> refused;    // Dirs whose Tupfile was refused
 };
 ```
+
+The full definition, with the error bookkeeping and the parsed `tup.config` tables, is in
+`src/cli/context.cpp`.
 
 The `parsing` set detects circular dependencies - if a directory appears while still being parsed, it's a cycle.
 
@@ -1406,13 +1426,15 @@ Each Tupfile gets its own variable scope:
 
 ```cpp
 struct BuilderContext {
-    BuildGraph* graph;
+    BuildGraph* state;
     parser::EvalContext* eval;
     parser::VarDb* vars;                // $(VAR) - local to this Tupfile (StringPool-backed)
     Vec<std::pair<std::uint32_t, BangMacroDef>> macros;  // !macros (sorted by interned name)
     GroupMemberTable groups;            // {bins} (interned group name → member NodeIds)
 };
 ```
+
+The full definition is in `include/pup/graph/builder.hpp`.
 
 Variables defined in one Tupfile don't leak to others. Bang macros are inherited through `include_rules` from parent `Tuprules.tup` files.
 
@@ -1431,7 +1453,7 @@ Groups can be referenced across directories using path prefixes:
 Group keys use interned `"directory/name"` StringIds:
 
 ```cpp
-// BuilderState::group_nodes — interned "dir/name" StringId → NodeId
+// Builder::group_nodes — interned "dir/name" StringId → NodeId
 SortedPairVec group_nodes;
 ```
 
@@ -1516,29 +1538,30 @@ the same root.
 4. **Command generation** (`expand_command`):
    - Receives PatternFlags, augments with output fields
    - All paths transformed to Tupfile-relative via `make_source_relative()`
-   - Output paths get variant prefix (e.g., `src/main.o` → `../../build/src/main.o`)
+   - Output paths arrive carrying the build-root name and become Tupfile-relative (from `src/`, `build/src/main.o` → `../build/src/main.o`)
    - Pattern flags (`%f`, `%o`, `%g`) substituted
 
 **Path transformation helpers:**
 
 ```cpp
-// Transform paths to Tupfile-relative for command expansion
+// Transform paths to Tupfile-relative for command expansion (Tupfile in src/)
 // Inputs: source-root-relative (e.g., "src/foo.c") → "foo.c"
-// Outputs: source-root-relative (e.g., "src/foo.o") → "../../build/src/foo.o"
-//
-// For outputs, transform_output_path adds the variant prefix automatically:
-//   1. Compute variant_prefix = relative(output_root, source_root)  // e.g., "build"
-//   2. Prepend: "src/foo.o" → "build/src/foo.o"
-//   3. Apply make_source_relative: "build/src/foo.o" → "../../build/src/foo.o"
-auto transform_input_path(ctx, tc, "src/foo.c") -> "foo.c"
-auto transform_output_path(tc, "src/foo.o") -> "../../build/src/foo.o"
+// Outputs: the caller passes the path with the build-root name already on it
+//   (e.g., "build/src/foo.o"); transform_output_path adds no prefix and applies
+//   make_source_relative: "build/src/foo.o" → "../build/src/foo.o"
+auto transform_input_path(build_graph, tc, "src/foo.c") -> "foo.c"
+auto transform_output_path(tc, "build/src/foo.o") -> "../build/src/foo.o"
 
 // Core conversion: project-root-relative → Tupfile-relative
 auto make_source_relative(path, source_to_root, current_dir) {
+    if (path is empty or absolute)
+        return path;
+    if (path starts with "..")
+        return source_to_root + path;  // Unchanged in the root directory
     if (path starts with current_dir + "/")
         return path without prefix;  // Local file
-    if (path starts with "../")
-        return path;  // Already relative
+    if (path == current_dir)
+        return ".";
     return source_to_root + path;  // Cross-directory reference
 }
 ```
@@ -1632,9 +1655,9 @@ String fields dominate memory in large builds. String interning provides:
 
 - **4-byte handles** - `StringId` replaces all owned string fields, reducing per-field overhead by 28 bytes vs a typical string type
 - **Deduplication** - Repeated strings (e.g., common source_dir values) stored once
-- **Zero-allocation lookup** - `find_by_dir_name()` uses transparent comparators to lookup by `string_view` without allocation
+- **Zero-allocation lookup** - `find_by_dir_name()` takes a `string_view` and probes the string pool, the `PathPool` trie, then `path_to_node`, without allocating
 
-The `StringPool` uses a custom arena with Robin Hood hashing for O(1) deduplication. Helper functions like `get_name()` and `get_source_dir()` transparently resolve `StringId` to `string_view`. Path functions (`pup::path::join`, `pup::path::parent`, etc.) return `StringId` by interning results in a global pool.
+The `StringPool` uses a custom arena with Robin Hood hashing for O(1) deduplication. The property accessors `get<Name>` and `get<SourceDir>` return the `StringId`, which the pool resolves to a `string_view`. Path functions that build a path (`pup::path::join`, `normalize`, `relative`) return `StringId` by interning results in a global pool; those that select part of one (`parent`, `filename`) return a `string_view`.
 
 ### Why Binary Index Instead of SQLite?
 
@@ -1827,7 +1850,7 @@ Like tup, pup stores paths as `(parent_dir, basename)` pairs rather than full pa
 
 - **No path format mismatches** - No canonicalization bugs from `./foo` vs `foo` vs `/abs/foo`
 - **Smaller storage** - Basenames are short; parent relationship is a single NodeId
-- **O(1) lookup** - Hash on `(parent_id, name)` gives instant lookup
+- **Fast lookup** - A hash probe on `(parent PathId, name)` in the `PathPool`, then a binary search of the sorted `path_to_node` table
 - **Efficient caching** - `get_full_path()` caches reconstructed paths
 
 ### Why No libstdc++?
@@ -1839,5 +1862,5 @@ Putup links with `-nostdlib++` and provides its own runtime primitives:
 - **Portability** - No dependency on a specific C++ standard library version; only requires a C runtime (libc)
 - **Control** - Custom `StringPool`, `Vec<T>`, `Function<Sig>`, and clock types are purpose-built for the build system's needs, with no overhead from generality
 
-The `throw_stubs.cpp` file provides the minimal runtime surface: `operator new`/`delete` (the bump region described in [Memory Management](#memory-management)), `__cxa_guard_*` (for thread-safe static initialization), and `__throw_*` stubs that abort on use. On macOS, libc++ also requires `std::__1::__libcpp_verbose_abort` (used by `variant`/`optional` failure paths); the stub matches libc++'s `__1` inline ABI namespace directly.
+The `throw_stubs.cpp` file provides the minimal runtime surface: `operator new`/`delete` (the bump region described in [Memory Management](#memory-management); `new_delete.cpp` defines them on Windows), `__cxa_guard_*` (for thread-safe static initialization), and `__throw_*` stubs that abort on use. On macOS, libc++ also requires `std::__1::__libcpp_verbose_abort` (used by `variant`/`optional` failure paths); the stub matches libc++'s `__1` inline ABI namespace directly.
 
