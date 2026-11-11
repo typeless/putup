@@ -13378,6 +13378,72 @@ SCENARIO("include_rules in a file outside the project reads no Tuprules.tup", "[
     }
 }
 
+SCENARIO("include_rules in a file that include_rules reads is refused", "[e2e][parse][error]")
+{
+    struct Layout {
+        std::string_view description;
+        std::string_view root_tuprules;
+        std::string_view error_site;
+    };
+    auto const layout = GENERATE(
+        Layout { "in a Tuprules.tup", "R = r\ninclude_rules\n", "Tuprules.tup:2: error: " },
+        Layout { "in a file a Tuprules.tup includes", "include common/defs.tup\n", "common/defs.tup:1: error: " },
+        Layout { "in a config branch that is not taken", "ifeq (@(NESTED_RULES),y)\ninclude_rules\nendif\n", "Tuprules.tup:2: error: " }
+    );
+    CAPTURE(layout.description);
+
+    GIVEN("a Tupfile whose include_rules reaches a second include_rules")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", "");
+        f.write_file("Tuprules.tup", layout.root_tuprules);
+        f.mkdir("common");
+        f.write_file("common/defs.tup", "include_rules\n");
+        f.write_file("common/Tuprules.tup", "C = common\n");
+        f.mkdir("app");
+        f.write_file("app/Tupfile", "include_rules\n: |> echo 'C=$(C)' > %o |> out.txt\n");
+
+        WHEN("the project is built")
+        {
+            auto result = f.pup({});
+
+            THEN("the build fails on the line of the second include_rules")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const expected = std::string { layout.error_site } + "include_rules is not allowed in a file that include_rules reads";
+                REQUIRE(result.stderr_output.find(expected) != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("include_rules in a branch of a Tuprules.tup that no configuration takes is not read", "[e2e][parse]")
+{
+    GIVEN("a Tuprules.tup with include_rules under a condition that is false whatever the configuration")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", "");
+        f.write_file("Tuprules.tup", "R = r\nifeq (a,b)\ninclude_rules\nendif\n");
+        f.mkdir("app");
+        f.write_file("app/Tupfile", "include_rules\n: |> echo 'R=$(R)' > %o |> out.txt\n");
+
+        WHEN("the project is built")
+        {
+            auto result = f.pup({});
+
+            THEN("the build succeeds")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("app/out.txt") == "R=r\n");
+            }
+        }
+    }
+}
+
 SCENARIO("Sibling directory inputs work with incremental variant builds", "[e2e][incremental][variant]")
 {
     GIVEN("a variant build with sibling directory input")

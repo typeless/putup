@@ -146,7 +146,7 @@ directory of the file that contains the statement.
 ### REQ-EVAL-INCLUDE-RULES-FROM-FILE
 
 - conformance: tup-conformant
-- reference: upstream's `include_rules` counts the directories to climb from `tf->curtent`, the directory of the file being parsed, and reads each `Tuprules.tup` relative to it (`src/tup/parser.c`). putup walked up from the Tupfile's directory whichever file held the statement. Which of those files putup skips as already read is REQ-EVAL-INCLUDE-CONTEXT. Upstream refuses `include_rules` in a file that `include_rules` reached ("Unable to call include_rules from within a Tuprules.tup context"); putup accepts it and applies this requirement to it
+- reference: upstream's `include_rules` counts the directories to climb from `tf->curtent`, the directory of the file being parsed, and reads each `Tuprules.tup` relative to it (`src/tup/parser.c`). putup walked up from the Tupfile's directory whichever file held the statement. Which of those files putup skips as already read is REQ-EVAL-INCLUDE-CONTEXT.
 - discharge: test "Scenario: include_rules in an included file reads the Tuprules.tup files above that file"
 
 When a file below the project root contains `include_rules`, putup shall read the `Tuprules.tup`
@@ -160,3 +160,23 @@ files from the project root down to the directory of that file.
 
 When a file outside the tree that holds the Tupfiles contains `include_rules`, putup shall read
 no `Tuprules.tup` for it.
+
+### REQ-EVAL-INCLUDE-RULES-NOT-NESTED
+
+- conformance: tup-conformant
+- reference: upstream's `include_rules` fails with "Unable to call include_rules from within a Tuprules.tup context" while `tf->including_rules` is set, which holds for every file an `include_rules` reaches, a file a `Tuprules.tup` includes among them (`src/tup/parser.c`). putup accepted the statement and read the `Tuprules.tup` files above the file that held it, so a `Tuprules.tup` could bring another directory's rules into every Tupfile below it. A file putup skips as already read (REQ-EVAL-INCLUDE-CONTEXT) is not parsed, so a statement in it is not reached; upstream reads the file again and refuses it
+- discharge: test "Scenario: include_rules in a file that include_rules reads is refused"
+- discharge: test "Scenario: include_rules in a branch of a Tuprules.tup that no configuration takes is not read"
+
+If putup parses an `include_rules` statement while it reads a file for another `include_rules`,
+then putup shall reject the Tupfile with an error on the statement's line.
+
+### REQ-EVAL-INCLUDE-RULES-NOT-NESTED-EITHER-BRANCH
+
+- conformance: deliberate-deviation
+- reference: upstream executes only the branch a condition takes, so it accepts a nested `include_rules` in the other branch. putup parses both branches of a condition on a config or environment variable, and no configuration could take the branch without the error of REQ-EVAL-INCLUDE-RULES-NOT-NESTED, so putup refuses the statement in both. putup crashed on the untaken branch: the include-once key holds the condition stack, so the `Tuprules.tup` was read again inside its own branch without end
+- discharge: test "Scenario: include_rules in a file that include_rules reads is refused"
+
+If putup parses an `include_rules` statement, in a branch that the configuration does not take,
+while it reads a file for another `include_rules`, then putup shall reject the Tupfile with an
+error on the statement's line.

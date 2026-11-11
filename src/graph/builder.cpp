@@ -2001,16 +2001,22 @@ auto process_include(
     auto const& include_root = is_empty(ctx.options.config_root) ? str(ctx.options.source_root) : str(ctx.options.config_root);
 
     if (inc.is_rules) {
+        if (ctx.reading_tuprules) {
+            return make_error<void>(ErrorCode::ParseError, "include_rules is not allowed in a file that include_rules reads");
+        }
         auto tupfile_dir = global_pool().get(pup::path::join(include_root, str(ctx.current_dir)));
         auto parsed_file_dir = global_pool().get(pup::path::normalize(global_pool().get(pup::path::join(tupfile_dir, str(ctx.eval->tup_cwd)))));
         auto tuprules_files = find_tuprules_files(parsed_file_dir, include_root);
+        ctx.reading_tuprules = true;
+        auto outcome = Result<void> {};
         for (auto tuprules_id : tuprules_files) {
-            auto result = include_single_file(ctx, state, include_root, str(tuprules_id));
-            if (!result) {
-                return pup::unexpected<Error>(result.error());
+            outcome = include_single_file(ctx, state, include_root, str(tuprules_id));
+            if (!outcome) {
+                break;
             }
         }
-        return {};
+        ctx.reading_tuprules = false;
+        return outcome;
     }
 
     auto resolved = resolve_include_path(ctx, include_root, inc.path);
