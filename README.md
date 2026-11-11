@@ -72,10 +72,10 @@ Targets:
   build-*             (glob)        (all)       # multiple variants
 
 Examples:
-  putup                Build all variants
+  putup                Build in-tree, or the enclosing build dir when run inside one
   putup build-debug    Build single variant
   putup build-*        Build all matching variants
-  putup src/lib        Scoped build across all variants
+  putup src/lib        Scoped build (variant selection rules above apply)
 
 Environment:
   PUP_SOURCE_DIR     Source directory (overridden by -S)
@@ -86,13 +86,22 @@ Environment:
 
 ## Documentation
 
-- **[Installation](INSTALL.md)** - Requirements, building from source, bootstrapping
-- **[Reference Manual](docs/reference.md)** - Complete user guide: commands, Tupfile syntax, configuration
-- **[Compatibility](COMPATIBILITY.md)** - Tup compatibility matrix and migration guide
-- **[CLAUDE.md](CLAUDE.md)** - Developer guide: building, testing, project structure
+Using putup:
+
+- **[Installation](INSTALL.md)** - Install script, building from source, bootstrapping
+- **[Reference Manual](docs/reference.md)** - Commands, Tupfile syntax, configuration, build modes, troubleshooting
+- **[Compatibility](COMPATIBILITY.md)** - What putup shares with tup, where it differs, and moving from tup
+- **[Migrating from Make/Kbuild](docs/tupfile-migration-guide.md)** - Patterns for converting an existing build to Tupfiles
+- **[Examples](examples/)** - `helloworld`, `busybox`, and `bsp` (a cross-compiling GCC toolchain)
+
+Working on putup:
+
+- **[CLAUDE.md](CLAUDE.md)** - Developer guide: building, testing, workflow
 - **[Testing](TESTING.md)** - Test workflow, tags, E2E fixtures, and coverage reports
 - **[STYLE.md](STYLE.md)** - C++ code style guide
 - **[DESIGN.md](DESIGN.md)** - Internal architecture and design rationale
+- **[spec/requirements](spec/requirements/README.md)** - Machine-checked behaviour requirements
+- **[docs/design](docs/design/)** - Open design proposals; finished ones are in [docs/archive](docs/archive/)
 
 ## Claude Code Plugin
 

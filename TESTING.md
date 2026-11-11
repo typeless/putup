@@ -168,7 +168,7 @@ test/e2e/fixtures/
 auto f = E2EFixture { "fixture_name" };  // Copies to temp dir
 
 // Putup commands
-f.init()           // putup configure (initializes .pup directory)
+f.init()           // putup configure
 f.build()          // putup build
 f.clean()          // putup clean
 f.parse()          // putup parse

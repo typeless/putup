@@ -67,6 +67,6 @@ The build generates these headers from `.config`:
   CONFIG=notc_defconfig putup configure -S busybox-1.38.0 -B build
   putup -S busybox-1.38.0 -B build
   ```
-- **With `PUP_IMPLICIT_DEPS=1`**: Pass CONFIG in both configure and build phases.
+- **With implicit dependency scanning (the default)**: Pass CONFIG in both configure and build phases.
   Implicit deps re-parses Tupfiles after discovering dependencies, and CONFIG must
   be set during both phases to select the correct defconfig.

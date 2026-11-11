@@ -36,7 +36,7 @@ See [docs/reference.md](docs/reference.md#5-tupfile-syntax) for complete syntax 
 | Variables (`=`, `+=`, `:=`) | ✅ Implemented |
 | Soft/weak set (`?=`, `??=`) | ✅ Implemented (extension) |
 | Config variables (`@(VAR)`) | ✅ Implemented |
-| Node variables (`&(VAR)`) | ✅ Implemented |
+| Node variables (`&(VAR)`) | ⚠️ Partial |
 | Pattern flags (`%f`, `%o`, `%B`, etc.) | ✅ Implemented |
 | Bang macros (`!name`) | ✅ Implemented |
 | Conditionals (`ifdef`, `ifeq`, etc.) | ✅ Implemented |
@@ -44,6 +44,7 @@ See [docs/reference.md](docs/reference.md#5-tupfile-syntax) for complete syntax 
 | Directives (`include`, `export`, `import`) | ✅ Implemented |
 | `run` directive | ❌ Not implemented |
 | `preload` directive | ⚠️ Parsed, not enforced |
+| `.gitignore` directive | ⚠️ Parsed, not enforced; no `.gitignore` is generated |
 | `error` directive | ✅ Implemented |
 
 ### Groups and Bins
@@ -102,12 +103,20 @@ tracked in the graph even when inactive, so config flips stay incremental.
 Static conditionals (`ifeq (a,b)`, values fixed by the Tupfile itself) are
 processed textually like tup: the losing branch does not exist.
 
+`ifdef`/`ifndef` check Tupfile variables before config variables; tup checks only `@`-variables.
+
 `include` processes a file at most once **per conditional context**:
 
 | Case | Tup | Putup |
 |------|-----|-------|
 | Same file included twice in the same context | Parses twice (duplicate rules fail) | Second include deduplicated |
 | Included in an inactive config branch, then unconditionally | Parses the active one | Both contexts processed; a same-output conflict is reported eagerly, even under configs where tup would parse only one copy |
+
+### Groups and Order-Only Inputs
+
+Removing a member of a group reschedules the group's consumers; tup leaves them stale. Changing an
+order-only input triggers a rebuild, as in tup, and deleting a stale output re-runs its order-only
+consumers in that same build; tup leaves them stale.
 
 ### Change Detection
 
@@ -195,11 +204,11 @@ Features in putup that extend beyond tup:
 | **Glob patterns** | `putup 'build-*'` matches multiple variants |
 | **Multi-variant parallel** | `putup -B build-debug -B build-release` or `putup build-debug build-release` |
 | **Explicit variant selection** | Build directories are never adopted by scanning; running `putup` from inside a build dir selects it, otherwise selection is explicit (candidates are listed as hints on error) |
-| **Variant output prefix** | Output lines are prefixed with `[variant-name]` for clarity |
+| **Variant output prefix** | Output lines are prefixed with `[variant-name]` |
 | **Show formats** | `putup show graph\|script\|compdb\|var\|instructions\|index` for different output formats |
 | **Content-based hashing** | SHA-256 for precise change detection beyond mtime |
 | **Tracked tools** | `CONFIG_TRACKED_TOOLS` folds tool binaries' (path, size, mtime) into command identity — toolchain upgrades trigger rebuilds |
-| **Scoped tup.config** | Per-subdirectory configs: nearest `tup.config` in parent chain is used |
+| **Scoped tup.config** | Per-subdirectory configs: every `tup.config` from the output root down to the Tupfile's directory is merged, and a parent overrides a child |
 | **Configure command** | `putup configure` runs config rules and ensures `tup.config` exists |
 
 ## Reporting Issues

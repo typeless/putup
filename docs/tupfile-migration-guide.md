@@ -1,6 +1,8 @@
 # Tupfile Migration Guide
 
-Reference notes from migrating Busybox (1789 commands) from Kbuild/Make to Tup.
+Reference notes from migrating Busybox (1789 commands) from Kbuild/Make to Tup. The result is
+[examples/busybox](../examples/busybox/): `libbb/Tupfile` has the assembly files, `modutils/Tupfile`
+the negative conditional, and `archival/libarchive/Tupfile` the shared source lists.
 
 ---
 
@@ -108,7 +110,7 @@ Headers generated at build time must be available before compilation:
 : {objs} |> !ar |> lib.a $(S)/<libs>
 
 # root/Tupfile - consumes from group
-: <libs> |> $(CC) -Wl,--start-group %f -Wl,--end-group -o %o |> binary
+: <libs> |> $(CC) -Wl,--start-group %<libs> -Wl,--end-group -o %o |> binary
 ```
 
 ---
@@ -131,8 +133,6 @@ import AR=ar
 
 # Export for subprocess environment (scripts that need these)
 export HOSTCC
-srctree = .
-export srctree
 
 # Flags
 # Use $(S) for source tree paths, $(B) for build tree paths (generated headers)
@@ -242,7 +242,7 @@ Tup detects cycles. If you see cycle errors:
 ### Config Not Taking Effect
 
 - Verify config name matches exactly (case-sensitive)
-- Use `@(NAME)` not `$(CONFIG_NAME)` for tup.config values
+- Read tup.config values as `@(NAME)`; `$(CONFIG_NAME)` reads the same value only while no Tupfile variable named `CONFIG_NAME` shadows it
 - Check for typos in `ifeq`/`ifneq` conditions
 
 ---
@@ -260,19 +260,3 @@ putup
 # Check command count matches expectations
 # (Busybox: 1789 commands for full config)
 ```
-
----
-
-## Files Reference (Busybox Migration)
-
-| File | Purpose |
-|------|---------|
-| `Tuprules.tup` | Compiler flags, bang macros, import/export |
-| `tup.config` | 400+ CONFIG_XXX options |
-| `Tupfile` | Top-level link rule with `<libs>` group |
-| `include/Tupfile` | Generated headers (autoconf.h, applets.h, etc.) |
-| `scripts/kconfig/Tupfile` | Build kconfig conf tool as host binary |
-| `libbb/Tupfile` | Core library with assembly files |
-| `modutils/Tupfile` | Example of negative conditional pattern |
-| `archival/libarchive/Tupfile` | Example of shared source groups |
-| `plugins/putup/commands/migrate-makefile.md` | `putup:migrate-makefile` conversion command |

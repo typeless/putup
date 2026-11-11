@@ -15,43 +15,17 @@ Key characteristics:
 
 ### 1.2 Compatibility with Tup
 
-Putup supports the core Tupfile syntax and most tup commands. See [Appendix A](#a-tup-compatibility-matrix) for a detailed compatibility matrix.
-
-**What works:**
-- Rules, foreach, bang macros, variables, conditionals
-- Groups (bins) and order-only dependencies
-- Multi-directory projects with cross-directory dependencies
-- Variant (out-of-tree) builds
-
-**What's different:**
-- No FUSE sandbox (uses explicit `-MD` flags for header tracking)
-- No Lua scripting
-- No `run` directive (shell execution during parse)
-- Binary index format instead of SQLite database
-- `ifdef`/`ifndef` check Tupfile variables before config variables (tup checks only `@`-variables)
-
-### 1.3 Key Differences from Tup
-
-| Aspect | Tup | Putup |
-|--------|-----|-------|
-| Change detection | FUSE interception | Index comparison + SHA-256 |
-| Header tracking | Automatic via FUSE | Requires `-MD` compiler flag |
-| Database | SQLite | Binary index file |
-| Scripting | Lua support | None |
-| Init command | `tup init` | `putup configure` |
+Putup supports the core Tupfile syntax and most tup commands. It has no FUSE sandbox, no Lua and no
+`run` directive, and it keeps its build record in a binary index instead of a SQLite database.
+[COMPATIBILITY.md](../COMPATIBILITY.md) lists every command and syntax feature with its status, the
+behavioural differences, and putup's extensions.
 
 ## 2. Quick Start
 
 ### 2.1 Installation
 
-Build from source (requires C++20 compiler):
-
-```bash
-git clone https://github.com/typeless/putup
-cd putup
-make
-sudo install build/putup /usr/local/bin/
-```
+See [INSTALL.md](../INSTALL.md) for the install script, building from source, and bootstrapping
+without an existing `putup`.
 
 ### 2.2 Your First Build
 
@@ -164,7 +138,7 @@ putup build-debug                  # Build single variant (path-based)
 putup build-*                      # Build all variants matching pattern
 putup build-debug build-release    # Build specific variants
 putup build-debug/src/lib          # Variant + scoped build
-putup src/lib                      # Scope applied to all variants
+putup src/lib                      # Scope applied to the selected build directory
 putup build-debug/src/lib/foo.o    # Rebuild single output file
 
 # Explicit -B flag (requires prior configure -B)
@@ -189,7 +163,7 @@ Supports path-based variant and scope selection.
 **Multi-Variant Support:**
 - Running from project root requires an explicit variant (path target or -B); candidates are listed as hints
 - Path-based targets: `putup parse build-debug`, `putup parse build-*`
-- Legacy `-B` flag still works for explicit selection
+- `-B DIR` also selects a build directory explicitly
 
 **Convention checking (`--check`)**
 
@@ -244,7 +218,7 @@ Supports path-based variant and scope selection.
 **Multi-Variant Support:**
 - Running from project root requires an explicit variant (path target or -B); candidates are listed as hints
 - Path-based targets: `putup clean build-debug`, `putup clean build-*`
-- Legacy `-B` flag still works for explicit selection
+- `-B DIR` also selects a build directory explicitly
 
 **Examples:**
 ```bash
@@ -271,7 +245,7 @@ Supports path-based variant selection.
 **Multi-Variant Support:**
 - Running from project root requires an explicit variant (path target or -B); candidates are listed as hints
 - Path-based targets: `putup distclean build-debug`, `putup distclean build-*`
-- Legacy `-B` flag still works for explicit selection
+- `-B DIR` also selects a build directory explicitly
 
 **Examples:**
 ```bash
@@ -899,8 +873,7 @@ Custom display text replaces the command in output:
 `%` flags expand as they do in the command. When a rule applies a `!macro` that carries its own
 display, the macro's wins — it owns the command the display names — and a display written on the
 rule is discarded. A failing command is reported by its command line rather than its display, which
-would not say what broke. Unlike tup, where `--verbose` switches from the display to the real
-command, putup's `-v` shows displays; use `show script` to see the commands a build would run.
+would not say what broke. As in tup, `-v` switches from the display to the command line.
 
 ### 5.2 Variables
 
@@ -956,12 +929,12 @@ $(CC)                 # Regular variable
 **Built-in Variables:**
 | Variable | Description |
 |----------|-------------|
-| `$(TUP_CWD)` | Current Tupfile directory (relative to root) |
+| `$(TUP_CWD)` | In a Tupfile, its directory relative to the project root (`src/lib`). Inside a `Tuprules.tup` read by `include_rules`, the relative path from the Tupfile's directory to that `Tuprules.tup` (`../..` for the root one read from `src/lib`) |
 | `$(TUP_PLATFORM)` | Platform: `linux`, `macosx`, `win32` |
 | `$(TUP_ARCH)` | Architecture: `x86_64`, `arm`, etc. |
-| `$(TUP_VARIANTDIR)` | Variant output directory (variant builds) |
+| `$(TUP_VARIANTDIR)` | Same value as `$(TUP_VARIANT_OUTPUTDIR)` |
 | `$(TUP_VARIANT_OUTPUTDIR)` | Relative path from the source dir to the variant output dir (e.g. `../../build/src/lib`; `.` in-tree) |
-| `$(TUP_SRCDIR)` | Relative path to source directory (three-tree builds) |
+| `$(TUP_SRCDIR)` | Path from where a command runs to the source directory; always `.` |
 | `$(TUP_OUTDIR)` | Relative path to output directory (three-tree builds) |
 
 **Examples:**
@@ -1618,13 +1591,11 @@ putup build-*                      # Builds all matching variants in parallel
 cd build-debug && putup            # Builds this variant (any depth inside it)
 ```
 
-**Legacy -B flag:**
+**The -B flag:**
 
-The `-B` flag is still supported for:
-- Creating new out-of-tree builds: `putup -B /tmp/mybuild`
-- Explicit variant selection: `putup -B build-debug -B build-release`
-
-Path-based selection is preferred for existing variants.
+`-B DIR` names a build directory explicitly, and may be repeated:
+`putup -B build-debug -B build-release`. A build directory outside the source tree is named this way
+(`putup -B /tmp/mybuild`) or through `PUP_BUILD_DIR`.
 
 **Multiple variants:**
 
@@ -1642,18 +1613,15 @@ putup -B build-debug -B build-release  # Explicit -B flag
 
 **Parallel variant builds:**
 
-When run from the project root without `-B` flags, putup automatically:
-1. Discovers all variant directories (subdirs with `tup.config` or `.pup/`)
-2. Builds them in parallel using `fork()`+`waitpid()` (one child process per variant)
-3. Reports combined results
-
-In verbose mode (`-v`), output lines are prefixed with `[variant-name]` to distinguish which variant produced each message.
+When more than one variant is selected (several path targets, a glob, or repeated `-B`), putup
+builds them in parallel, one child process per variant, and reports combined results. Every
+output line is prefixed with `[variant-name]`.
 
 **Cleaning variants:**
 
 ```bash
 putup clean -B build-debug      # Remove outputs only
-putup distclean -B build-debug  # Remove entire variant directory
+putup distclean -B build-debug  # Remove outputs, .pup/ and tup.config
 ```
 
 ### 7.3 Scoped Builds
@@ -1704,10 +1672,9 @@ Combine variant selection with directory scopes using path syntax:
 ```bash
 putup build-debug/lib              # Single variant, scoped to lib/
 putup build-*/lib                  # All variants, scoped to lib/
-putup lib                          # All variants, scoped to lib/ (shorthand)
 ```
 
-When targets specify a variant prefix (e.g., `build-debug/lib`), only that variant is built. Without a variant prefix (e.g., `lib`), the scope applies to all discovered variants.
+When targets specify a variant prefix (e.g., `build-debug/lib`), only that variant is built. A target without a variant prefix (e.g., `lib`) scopes whichever build directory is otherwise selected: the one enclosing the working directory, the ones named by `-B` or `PUP_BUILD_DIR`, or the in-tree build.
 
 **Consistency rule:**
 
@@ -1834,7 +1801,7 @@ Two special variables help Tupfiles reference source and output directories:
 
 | Variable | Description |
 |----------|-------------|
-| `$(TUP_SRCDIR)` | Relative path from Tupfile directory to corresponding source directory |
+| `$(TUP_SRCDIR)` | Path from where a command runs to the source directory; always `.`, since commands run there |
 | `$(TUP_OUTDIR)` | Relative path from Tupfile directory to corresponding output directory |
 
 **Example Tupfile:**
@@ -2152,77 +2119,17 @@ manipulation.
 
 ### 9.2 The Index File
 
-Binary file at `.pup/index` storing the complete build state (v11 format).
+Binary file at `.pup/index` storing the complete build state: every file with its size, mtime and
+SHA-256 hash, every command with its key and signature, and the edges between them.
 
-**Contents:**
+The index is a *snapshot*, not a live database. Each build parses every Tupfile, compares the fresh
+graph with the previous index, runs what changed, and writes a complete new index in one atomic
+rename. The record is also what says which files putup made: stale-output cleanup (§9.3), `clean`
+and `distclean` work from it, so reset a build with `putup distclean`, not by deleting the file.
 
-| Section | Description |
-|---------|-------------|
-| Header (56 bytes) | Magic number, version, counts, offsets, save time |
-| File entries (64 bytes each) | Parent, name offset, type, size, mtime, SHA-256 hash |
-| Command entries (48 bytes each) | Dir ID, instruction/display/env offsets, structural-identity hash |
-| Edges (16 bytes each) | From, to, link type |
-| Operand table | Per-command offset into operand data |
-| Operand data | Packed input/output NodeIds per command |
-| String table | Length-prefixed packed strings (including instructions) |
-| Footer (32 bytes) | SHA-256 checksum |
-
-**Instruction-based storage (v8+):** Commands store an instruction pattern (e.g., `gcc -c %f -o %o`) plus operand NodeIds instead of fully-expanded command strings. This provides ~90% space savings for projects with many similar commands (e.g., compiling C files with bang macros). Full commands are reconstructed lazily when needed for change detection.
-
-**Stat cache (v9):** Each file entry records its modification time (`mtime_ns`), and the header records the index's `save_time_ns`. On a rebuild, a file whose size and mtime match the index is trusted without re-hashing (with racy-clean detection for files touched in the same second the index was saved). See §9.1.
-
-**Structural command identity (v11):** Each command entry carries a per-command SHA-256 that folds the command text together with the values of the variables the command depends on. Changing an imported or config variable that a command uses changes the command's identity and re-runs it (§5.6).
-
-**Format version history:**
-- v8 — instruction/template dedup (command stores a template + operand NodeIds, reconstructed lazily)
-- v9 — stat cache (`mtime_ns` per file, `save_time_ns` in header, racy-clean detection)
-- v10 — removed `group_cmd_id` from edges
-- v11 — structural command identity hash (current)
-
-**Link types:**
-
-| Type | Meaning |
-|------|---------|
-| Normal | Input/output relationship |
-| Sticky | Explicit dependency from Tupfile or config variable |
-| Group | Membership in output group |
-| Implicit | Header dependency from `.d` file |
-
-**Node types:**
-
-| Type | Description |
-|------|-------------|
-| File | Source file in the project |
-| Generated | Output file produced by a command |
-| Ghost | Placeholder for file referenced before it exists (cross-directory dependencies) |
-| Directory | Directory node (parent for path resolution) |
-| Command | Build command to execute |
-| Variable | Config variable from tup.config |
-
-**Note on Ghost nodes:** Ghosts are created during parsing when a rule references a file that doesn't exist yet (common in variant builds where directories are parsed alphabetically). When the producing rule is later parsed, the Ghost is upgraded to Generated. Ghosts *are* written to the index, one entry each so node ids stay dense, but only a Ghost backed by a file on disk records a path and content hash; the rest are empty slots. That recorded content is what makes a **foreign input** — a file no rule produces, such as the variant's `tup.config` — visible to change detection across builds.
-
-**Key design:**
-
-The index is a *snapshot*, not a live database. Each build writes a complete new index file. This is efficient because:
-
-- Serialization is fast (simple binary format)
-- Only changed parts of the *build* execute
-- Single atomic write at the end
-
-**Path storage:**
-
-Paths use a (parent_id, name) model like tup's database:
-- Only basename stored per entry
-- Full paths reconstructed by walking parent chain
-- Enables O(1) lookup by directory + name
-
-**Tagged ID spaces:**
-
-Files and commands occupy separate ID spaces for O(1) lookup:
-- File IDs: 1, 2, 3, ... (stored in dense array, ID = array_index + 1)
-- Command IDs: 0x40000001, 0x40000002, ... (2-bit kind tag in bits 30-31)
-- ID field removed from on-disk format (computed from array position)
-- Lookup: `is_command(id) ? commands_[index(id) - 1] : files_[id - 1]`
+`putup show index` (§3.6) dumps the recorded dependencies. The on-disk layout and the reasons for the
+format are in the [Index Module](../DESIGN.md#index-module) section of DESIGN.md; node and link types
+are under [Core Types](../DESIGN.md#core-types).
 
 ### 9.3 Stale Output Cleanup
 
@@ -2471,21 +2378,6 @@ The phases are disjoint spans of `Total`, so `Unaccounted` shows at a glance whe
 the breakdown explains the run. A large `Unaccounted` means work is happening in a
 phase that isn't timed — read it before trusting the rest of the table.
 
-**Graph visualization**
-
-Visualize dependencies:
-
-```bash
-# DOT format for graphviz
-putup show graph | dot -Tpng -o deps.png
-
-# Text summary
-putup show graph --summary
-
-# Include header dependencies
-putup show graph --all-deps
-```
-
 ### 10.3 Debug Techniques
 
 **Isolate the problem:**
@@ -2511,23 +2403,11 @@ putup -n
 putup -v -n
 ```
 
-**Inspect the graph:**
-
-```bash
-# Text summary of all rules
-putup show graph --summary
-
-# Visual graph (requires graphviz)
-putup show graph | dot -Tsvg -o graph.svg
-```
+`putup show graph` (§3.6) prints the dependency graph as DOT or as a text summary.
 
 **Force full rebuild:**
 
 ```bash
-# Remove index, keep outputs
-rm -rf .pup/index
-
-# Or clean everything
 putup distclean && putup
 ```
 
@@ -2536,20 +2416,6 @@ putup distclean && putup
 ```bash
 # Parse only, verbose
 putup parse -v
-```
-
-**Compare with tup:**
-
-If migrating from tup, run both and compare:
-
-```bash
-# Build with putup
-putup -n > putup-commands.txt
-
-# Build with tup (if available)
-tup -n > tup-commands.txt
-
-diff putup-commands.txt tup-commands.txt
 ```
 
 ## 11. Style Guide
@@ -2797,7 +2663,9 @@ B = $(TUP_VARIANT_OUTPUTDIR)/$(S)
 
 # OS API
 OS_API = @(OS_API)
-OS_API ?= posix
+ifeq ($(OS_API),)
+OS_API = posix
+endif
 
 # Toolchain
 import CROSS_COMPILE=
@@ -2841,151 +2709,4 @@ CONFIG_OS_API=posix
 CONFIG_RELEASE_CFLAGS=-O2 -DNDEBUG
 CONFIG_RELEASE_CXXFLAGS=-O2 -DNDEBUG
 CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections
-```
-
-## Appendices
-
-### A. Tup Compatibility Matrix
-
-| Feature | Tup | Putup | Notes |
-|---------|-----|-----|-------|
-| **Core Syntax** |
-| Basic rules | ✅ | ✅ | |
-| foreach rules | ✅ | ✅ | |
-| Bang macros | ✅ | ✅ | |
-| Variables | ✅ | ✅ | |
-| Config variables (@) | ✅ | ✅ | |
-| Node variables (&) | ✅ | ⚠️ | Partial |
-| Conditionals | ✅ | ✅ | `ifdef`/`ifndef` check Tupfile vars before config vars (tup: config only) |
-| Groups | ✅ | ✅ | Removing a member reschedules the group's consumers (tup: leaves them stale) |
-| Order-only deps | ✅ | ✅ | Changing one triggers a rebuild. Deleting a stale output re-runs its order-only consumers in that same build (tup: leaves them stale) |
-| **Directives** |
-| include | ✅ | ✅ | |
-| include_rules | ✅ | ✅ | |
-| export | ✅ | ✅ | |
-| import | ✅ | ✅ | |
-| preload | ✅ | ⚠️ | Parsed, not enforced |
-| run | ✅ | ❌ | Shell execution during parse |
-| .gitignore | ✅ | ⚠️ | Parsed, not enforced |
-| **Commands** |
-| build | ✅ | ✅ | |
-| configure | ❌ | ✅ | Two-pass config generation |
-| init | ✅ | ❌ | Putup initializes via configure |
-| parse | ✅ | ✅ | |
-| upd | ✅ | ❌ | Use build instead |
-| variant | ✅ | ✅ | |
-| monitor | ✅ | ❌ | Filesystem watch daemon |
-| graph | ✅ | ✅ | Via `show graph` |
-| **Features** |
-| FUSE sandbox | ✅ | ❌ | Putup uses index-based tracking |
-| Lua scripting | ✅ | ❌ | Not planned |
-| SQLite database | ✅ | ❌ | Putup uses binary index |
-| Parallel builds | ✅ | ✅ | |
-| Incremental builds | ✅ | ✅ | |
-| Cross-platform | ✅ | ✅ | Linux, macOS, Windows |
-| **Putup Extensions** |
-| Path-based variant selection | ❌ | ✅ | `putup build-debug` vs `-B` flag |
-| Glob variant patterns | ❌ | ✅ | `putup build-*` |
-| Single output targets | ❌ | ✅ | `putup build-debug/foo.o` |
-| Multi-variant parallel | ❌ | ✅ | Auto-detect and build variants |
-| show script | ❌ | ✅ | Generate build.sh |
-| show compdb | ❌ | ✅ | compile_commands.json |
-| show var | ❌ | ✅ | Variable assignment history |
-| show instructions | ❌ | ✅ | Instruction deduplication analysis |
-| show index | ❌ | ✅ | Forensic dump of .pup/index |
-| Content-based hashing | ❌ | ✅ | SHA-256 for change detection |
-| Instruction-based index | ❌ | ✅ | v11 format with ~90% storage savings |
-
-**Legend:** ✅ Supported | ⚠️ Partial | ❌ Not supported | ➡️ Different name
-
-### B. Pattern Flags Reference
-
-**Input Flags:**
-
-| Flag | Description | Example Input | Result |
-|------|-------------|---------------|--------|
-| `%f` | All inputs (rule must have one) | `foo.c bar.c` | `foo.c bar.c` |
-| `%i` | Order-only inputs (rule must have one; command or display string only) | `a.c \| z.h y.h` | `z.h y.h` |
-| `%b` | Basename with ext, every input (rule must have one) | `src/foo.c bar.c` | `foo.c bar.c` |
-| `%B` | Basename no ext, every input (rule must have one) | `src/foo.c bar.c` | `foo bar` |
-| `%e` | Extension (foreach, file must have one) | `foo.c` | `c` |
-| `%d` | Tupfile's directory name (project's at root) | `src/Tupfile` | `src` |
-| `%g` | Glob match (one glob-produced input) | `*_test.c` + `foo_test.c` | `foo` |
-
-**Output Flags:**
-
-| Flag | Description |
-|------|-------------|
-| `%o` | All outputs, and the rule must declare at least one — command string or extra outputs section |
-| `%O` | The one output without its extension, keeping its directory — not in the outputs section |
-
-**Numbered Flags:**
-
-| Flag | Description |
-|------|-------------|
-| `%1f` | First input |
-| `%2f` | Second input |
-| `%3f` | Third input (etc.) |
-| `%1i` | First order-only input |
-| `%1o` | First output |
-| `%2o` | Second output |
-| `%3o` | Third output (etc.) |
-
-**Usage Examples:**
-
-```tup
-# Basic: %f for inputs, %o for outputs
-: foo.c |> gcc -c %f -o %o |> foo.o
-
-# Foreach: %B expands per-file
-: foreach *.c |> gcc -c %f -o %o |> %B.o
-
-# Numbered: specific input positions
-: header.h source.c |> process %1f %2f -o %o |> output.c
-
-# Directory-aware output
-: foreach src/*.c |> gcc -c %f -o %o |> obj/%B.o
-```
-
-### C. Environment Variables Reference
-
-**Pup Configuration:**
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `PUP_SOURCE_DIR` | Source directory | Auto-detect |
-| `PUP_CONFIG_DIR` | Config directory (where Tupfiles live) | Source dir |
-| `PUP_BUILD_DIR` | Build/output directory | Source dir |
-| `PUP_IMPLICIT_DEPS` | Enable auto dep scanning | `1` (on) |
-
-**Tupfile Built-ins:**
-
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `$(TUP_CWD)` | Current Tupfile dir (relative) | `src/lib` |
-| `$(TUP_PLATFORM)` | Platform name | `linux`, `macosx`, `win32` |
-| `$(TUP_ARCH)` | CPU architecture | `x86_64`, `arm`, `aarch64` |
-| `$(TUP_VARIANTDIR)` | Variant output dir | `../build-debug/src` |
-| `$(TUP_VARIANT_OUTPUTDIR)` | Relative path from source dir to variant output dir | `../../build/src/lib` (`.` in-tree) |
-| `$(TUP_SRCDIR)` | Path to source dir (three-tree) | `../../busybox/src` |
-| `$(TUP_OUTDIR)` | Path to output dir (three-tree) | `../../build/src` |
-
-**Priority Order:**
-
-For source/build directories:
-1. Command-line (`-S`, `-B`) — highest
-2. Environment (`PUP_SOURCE_DIR`, `PUP_BUILD_DIR`)
-3. Enclosing build directory of cwd — lowest
-
-**Example Usage:**
-
-```bash
-# Build with specific directories
-PUP_SOURCE_DIR=/path/to/src PUP_BUILD_DIR=/path/to/build putup
-
-# Enable implicit dependency scanning
-PUP_IMPLICIT_DEPS=1 putup
-
-# Override via command line (higher priority)
-PUP_SOURCE_DIR=/wrong putup -S /correct  # Uses /correct
 ```
