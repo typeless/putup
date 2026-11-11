@@ -40,7 +40,7 @@ putup refuses the Tupfiles tup refuses; see "What putup refuses" in the tupfile-
 
 | Variable                    | Meaning                                            |
 |-----------------------------|----------------------------------------------------|
-| `$(TUP_CWD)`               | Config-relative directory of current Tupfile        |
+| `$(TUP_CWD)`               | Relative path from the Tupfile's directory to the directory of the file being parsed (`.` in the Tupfile, `../..` in the root Tuprules.tup read from `src/lib`) |
 | `$(TUP_VARIANTDIR)`        | Like `$(TUP_CWD)`, but pointing at the corresponding directory in the variant tree (e.g. `../../build-arm/src/lib`) |
 | `$(TUP_VARIANT_OUTPUTDIR)` | Relative path from the Tupfile's source dir to its output dir in the variant tree (e.g. `../../build/src/lib`; `.` in-tree) |
 | `$(S)` (convention)        | Set to `$(TUP_CWD)` in root Tuprules.tup           |

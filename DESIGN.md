@@ -1459,10 +1459,12 @@ SortedPairVec group_nodes;
 
 ### TUP_CWD Computation
 
-In a Tupfile, `TUP_CWD` is the Tupfile's directory relative to the project root
-(`src/cli/context.cpp`). While a `Tuprules.tup` reached by `include_rules` is parsed, it is the
-relative path from the Tupfile's directory to that `Tuprules.tup`'s directory
-(`src/graph/builder.cpp`); a plain `include` leaves it unchanged.
+`TUP_CWD` is the relative path from the Tupfile's directory to the directory of the file being
+parsed. `src/cli/context.cpp` seeds it with `.` for the Tupfile; `include_single_file`
+(`src/graph/builder.cpp`) sets it for the duration of every included file, `Tuprules.tup` or
+plain `include`, and restores it on return. The same value is the base an `include` path
+resolves against, so a nested include is relative to the file that names it.
+`TUP_VARIANTDIR` is derived from it: `TUP_VARIANT_OUTPUTDIR` joined with `TUP_CWD`.
 
 ```tup
 # Root Tuprules.tup, read from include/generated/Tupfile: TUP_CWD = "../.."

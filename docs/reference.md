@@ -929,11 +929,11 @@ $(CC)                 # Regular variable
 **Built-in Variables:**
 | Variable | Description |
 |----------|-------------|
-| `$(TUP_CWD)` | In a Tupfile, its directory relative to the project root (`src/lib`). Inside a `Tuprules.tup` read by `include_rules`, the relative path from the Tupfile's directory to that `Tuprules.tup` (`../..` for the root one read from `src/lib`) |
+| `$(TUP_CWD)` | Relative path from the Tupfile's directory to the directory of the file being parsed: `.` in the Tupfile itself, `../..` inside the root `Tuprules.tup` read from `src/lib`, `../../other` inside `other/inc.tup` included from `src/lib` |
 | `$(TUP_PLATFORM)` | Platform: `linux`, `macosx`, `win32` |
 | `$(TUP_ARCH)` | Architecture: `x86_64`, `arm`, etc. |
-| `$(TUP_VARIANTDIR)` | Same value as `$(TUP_VARIANT_OUTPUTDIR)` |
-| `$(TUP_VARIANT_OUTPUTDIR)` | Relative path from the source dir to the variant output dir (e.g. `../../build/src/lib`; `.` in-tree) |
+| `$(TUP_VARIANTDIR)` | `$(TUP_CWD)` taken from the variant output dir: the relative path from the Tupfile's source dir to the build-tree counterpart of the directory of the file being parsed (`../../build` inside the root `Tuprules.tup` read from `src/lib`). Equal to `$(TUP_CWD)` in-tree |
+| `$(TUP_VARIANT_OUTPUTDIR)` | Relative path from the Tupfile's source dir to its variant output dir (e.g. `../../build/src/lib`; `.` in-tree). Does not change inside included files |
 | `$(TUP_SRCDIR)` | Path from where a command runs to the source directory; always `.` |
 | `$(TUP_OUTDIR)` | Relative path to output directory (three-tree builds) |
 
@@ -1132,6 +1132,8 @@ endif
 include config.tup
 include ../common/rules.tup
 ```
+
+A relative path is resolved against the directory of the file that contains the `include`, so an included file names its neighbours the same way from every Tupfile that includes it.
 
 **`include_rules`** - Include all `Tuprules.tup` files from the project root down to the current directory, in root-first order. Each directory in the path from root to the Tupfile's directory is checked; gaps (directories without a `Tuprules.tup`) are silently skipped. For `sub/deep/Tupfile`, this is equivalent to:
 ```tup

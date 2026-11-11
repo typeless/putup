@@ -1381,8 +1381,9 @@ auto resolve_include_path(
     }
 
     auto path_sv = pool.get(*path_result);
-    auto base_sv = pool.get(pup::path::join(include_root, str(ctx.current_dir)));
-    auto resolved_id = pup::path::join(base_sv, path_sv);
+    auto tupfile_dir = pool.get(pup::path::join(include_root, str(ctx.current_dir)));
+    auto base_sv = pool.get(pup::path::join(tupfile_dir, pool.get(ctx.eval->tup_cwd)));
+    auto resolved_id = pup::path::normalize(pool.get(pup::path::join(base_sv, path_sv)));
     if (!pup::platform::exists(pool.get(resolved_id))) {
         auto err = Buf {};
         err.fmt("Include file not found: {}", path_sv);
@@ -1395,8 +1396,7 @@ auto include_single_file(
     BuilderContext& ctx,
     Builder& state,
     std::string_view include_root,
-    std::string_view include_path,
-    bool is_rules
+    std::string_view include_path
 ) -> Result<void>
 {
     auto context_key = Buf {};
@@ -1438,38 +1438,33 @@ auto include_single_file(
         return make_error<void>(ErrorCode::ParseError, err.view());
     }
 
-    auto old_tup_cwd = StringId::Empty;
-    if (is_rules && ctx.eval) {
-        old_tup_cwd = ctx.eval->tup_cwd;
-        auto include_dir = pup::path::parent(include_path);
-        auto rel_path = global_pool().get(pup::path::relative(include_dir, global_pool().get(pup::path::join(include_root, str(ctx.current_dir)))));
-        ctx.eval->tup_cwd = rel_path.empty() ? intern(".") : intern(rel_path);
-    }
+    auto const old_tup_cwd = ctx.eval->tup_cwd;
+    auto const old_tup_variantdir = ctx.eval->tup_variantdir;
+    auto const include_dir = str(pup::path::normalize(pup::path::parent(include_path)));
+    auto const tupfile_dir = str(pup::path::normalize(str(pup::path::join(include_root, str(ctx.current_dir)))));
+    auto const to_include_dir = str(pup::path::relative(include_dir, tupfile_dir));
+    ctx.eval->tup_cwd = to_include_dir.empty() ? intern(".") : intern(to_include_dir);
+    ctx.eval->tup_variantdir = pup::path::normalize(str(pup::path::join(str(ctx.eval->tup_variant_outputdir), str(ctx.eval->tup_cwd))));
 
-    auto old_current_file = ctx.current_file;
+    auto const old_current_file = ctx.current_file;
     ctx.current_file = intern(include_path);
 
-    auto active = is_context_active(ctx);
+    auto outcome = Result<void> {};
+    auto const active = is_context_active(ctx);
     for (auto const& stmt : parse_result.tupfile.statements) {
         if (!active && !should_process_in_inactive_context(*stmt)) {
             continue;
         }
-        auto result = process_statement(ctx, state, *stmt);
-        if (!result) {
-            ctx.current_file = old_current_file;
-            if (is_rules && ctx.eval) {
-                ctx.eval->tup_cwd = old_tup_cwd;
-            }
-            return pup::unexpected<Error>(result.error());
+        outcome = process_statement(ctx, state, *stmt);
+        if (!outcome) {
+            break;
         }
     }
 
     ctx.current_file = old_current_file;
-    if (is_rules && ctx.eval) {
-        ctx.eval->tup_cwd = old_tup_cwd;
-    }
-
-    return {};
+    ctx.eval->tup_cwd = old_tup_cwd;
+    ctx.eval->tup_variantdir = old_tup_variantdir;
+    return outcome;
 }
 
 /// Apply pending weak assignments (??=) - last wins for each variable name
@@ -2003,7 +1998,7 @@ auto process_include(
     if (inc.is_rules) {
         auto tuprules_files = find_tuprules_files(global_pool().get(pup::path::join(include_root, str(ctx.current_dir))), include_root);
         for (auto tuprules_id : tuprules_files) {
-            auto result = include_single_file(ctx, state, include_root, str(tuprules_id), true);
+            auto result = include_single_file(ctx, state, include_root, str(tuprules_id));
             if (!result) {
                 return pup::unexpected<Error>(result.error());
             }
@@ -2015,7 +2010,7 @@ auto process_include(
     if (!resolved) {
         return pup::unexpected<Error>(resolved.error());
     }
-    return include_single_file(ctx, state, include_root, str(*resolved), false);
+    return include_single_file(ctx, state, include_root, str(*resolved));
 }
 
 /// Store deferred order-only edges from groups to a command.

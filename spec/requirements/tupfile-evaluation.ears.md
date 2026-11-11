@@ -113,3 +113,32 @@ macro's definition.
 
 When a rule's input or order-only input names the project root directory, putup shall reject the
 Tupfile with an error on the rule's line.
+
+### REQ-EVAL-TUP-CWD-FOLLOWS-FILE
+
+- conformance: tup-conformant
+- reference: upstream expands `TUP_CWD` to `get_relative_dir(tf->tent, tf->curtent)` and `TUP_VARIANT_OUTPUTDIR` to `get_relative_dir(tf->srctent, tf->tent)` (`eval`, `src/tup/parser.c`); `tup.1` gives `..` as the value of `TUP_CWD` inside a file read by `include ../foo.tup` and says `TUP_VARIANT_OUTPUTDIR` does not change when another file is included. putup gave the Tupfile's root-relative directory in the Tupfile and changed `TUP_CWD` only inside a `Tuprules.tup`
+- discharge: test "Scenario: TUP_CWD and TUP_VARIANTDIR name the directory of the file being parsed"
+
+While a Tupfile or a file it includes is being parsed, putup shall expand `$(TUP_CWD)` to the
+relative path from the Tupfile's directory to the directory of the file being parsed, and
+`$(TUP_VARIANT_OUTPUTDIR)` to the same value in every file.
+
+### REQ-EVAL-TUP-VARIANTDIR-FOLLOWS-FILE
+
+- conformance: deliberate-deviation
+- reference: upstream expands `TUP_VARIANTDIR` to a reference to the node of the directory being parsed, keeps the reference through assignments, and turns it into a path where a rule uses it, relative to the directory of the file that holds the rule (`eval` and `expand_node_strings`, `src/tup/parser.c`). The two agree wherever the rule is in the Tupfile. For a rule in an included file upstream's path starts from that file's directory, not from the directory the command runs in, and without a variant it is `.`, where `tup.1` says the value equals `TUP_CWD`. putup expands the variable where it is written, to the path `tup.1` describes, from the directory the command runs in. putup gave `TUP_VARIANT_OUTPUTDIR`'s value in every file
+- discharge: test "Scenario: TUP_CWD and TUP_VARIANTDIR name the directory of the file being parsed"
+
+While a Tupfile or a file it includes is being parsed, putup shall expand `$(TUP_VARIANTDIR)` to
+`$(TUP_CWD)` taken from the Tupfile's variant output directory.
+
+### REQ-EVAL-INCLUDE-RELATIVE-TO-FILE
+
+- conformance: tup-conformant
+- reference: upstream's `parser_include_file` (`src/tup/parser.c`) resolves the path of an `include` against `tf->curtent`, the directory of the file that contains the statement. putup resolved it against the Tupfile's directory, so an included file could not include a file beside itself by a relative path
+- discharge: test "Scenario: TUP_CWD and TUP_VARIANTDIR name the directory of the file being parsed"
+- discharge: test "Scenario: A file named by includes in two directories is included once"
+
+When an `include` statement names a relative path, putup shall resolve the path against the
+directory of the file that contains the statement.

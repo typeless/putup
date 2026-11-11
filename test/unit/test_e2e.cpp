@@ -13246,6 +13246,80 @@ SCENARIO("include_rules includes all Tuprules.tup from root to leaf", "[e2e][bui
     }
 }
 
+SCENARIO("TUP_CWD and TUP_VARIANTDIR name the directory of the file being parsed", "[e2e][parse][variant]")
+{
+    auto const variant = GENERATE(false, true);
+    CAPTURE(variant);
+
+    GIVEN("a Tupfile that reads Tuprules.tup, includes a file from another directory, which includes one more")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", "");
+        f.write_file("Tuprules.tup", "R = $(TUP_CWD),$(TUP_VARIANTDIR),$(TUP_VARIANT_OUTPUTDIR)\n");
+        f.mkdir("other/sub");
+        f.write_file("other/inc.tup", "I = $(TUP_CWD),$(TUP_VARIANTDIR),$(TUP_VARIANT_OUTPUTDIR)\ninclude sub/deep.tup\nJ = $(TUP_CWD)\n");
+        f.write_file("other/sub/deep.tup", "D = $(TUP_CWD),$(TUP_VARIANTDIR),$(TUP_VARIANT_OUTPUTDIR)\n");
+        f.mkdir("src/lib");
+        f.write_file("src/lib/Tupfile",
+            "B = $(TUP_CWD),$(TUP_VARIANTDIR),$(TUP_VARIANT_OUTPUTDIR)\n"
+            "include_rules\n"
+            "include ../../other/inc.tup\n"
+            ": |> echo 'B=$(B) R=$(R) I=$(I) D=$(D) J=$(J) A=$(TUP_CWD),$(TUP_VARIANTDIR)' > %o |> out.txt\n");
+        auto const args = variant ? std::vector<std::string> { "-B", "build" } : std::vector<std::string> {};
+        if (variant) {
+            REQUIRE(f.pup({ "configure", "-B", "build" }).success());
+        }
+
+        WHEN("the project is built")
+        {
+            auto result = f.pup(args);
+
+            THEN("each file sees the path from the Tupfile's directory to its own, and the Tupfile sees it again afterwards")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                auto const expected = variant
+                    ? std::string { "B=.,../../build/src/lib,../../build/src/lib"
+                                    " R=../..,../../build,../../build/src/lib"
+                                    " I=../../other,../../build/other,../../build/src/lib"
+                                    " D=../../other/sub,../../build/other/sub,../../build/src/lib"
+                                    " J=../../other"
+                                    " A=.,../../build/src/lib\n" }
+                    : std::string { "B=.,.,. R=../..,../..,. I=../../other,../../other,. D=../../other/sub,../../other/sub,. J=../../other A=.,.\n" };
+                REQUIRE(f.read_file(variant ? "build/src/lib/out.txt" : "src/lib/out.txt") == expected);
+            }
+        }
+    }
+}
+
+SCENARIO("A file named by includes in two directories is included once", "[e2e][parse]")
+{
+    GIVEN("a Tupfile that includes a rule file directly and again through a file beside it")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", "");
+        f.mkdir("common");
+        f.write_file("common/a.tup", ": |> echo a > %o |> a.txt\n");
+        f.write_file("common/b.tup", "include a.tup\n");
+        f.mkdir("src");
+        f.write_file("src/Tupfile", "include ../common/a.tup\ninclude ../common/b.tup\n");
+
+        WHEN("the project is built")
+        {
+            auto result = f.pup({});
+
+            THEN("the rule is defined once")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("src/a.txt") == "a\n");
+            }
+        }
+    }
+}
+
 SCENARIO("Sibling directory inputs work with incremental variant builds", "[e2e][incremental][variant]")
 {
     GIVEN("a variant build with sibling directory input")

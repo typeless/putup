@@ -536,8 +536,6 @@ auto parse_directory(std::string_view rel_dir, ParseContext& ctx) -> pup::Result
         return pup::make_error<void>(pup::ErrorCode::ParseError, "Parse failed");
     }
 
-    auto tup_cwd = normalized_dir;
-
     // In the "overlay" model, Tupfiles from config_root are treated as if they
     // were in source_root. Commands run from source_root, so all relative paths
     // (TUP_VARIANTDIR, TUP_OUTDIR, etc.) must be computed relative to source_root.
@@ -580,7 +578,7 @@ auto parse_directory(std::string_view rel_dir, ParseContext& ctx) -> pup::Result
     auto eval_ctx = pup::parser::EvalContext {
         .vars = &vars,
         .config_vars = scoped_config,
-        .tup_cwd = pool.intern(tup_cwd),
+        .tup_cwd = pool.intern("."),
         .tup_platform = pup::get_platform(),
         .tup_arch = pool.intern(pup::ARCH),
         .tup_variantdir = pool.intern(tup_variantdir),
