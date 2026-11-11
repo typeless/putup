@@ -1201,13 +1201,13 @@ The message is variable-expanded and reported as `<file>:<line>: <message>`; par
 ```tup
 preload ../include
 ```
-> ⚠️ **Parsed, not enforced.** `preload` is accepted for compatibility but currently ignored (putup emits a warning and continues).
+> ⚠️ **Parsed, not enforced.** `preload` is accepted for compatibility and ignored, without a warning.
 
 **`.gitignore`** - Generate .gitignore for outputs:
 ```tup
 .gitignore
 ```
-> ⚠️ **Parsed, not enforced.** `.gitignore` is accepted for compatibility but currently ignored (putup emits a warning and continues); no `.gitignore` file is generated.
+> ⚠️ **Parsed, not enforced.** `.gitignore` is accepted for compatibility and ignored, without a warning; no `.gitignore` file is generated.
 
 ### 5.7 Groups
 
