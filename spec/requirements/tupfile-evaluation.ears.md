@@ -142,3 +142,21 @@ While a Tupfile or a file it includes is being parsed, putup shall expand `$(TUP
 
 When an `include` statement names a relative path, putup shall resolve the path against the
 directory of the file that contains the statement.
+
+### REQ-EVAL-INCLUDE-RULES-FROM-FILE
+
+- conformance: tup-conformant
+- reference: upstream's `include_rules` counts the directories to climb from `tf->curtent`, the directory of the file being parsed, and reads each `Tuprules.tup` relative to it (`src/tup/parser.c`). putup walked up from the Tupfile's directory whichever file held the statement. Which of those files putup skips as already read is REQ-EVAL-INCLUDE-CONTEXT. Upstream refuses `include_rules` in a file that `include_rules` reached ("Unable to call include_rules from within a Tuprules.tup context"); putup accepts it and applies this requirement to it
+- discharge: test "Scenario: include_rules in an included file reads the Tuprules.tup files above that file"
+
+When a file below the project root contains `include_rules`, putup shall read the `Tuprules.tup`
+files from the project root down to the directory of that file.
+
+### REQ-EVAL-INCLUDE-RULES-OUTSIDE-TREE
+
+- conformance: deliberate-deviation
+- reference: upstream's `parser_include_file` (`src/tup/parser.c`) looks the include's directory up in its database of the project tree, so it cannot include a file from outside the tree and has no case for `include_rules` there. putup includes such a file: in a three-tree build the source and build trees are outside the tree that holds the Tupfiles. No directory lies between the project root and a file outside it, so there is no `Tuprules.tup` to read. putup read the `Tuprules.tup` files above the Tupfile for it
+- discharge: test "Scenario: include_rules in a file outside the project reads no Tuprules.tup"
+
+When a file outside the tree that holds the Tupfiles contains `include_rules`, putup shall read
+no `Tuprules.tup` for it.

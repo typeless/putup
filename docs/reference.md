@@ -1135,7 +1135,7 @@ include ../common/rules.tup
 
 A relative path is resolved against the directory of the file that contains the `include`, so an included file names its neighbours the same way from every Tupfile that includes it.
 
-**`include_rules`** - Include all `Tuprules.tup` files from the project root down to the current directory, in root-first order. Each directory in the path from root to the Tupfile's directory is checked; gaps (directories without a `Tuprules.tup`) are silently skipped. For `sub/deep/Tupfile`, this is equivalent to:
+**`include_rules`** - Include all `Tuprules.tup` files from the project root down to the current directory, in root-first order. Each directory in the path from root to the directory of the file that contains the statement is checked; gaps (directories without a `Tuprules.tup`) are silently skipped. In a Tupfile that is the Tupfile's directory; in an included file it is that file's directory. A file outside the tree that holds the Tupfiles has no such directories, so `include_rules` in it reads nothing. A `Tuprules.tup` already read in the same conditional context is not read again. For `sub/deep/Tupfile`, this is equivalent to:
 ```tup
 include ../../Tuprules.tup   # root
 include ../Tuprules.tup      # sub/ (if it exists)

@@ -1463,7 +1463,8 @@ SortedPairVec group_nodes;
 parsed. `src/cli/context.cpp` seeds it with `.` for the Tupfile; `include_single_file`
 (`src/graph/builder.cpp`) sets it for the duration of every included file, `Tuprules.tup` or
 plain `include`, and restores it on return. The same value is the base an `include` path
-resolves against, so a nested include is relative to the file that names it.
+resolves against and the directory `include_rules` walks up from, so both are relative to the
+file that holds the statement. `find_tuprules_files` returns nothing for a directory outside the include root.
 `TUP_VARIANTDIR` is derived from it: `TUP_VARIANT_OUTPUTDIR` joined with `TUP_CWD`.
 
 ```tup

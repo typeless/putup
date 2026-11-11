@@ -1338,6 +1338,11 @@ auto find_tuprules_files(
 ) -> Vec<StringId>
 {
     auto& pool = global_pool();
+    auto below_root = pool.get(pup::path::relative(start_dir, root));
+    if (below_root == ".." || below_root.starts_with("../")) {
+        return {};
+    }
+
     auto dirs = Vec<StringId> {};
     auto search_sv = start_dir;
 
@@ -1996,7 +2001,9 @@ auto process_include(
     auto const& include_root = is_empty(ctx.options.config_root) ? str(ctx.options.source_root) : str(ctx.options.config_root);
 
     if (inc.is_rules) {
-        auto tuprules_files = find_tuprules_files(global_pool().get(pup::path::join(include_root, str(ctx.current_dir))), include_root);
+        auto tupfile_dir = global_pool().get(pup::path::join(include_root, str(ctx.current_dir)));
+        auto parsed_file_dir = global_pool().get(pup::path::normalize(global_pool().get(pup::path::join(tupfile_dir, str(ctx.eval->tup_cwd)))));
+        auto tuprules_files = find_tuprules_files(parsed_file_dir, include_root);
         for (auto tuprules_id : tuprules_files) {
             auto result = include_single_file(ctx, state, include_root, str(tuprules_id));
             if (!result) {

@@ -13320,6 +13320,64 @@ SCENARIO("A file named by includes in two directories is included once", "[e2e][
     }
 }
 
+SCENARIO("include_rules in an included file reads the Tuprules.tup files above that file", "[e2e][parse]")
+{
+    GIVEN("an included file with include_rules, in a directory whose Tuprules.tup the Tupfile's directory does not share")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", "");
+        f.write_file("Tuprules.tup", "R = root\n");
+        f.mkdir("other");
+        f.write_file("other/Tuprules.tup", "O = other\n");
+        f.write_file("other/inc.tup", "include_rules\n");
+        f.mkdir("src/lib");
+        f.write_file("src/lib/Tuprules.tup", "L = lib\n");
+        f.write_file("src/lib/Tupfile", "include ../../other/inc.tup\n: |> echo 'R=$(R) O=$(O) L=$(L)' > %o |> out.txt\n");
+
+        WHEN("the project is built")
+        {
+            auto result = f.pup({});
+
+            THEN("the variables come from the root and from the included file's directory")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("src/lib/out.txt") == "R=root O=other L=\n");
+            }
+        }
+    }
+}
+
+SCENARIO("include_rules in a file outside the project reads no Tuprules.tup", "[e2e][parse]")
+{
+    GIVEN("a project whose Tupfile includes a file from a directory beside the project root")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.mkdir("beside/deep");
+        f.write_file("beside/Tuprules.tup", "X = beside\n");
+        f.write_file("beside/deep/Tuprules.tup", "Y = deep\n");
+        f.write_file("beside/deep/inc.tup", "include_rules\n");
+        f.mkdir("proj");
+        f.write_file("proj/Tupfile.ini", "");
+        f.write_file("proj/tup.config", "");
+        f.write_file("proj/Tupfile", "include ../beside/deep/inc.tup\n: |> echo 'X=$(X) Y=$(Y)' > %o |> out.txt\n");
+
+        WHEN("the project is built")
+        {
+            auto result = f.run_pup_in_dir("proj");
+
+            THEN("no Tuprules.tup beside the project is read")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("proj/out.txt") == "X= Y=\n");
+            }
+        }
+    }
+}
+
 SCENARIO("Sibling directory inputs work with incremental variant builds", "[e2e][incremental][variant]")
 {
     GIVEN("a variant build with sibling directory input")
