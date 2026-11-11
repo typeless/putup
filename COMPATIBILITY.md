@@ -110,6 +110,7 @@ processed textually like tup: the losing branch does not exist.
 | Case | Tup | Putup |
 |------|-----|-------|
 | Same file included twice in the same context | Parses twice (duplicate rules fail) | Second include deduplicated |
+| A file includes itself under a config condition | Branch not taken: the include is not reached. Branch taken: parses the file again without end unless its text stops it | Either branch: reads the file once more under the condition, then deduplicates. A recursion that the file's text ends later than that loses the later readings; a rule in the file conflicts with itself |
 | Included in an inactive config branch, then unconditionally | Parses the active one | Both contexts processed; a same-output conflict is reported eagerly, even under configs where tup would parse only one copy |
 
 ### Groups and Order-Only Inputs

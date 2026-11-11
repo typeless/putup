@@ -13444,6 +13444,53 @@ SCENARIO("include_rules in a branch of a Tuprules.tup that no configuration take
     }
 }
 
+SCENARIO("A chain of includes that returns to a file being read ends", "[e2e][parse]")
+{
+    struct Layout {
+        std::string_view description;
+        std::string_view config;
+        std::string_view tupfile;
+        std::string_view a_tup;
+        std::string_view b_tup;
+        std::string_view tuprules;
+        std::string_view output;
+    };
+    auto const layout = GENERATE(
+        Layout { "a file includes itself in a config branch that is not taken", "", "include a.tup\n", "V += a\nifeq (@(X),y)\ninclude a.tup\nendif\n", "", "", "a\n" },
+        Layout { "a file includes itself in a config branch that is taken", "CONFIG_X=y\n", "include a.tup\n", "V += a\nifeq (@(X),y)\ninclude a.tup\nendif\n", "", "", "a a\n" },
+        Layout { "a file includes itself with no condition", "", "include a.tup\n", "V += a\ninclude a.tup\n", "", "", "a\n" },
+        Layout { "two files include each other in a config branch that is taken", "CONFIG_X=y\n", "include a.tup\n", "V += a\nifeq (@(X),y)\ninclude b.tup\nendif\n", "V += b\ninclude a.tup\n", "", "a b a\n" },
+        Layout { "two files include each other behind a variable that marks the first as read", "", "include a.tup\n", "ifeq ($(A_READ),)\nA_READ = 1\nV += a\ninclude b.tup\nendif\n", "V += b\ninclude a.tup\n", "", "a b\n" },
+        Layout { "a file includes itself in a config branch and its second reading takes another branch", "CONFIG_X=y\n", "include a.tup\n", "ifeq ($(N),)\nN = 1\nV += first\nifeq (@(X),y)\ninclude a.tup\nendif\nelse\nV += second\nendif\n", "", "", "first second\n" },
+        Layout { "a file includes itself until a variable equals a config value three readings deep", "CONFIG_X=xxx\n", "include a.tup\n", "N = $(N)x\nV += $(N)\nifneq (@(X),$(N))\ninclude a.tup\nendif\n", "", "", "x xx\n" },
+        Layout { "a Tuprules.tup includes itself in a config branch that is taken", "CONFIG_X=y\n", "include_rules\n", "", "", "V += r\nifeq (@(X),y)\ninclude Tuprules.tup\nendif\n", "r r\n" }
+    );
+    CAPTURE(layout.description);
+
+    GIVEN("a Tupfile whose includes lead back to a file that is being read")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("tup.config", layout.config);
+        f.write_file("Tupfile", std::string { layout.tupfile } + ": |> echo $(V) > %o |> out.txt\n");
+        f.write_file("a.tup", layout.a_tup);
+        f.write_file("b.tup", layout.b_tup);
+        f.write_file("Tuprules.tup", layout.tuprules);
+
+        WHEN("the project is built")
+        {
+            auto result = f.pup({});
+
+            THEN("the build succeeds and no file is read twice under the same conditions")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("out.txt") == layout.output);
+            }
+        }
+    }
+}
+
 SCENARIO("Sibling directory inputs work with incremental variant builds", "[e2e][incremental][variant]")
 {
     GIVEN("a variant build with sibling directory input")

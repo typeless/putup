@@ -110,7 +110,7 @@ struct BuilderContext {
 
     Vec<std::pair<std::uint32_t, BangMacroDef>> macros = {}; ///< Sorted by interned name key
     GroupMemberTable groups = {};
-    SortedIdVec included_contexts = {}; ///< Interned (path, guard stack) keys
+    SortedIdVec included_contexts = {}; ///< Interned (path, set of guards by conditional statement and polarity) keys
     bool reading_tuprules = false;      ///< An include_rules statement is being carried out
     SortedIdVec exported_vars = {};     ///< Interned environment variable names to export
 

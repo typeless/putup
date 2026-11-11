@@ -84,6 +84,7 @@ struct CommandNode {
 struct ConditionNode {
     NodeId id = 0;
     bool current_value = false; ///< Evaluated at graph time
+    SourcePosition origin = {}; ///< The conditional statement this node evaluates
 };
 
 /// An output declared by a rule under an unsatisfied guard; such a rule becomes no command

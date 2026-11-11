@@ -38,6 +38,16 @@ Where a Tupfile includes a file that was first included under a conditional cont
 the one this include sits in, putup shall process that file again rather than skip it as already
 included.
 
+### REQ-EVAL-INCLUDE-CONTEXT-BY-STATEMENT
+
+- conformance: deliberate-deviation
+- reference: upstream's `parser_include_file` (`src/tup/parser.c`) holds no include-once set, and it does not reach an `include` in a branch it does not take. putup parses both branches of a condition on a config or environment variable, so the conditional context of REQ-EVAL-INCLUDE-CONTEXT has to repeat for a chain of includes to end. putup identified a condition by the node it made each time it evaluated the statement, so a file that included itself under such a condition was a new context at every level and putup read it until it crashed, in either branch. A condition is now the conditional statement, by file and line, with the branch; a context is the set of those. Under its own condition a file is read once more, as upstream reads it when the branch is taken, and upstream reads it again after that without end unless the file's text stops it. Where the file's text stops it after more than one further reading, putup lacks the later readings. A rule in the further reading declares the output of the first reading again, which putup reports as a conflict in either branch (COMPATIBILITY.md, "Includes and Conditionals"). A file with k such statements is read once for each set of them, so the readings grow as 2^k
+- discharge: test "Scenario: A chain of includes that returns to a file being read ends"
+
+Where an `include` sits under conditions that differ from those of an earlier `include` of the
+same file only by a repeat of a conditional statement and branch, putup shall skip the file as
+already included.
+
 ---
 
 ## Group: assignment

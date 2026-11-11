@@ -1135,6 +1135,8 @@ include ../common/rules.tup
 
 A relative path is resolved against the directory of the file that contains the `include`, so an included file names its neighbours the same way from every Tupfile that includes it.
 
+A file already included under the same conditions is not read again. The conditions are the enclosing `ifeq`/`ifdef` statements on config or environment variables, each with its branch, so a file that includes itself under such a condition is read once more and no further.
+
 **`include_rules`** - Include all `Tuprules.tup` files from the project root down to the current directory, in root-first order. Each directory in the path from root to the directory of the file that contains the statement is checked; gaps (directories without a `Tuprules.tup`) are silently skipped. In a Tupfile that is the Tupfile's directory; in an included file it is that file's directory. A file outside the tree that holds the Tupfiles has no such directories, so `include_rules` in it reads nothing. A `Tuprules.tup` already read in the same conditional context is not read again. While `include_rules` reads a `Tuprules.tup`, a second `include_rules` in that file or in a file it includes is an error. That holds in both branches of a condition on a config or environment variable. For `sub/deep/Tupfile`, this is equivalent to:
 ```tup
 include ../../Tuprules.tup   # root

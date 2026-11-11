@@ -1406,8 +1406,19 @@ auto include_single_file(
 {
     auto context_key = Buf {};
     context_key.fmt("{}", include_path);
+    auto guard_keys = SortedIdVec {};
     for (auto const& guard : ctx.condition_stack) {
-        context_key.fmt("|{}:{}", guard.condition, guard.polarity ? 1 : 0);
+        auto const* cond = get_condition_node(ctx.state->graph, guard.condition);
+        if (!cond) {
+            continue;
+        }
+        auto guard_key = Buf {};
+        guard_key.fmt("{}:{}:{}", str(cond->origin.file), cond->origin.line, guard.polarity ? 1 : 0);
+        guard_keys.insert(to_underlying(intern(guard_key.view())));
+    }
+    auto const* guard_key_ids = guard_keys.data();
+    for (std::size_t i = 0, n = guard_keys.size(); i < n; ++i) {
+        context_key.fmt("|{}", guard_key_ids[i]);
     }
     auto include_key = to_underlying(intern(context_key.view()));
     if (ctx.included_contexts.contains(include_key)) {
@@ -1926,6 +1937,7 @@ auto process_conditional(
 
     auto cond_node = ConditionNode {
         .current_value = condition_true,
+        .origin = SourcePosition { .file = ctx.current_file, .line = cond.location.line },
     };
 
     auto cond_id_result = add_condition_node(ctx.state->graph, std::move(cond_node));
