@@ -11033,6 +11033,37 @@ SCENARIO("Tracked tool binaries fold into command identity", "[e2e][incremental]
     }
 }
 
+SCENARIO("Tracked tool names are separated by any run of whitespace", "[e2e][incremental]")
+{
+    auto const value = GENERATE(as<std::string> {}, "./other.sh ./tool.sh", "./other.sh\t./tool.sh", "./other.sh \t ./tool.sh", "./other.sh  ./tool.sh", "./other.sh\r./tool.sh", "\"./other.sh\\n./tool.sh\"", "./other.sh\v\f./tool.sh");
+
+    GIVEN("a project whose config tracks two tools with that whitespace between the names")
+    {
+        auto f = E2EFixture { "tracked_tools" };
+        f.mkdir("build");
+        f.write_file("other.sh", "echo other\n");
+        f.write_file("build/tup.config", "CONFIG_TRACKED_TOOLS=" + value + "\n");
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
+        REQUIRE(f.build({ "-B", "build" }).success());
+        REQUIRE(f.build({ "-B", "build" }).is_noop());
+
+        WHEN("the second tool's contents change")
+        {
+            f.write_file("tool.sh", "echo v2 # longer\n");
+            auto result = f.build({ "-B", "build" });
+
+            THEN("the command re-runs")
+            {
+                INFO("value: [" << value << "]");
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+                REQUIRE(f.read_file("build/out.txt") == "v2\n");
+            }
+        }
+    }
+}
+
 SCENARIO("A PATH change that shadows a tracked tool re-runs its commands", "[e2e][incremental][envdep]")
 {
     GIVEN("a project whose config tracks a tool by a bare name found on PATH")

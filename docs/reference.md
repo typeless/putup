@@ -1334,8 +1334,8 @@ CONFIG_VERSION="1.0.0"
 - Values can be quoted (quotes are stripped)
 - Empty lines and comments (`#`) are ignored
 
-**`CONFIG_TRACKED_TOOLS`** (putup extension) — space-separated tool names or
-paths whose binaries the build's outputs depend on:
+**`CONFIG_TRACKED_TOOLS`** (putup extension) — tool names or paths, separated by
+whitespace, whose binaries the build's outputs depend on:
 
 ```ini
 CONFIG_TRACKED_TOOLS=gcc ld ./scripts/codegen.sh

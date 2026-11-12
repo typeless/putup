@@ -861,3 +861,12 @@ REQ-ENV-COMMAND-TOOL fingerprints under keys outside the names a Tupfile can spe
 Where `CONFIG_TRACKED_TOOLS` names a tool, putup shall fold the path, size and modification time it
 resolves that name to - a bare name through putup's own `PATH`, a name containing `/` against the
 source root - into the identity of every command the project declares.
+
+### REQ-ENV-TRACKED-TOOLS-SEPARATOR
+
+- leg: invariant
+- conformance: putup-only
+- discharge: test "Scenario: Tracked tool names are separated by any run of whitespace"
+
+Where `CONFIG_TRACKED_TOOLS` holds more than one name, putup shall read each run of whitespace
+characters as one separator between two names.

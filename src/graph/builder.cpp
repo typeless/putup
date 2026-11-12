@@ -2871,18 +2871,16 @@ auto add_tupfile(
         auto tracked = eval.config_vars->get("TRACKED_TOOLS");
         if (!tracked.empty()) {
             auto fingerprint = Buf {};
-            auto rest = tracked;
-            while (!rest.empty()) {
-                auto space = rest.find(' ');
-                auto name = (space == std::string_view::npos) ? rest : rest.substr(0, space);
-                rest = (space == std::string_view::npos) ? std::string_view {} : rest.substr(space + 1);
-                if (name.empty()) {
-                    continue;
-                }
+            auto const whitespace = std::string_view { " \t\n\r\f\v" };
+            auto start = tracked.find_first_not_of(whitespace);
+            while (start != std::string_view::npos) {
+                auto end = tracked.find_first_of(whitespace, start);
+                auto name = tracked.substr(start, end == std::string_view::npos ? end : end - start);
                 fingerprint += name;
                 fingerprint += '=';
                 append_tool_stat(fingerprint, name, str(state.options.source_root));
                 fingerprint += ';';
+                start = tracked.find_first_not_of(whitespace, end);
             }
             if (auto node = ensure_internal_var_node(ctx, state, "TUP_TOOLCHAIN", fingerprint.view())) {
                 state.toolchain_node_id = *node;
