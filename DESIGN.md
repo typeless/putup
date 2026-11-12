@@ -1058,7 +1058,9 @@ produces the file, so a scoped build reads ownership from the previous record in
 is on disk (#369). Absence is a currency fact, not an ownership fact — a missing output is still
 owned, and dropping it from the record's output set would make the file reappearing look like a
 source (#241, #369). Ownership is retracted by deleting what is owned: `remove_stale_outputs`
-deletes an output no live command produces, and only from a directory this build parsed. The same
+deletes an output no live command produces, and only from a directory this build can answer for:
+one it parsed, or one in scope, neither excluded nor pruned, that has no Tupfile any more
+(`is_dir_authoritative`). The same
 rule at the command level governs a reset: `distclean` may discard the record only when nothing it
 owns survives on disk (#373), which `spec/requirements/reset.ears.md` states as a checkable
 requirement — including why `tup.config` is removed regardless.
