@@ -106,13 +106,17 @@ processed textually like tup: the losing branch does not exist.
 `ifdef`/`ifndef` check Tupfile variables before config variables; tup checks only `@`-variables.
 
 The name of an `ifdef`, `ifndef`, `export` or `import` runs to the next space or tab (for an
-`import`, to its `=` too; `import A?=x` with no space reads the name `A?`, a defect, #611). A note
-that starts with `#` is accepted after that name, and after `else`, `endif` or `include_rules`:
-`endif # debug`. Other text there is an error (`endif else`, `else ifeq (a,b)`, `export A B`). tup
-matches `else`, `endif` and `include_rules` as the whole
+`import`, to its operator too). A note that starts with `#` is accepted after that name, and after
+`else`, `endif` or `include_rules`: `endif # debug`. Other text there is an error (`endif else`,
+`else ifeq (a,b)`, `export A B`). tup matches `else`, `endif` and `include_rules` as the whole
 line, so it does not accept a note there, and it takes the rest of an `ifdef`, `export` or
 `import` line as the name, spaces included (read from `parser.c`, not run). The default of an
 `import` runs to the end of its line in both.
+
+The first assignment operator on a line is the operator, with or without a space before it:
+`a.b+=1` appends to `a.b`, and `include=x` assigns to a variable named `include`. tup looks for
+`+=` anywhere on the line before it looks for `=`, so `V = a+=b` appends `b` to a variable named
+`V = a` there (read from `parser.c`, not run); putup sets `V` to `a+=b`.
 
 A `#` after the start of a line is text in both: in a variable name, an assignment value, an
 include path, and the paths and the command of a rule.

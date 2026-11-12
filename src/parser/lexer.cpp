@@ -110,6 +110,12 @@ auto Lexer::skip_whitespace() -> void
     }
 }
 
+auto Lexer::at_assignment_operator() const -> bool
+{
+    auto const rest = source_.substr(pos_);
+    return rest.starts_with("=") || rest.starts_with("+=") || rest.starts_with(":=") || rest.starts_with("?=") || rest.starts_with("?\?=");
+}
+
 auto Lexer::peek_char(std::size_t offset) const -> char
 {
     auto const idx = pos_ + offset;
@@ -339,9 +345,9 @@ auto Lexer::scan_identifier_or_keyword() -> Token
 
     // Check if this continues as a path (contains /, ., *, ?)
     // If so, it's text not an identifier
-    if (is_path_char(peek_char())) {
+    if (is_path_char(peek_char()) && !at_assignment_operator()) {
         // Continue scanning as text
-        while (!at_end() && is_text_char(peek_char())) {
+        while (!at_end() && is_text_char(peek_char()) && !at_assignment_operator()) {
             advance();
         }
         return make_token(TokenType::Text, start);
@@ -350,7 +356,7 @@ auto Lexer::scan_identifier_or_keyword() -> Token
     auto const text = std::string_view { source_.substr(start, pos_ - start) };
 
     // Check for keywords
-    if (auto kw = std::optional<TokenType> { keyword_type(text) }) {
+    if (auto kw = std::optional<TokenType> { keyword_type(text) }; kw && !at_assignment_operator()) {
         return make_token(*kw, start);
     }
 
@@ -385,7 +391,7 @@ auto Lexer::scan_text() -> Token
         auto const c = peek_char();
 
         // Stop at delimiters or variable references
-        if (is_delimiter(c) || c == '$' || c == '@' || c == '&' || (c == ',' && context_ == Context::Conditional)) {
+        if (is_delimiter(c) || c == '$' || c == '@' || c == '&' || (c == ',' && context_ == Context::Conditional) || at_assignment_operator()) {
             break;
         }
 

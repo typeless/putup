@@ -277,6 +277,106 @@ TEST_CASE("Text after the close paren of an ifeq is ignored", "[parser]")
     REQUIRE(result.tupfile.statements.size() == 1);
 }
 
+TEST_CASE("An assignment operator written against a name is the operator", "[parser]")
+{
+    auto const [source, name, op] = GENERATE(table<char const*, char const*, Assignment::Op>({
+        { "a.b+=1\n", "a.b", Assignment::Op::Append },
+        { "a.b?=1\n", "a.b", Assignment::Op::SoftSet },
+        { "a.b?\?=1\n", "a.b", Assignment::Op::WeakSet },
+        { "a.b:=1\n", "a.b", Assignment::Op::Define },
+        { "a.b=1\n", "a.b", Assignment::Op::Set },
+        { "CC+=1\n", "CC", Assignment::Op::Append },
+        { "CC?=1\n", "CC", Assignment::Op::SoftSet },
+        { "CC?\?=1\n", "CC", Assignment::Op::WeakSet },
+        { "V#+=1\n", "V#", Assignment::Op::Append },
+        { "9lives?=1\n", "9lives", Assignment::Op::SoftSet },
+        { "a+b+=1\n", "a+b", Assignment::Op::Append },
+        { "a?b ?= 1\n", "a?b", Assignment::Op::SoftSet },
+        { "A??\?=1\n", "A?", Assignment::Op::WeakSet },
+        { "C+?=1\n", "C+", Assignment::Op::SoftSet },
+        { "else?=1\n", "else", Assignment::Op::SoftSet },
+        { "include+=1\n", "include", Assignment::Op::Append },
+        { "include=1\n", "include", Assignment::Op::Set },
+        { "endif:=1\n", "endif", Assignment::Op::Define },
+        { "export?\?=1\n", "export", Assignment::Op::WeakSet },
+        { "foreach?=1\n", "foreach", Assignment::Op::SoftSet },
+        { "ifdef=1\n", "ifdef", Assignment::Op::Set },
+    }));
+    CAPTURE(source);
+
+    auto result = parse_tupfile(source, "test.tup");
+
+    CHECK(result.errors.empty());
+    REQUIRE(result.tupfile.statements.size() == 1);
+    auto const* assign = result.tupfile.statements[0]->as<Assignment>();
+    REQUIRE(assign != nullptr);
+    CHECK(assign->name.as_literal() == name);
+    CHECK(assign->op == op);
+    CHECK(assign->value.as_literal() == "1");
+}
+
+TEST_CASE("An import operator written against the name ends the name", "[parser]")
+{
+    auto const [source, name] = GENERATE(table<char const*, char const*>({
+        { "import A?=x\n", "A" },
+        { "import A?\?=x\n", "A" },
+        { "import a.b?=x\n", "a.b" },
+        { "import A=x\n", "A" },
+    }));
+    CAPTURE(source);
+
+    auto result = parse_tupfile(source, "test.tup");
+
+    CHECK(result.errors.empty());
+    REQUIRE(result.tupfile.statements.size() == 1);
+    auto const* imp = result.tupfile.statements[0]->as<Import>();
+    REQUIRE(imp != nullptr);
+    CHECK(pup::global_pool().get(imp->var_name) == name);
+    REQUIRE(imp->default_value.has_value());
+    CHECK(imp->default_value->as_literal() == "x");
+}
+
+TEST_CASE("An operator spelling after the first operator of a line is text", "[parser]")
+{
+    SECTION("in a value")
+    {
+        auto const [source, value] = GENERATE(table<char const*, char const*>({
+            { "V = a+=b\n", "a+=b" },
+            { "V = x?=1 y?\?=2\n", "x?=1 y?\?=2" },
+            { "V = -DX+=1\n", "-DX+=1" },
+            { "V = a?.c b+c\n", "a?.c b+c" },
+            { "V ?= b = 1\n", "b = 1" },
+            { "V = else?=1 include+=2\n", "else?=1 include+=2" },
+        }));
+        CAPTURE(source);
+
+        auto result = parse_tupfile(source, "test.tup");
+
+        CHECK(result.errors.empty());
+        REQUIRE(result.tupfile.statements.size() == 1);
+        auto const* assign = result.tupfile.statements[0]->as<Assignment>();
+        REQUIRE(assign != nullptr);
+        CHECK(assign->name.as_literal() == "V");
+        CHECK(assign->value.as_literal() == value);
+    }
+
+    SECTION("in the paths and the command of a rule")
+    {
+        auto result = parse_tupfile(": a?.c b+=c |> echo x?=1 y+=2 |> o+=1.out\n", "test.tup");
+
+        CHECK(result.errors.empty());
+        REQUIRE(result.tupfile.statements.size() == 1);
+        auto const* rule = result.tupfile.statements[0]->as<Rule>();
+        REQUIRE(rule != nullptr);
+        REQUIRE(rule->inputs.size() == 2);
+        CHECK(rule->inputs[0].path.as_literal() == "a?.c");
+        CHECK(rule->inputs[1].path.as_literal() == "b+=c");
+        CHECK(rule->command.as_literal() == "echo x?=1 y+=2");
+        REQUIRE(rule->outputs.size() == 1);
+        CHECK(rule->outputs[0].path.as_literal() == "o+=1.out");
+    }
+}
+
 TEST_CASE("A hash in a variable name is part of the name", "[parser]")
 {
     auto result = parse_tupfile("V#1 = a # b  \n", "test.tup");

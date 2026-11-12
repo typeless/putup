@@ -72,6 +72,18 @@ What an assignment operator does to a variable that is already defined.
 Where a Tupfile assigns a variable with `?=` and that variable is already defined, putup shall
 keep the defined value rather than replace it with the assignment's own value.
 
+### REQ-EVAL-ASSIGN-OPERATOR-FIRST
+
+- conformance: deliberate-deviation
+- reference: upstream `set_variable` (`src/tup/parser.c`) finds the operator with `strstr(line, "+=")`, then `strstr(line, ":=")`, then `strchr(line, '=')`, so an operator needs no space before it, and `a.b+=1` appends to `a.b`. It also means that a `+=` in a value wins over the `=` before it: `V = a+=b` appends `b` to a variable named `V = a`. Read from parser.c, not run against tup. putup takes the first operator on the line, which agrees with upstream on every line whose one operator is `=`, `+=` or `:=`, and reads `V = a+=b` as a value. `?=` and `??=` are putup's own operators (REQ-EVAL-SOFT-ASSIGN): upstream reads `CC?=gcc` as `CC?` set to `gcc`. A keyword written directly before an operator is a name, as in upstream, which matches a directive with the space after it (`strncmp(line, "include ", 8)`): `include=x` and `else?=1` are assignments. putup read a `+` or `?` directly before the `=` into the name when the name held a character outside an identifier (`a.b+=1` set `a.b+`), and for `?=` and `??=` after any name (`CC?=gcc` set `CC?`) (#611)
+- discharge: test "An assignment operator written against a name is the operator"
+- discharge: test "An operator spelling after the first operator of a line is text"
+
+When a line of a Tupfile holds an assignment operator outside a rule and a directive, putup shall
+take the first `=`, `+=`, `:=`, `?=` or `??=` on the line as the operator, with or without
+whitespace before it, read a keyword directly before it as a name, and read each later operator
+spelling as text of the value.
+
 ## Group: variable references
 
 What `$`, `@` and `&` mean when no variable reference follows them.
@@ -141,12 +153,13 @@ assignment value, an include path, or a path or the command of a rule.
 ### REQ-EVAL-DIRECTIVE-NAME
 
 - conformance: deliberate-deviation
-- reference: upstream takes the rest of an `ifdef`, `ifndef` or `export` line as the name, and the text before the `=` of an `import` (`var_ifdef`, `export`, `import` in `src/tup/parser.c`; read, not run), so a name can hold a space there. putup ends the name at the first space or tab, which leaves room for a note (REQ-EVAL-DIRECTIVE-TRAILING-TEXT); a name with a space cannot be assigned in a way a reference can spell. putup took one token as the name, so `ifdef V#1` and `ifdef X:Y` tested `V` and `X` (#609). The name is the written text and is not expanded, as in upstream. An `import` operator `?=` or `??=` written against the name is read into the name, where upstream ends the name at the `=`; that is a defect (#611)
+- reference: upstream takes the rest of an `ifdef`, `ifndef` or `export` line as the name, and the text before the `=` of an `import` (`var_ifdef`, `export`, `import` in `src/tup/parser.c`; read, not run), so a name can hold a space there. putup ends the name at the first space or tab, which leaves room for a note (REQ-EVAL-DIRECTIVE-TRAILING-TEXT); a name with a space cannot be assigned in a way a reference can spell. putup took one token as the name, so `ifdef V#1` and `ifdef X:Y` tested `V` and `X` (#609). The name is the written text and is not expanded, as in upstream.
 - discharge: test "A directive name runs to the next whitespace"
+- discharge: test "An import operator written against the name ends the name"
 
 When a Tupfile writes an `ifdef`, `ifndef`, `export` or `import`, putup shall read as its name the
-text up to the next space or tab outside a quoted string, and for an `import` up to an `=` or to
-an operator that follows whitespace, if one comes first.
+text up to the next space or tab outside a quoted string, and for an `import` up to its operator
+if that comes first.
 
 ### REQ-EVAL-DIRECTIVE-TRAILING-TEXT
 

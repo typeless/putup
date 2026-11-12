@@ -90,6 +90,8 @@ private:
     std::optional<Token> peeked_;
 
     [[nodiscard]]
+    auto at_assignment_operator() const -> bool;
+    [[nodiscard]]
     auto peek_char(std::size_t offset = 0) const -> char;
     [[nodiscard]]
     auto match(char expected) -> bool;
