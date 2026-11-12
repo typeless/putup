@@ -1347,6 +1347,8 @@ containing `/` against the source root) and its
 toolchain upgrade — same command text, same inputs, different compiler —
 then triggers a rebuild, closing the gap that command text alone cannot see.
 A missing tool records `<missing>`, so it appearing later also rebuilds.
+Putup prints a warning for each listed name that resolves to no file; on Windows a bare
+name resolves only when it carries its extension (`gcc.exe`).
 Unset (the default) tracks only each command's own first word (§ `export`); name
 a tool here when a rule reaches it past a shell operator, through `sh -c`, or
 through a wrapper or driver, or to catch an in-place upgrade of a tool no command

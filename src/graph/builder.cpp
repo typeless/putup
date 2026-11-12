@@ -549,7 +549,7 @@ auto ensure_env_var_node(BuilderContext& ctx, Builder& state, std::string_view v
 auto find_internal_var_node(Builder const& state, std::string_view name) -> std::optional<NodeId>;
 auto ensure_internal_var_node(BuilderContext& ctx, Builder& state, std::string_view name, std::string_view value)
     -> std::optional<NodeId>;
-auto append_tool_stat(Buf& out, std::string_view name, std::string_view source_root) -> void;
+auto append_tool_stat(Buf& out, std::string_view name, std::string_view source_root) -> bool;
 
 auto create_command_node(
     BuilderContext& ctx,
@@ -600,7 +600,7 @@ auto create_command_node(
         auto tool_node = find_internal_var_node(state, key_view);
         if (!tool_node) {
             auto stat = Buf {};
-            append_tool_stat(stat, tool, str(state.options.source_root));
+            (void)append_tool_stat(stat, tool, str(state.options.source_root));
             tool_node = ensure_internal_var_node(ctx, state, key_view, stat.view());
         }
         if (tool_node) {
@@ -1610,7 +1610,8 @@ auto ensure_internal_var_node(BuilderContext& ctx, Builder& state, std::string_v
 /// Append "path:size:mtime" for a tracked tool, or "<missing>" if it cannot be
 /// resolved. Bare names resolve through PATH (the same PATH build commands get);
 /// names containing a separator resolve against the source root.
-auto append_tool_stat(Buf& out, std::string_view name, std::string_view source_root) -> void
+/// @return Whether the name resolved to a file
+auto append_tool_stat(Buf& out, std::string_view name, std::string_view source_root) -> bool
 {
     auto stat_and_append = [&out](std::string_view path) -> bool {
         auto st = pup::platform::stat_file(path);
@@ -1639,7 +1640,7 @@ auto append_tool_stat(Buf& out, std::string_view name, std::string_view source_r
             ? name
             : global_pool().get(pup::path::join(source_root, name));
         if (stat_and_append(path)) {
-            return;
+            return true;
         }
     } else if (auto const* path_env = pup::platform::get_env("PATH")) {
         auto dirs = std::string_view { path_env };
@@ -1652,11 +1653,12 @@ auto append_tool_stat(Buf& out, std::string_view name, std::string_view source_r
             }
             auto candidate = global_pool().get(pup::path::join(dir, name));
             if (stat_and_append(candidate)) {
-                return;
+                return true;
             }
         }
     }
     out += "<missing>";
+    return false;
 }
 
 auto process_export(
@@ -2878,7 +2880,11 @@ auto add_tupfile(
                 auto name = tracked.substr(start, end == std::string_view::npos ? end : end - start);
                 fingerprint += name;
                 fingerprint += '=';
-                append_tool_stat(fingerprint, name, str(state.options.source_root));
+                if (!append_tool_stat(fingerprint, name, str(state.options.source_root))) {
+                    auto warn = Buf {};
+                    warn.fmt("CONFIG_TRACKED_TOOLS: no file found for '{}'", name);
+                    state.warnings.push_back(warn.intern(global_pool()));
+                }
                 fingerprint += ';';
                 start = tracked.find_first_not_of(whitespace, end);
             }

@@ -870,3 +870,13 @@ source root - into the identity of every command the project declares.
 
 Where `CONFIG_TRACKED_TOOLS` holds more than one name, putup shall read each run of whitespace
 characters as one separator between two names.
+
+### REQ-ENV-TRACKED-TOOLS-MISSING
+
+- leg: invariant
+- conformance: putup-only
+- discharge: test "Scenario: A tracked tool name that resolves to no file is reported"
+- discharge: test "Scenario: A command whose first word has no file is not reported"
+
+Where an entry of `CONFIG_TRACKED_TOOLS` resolves to nothing at its path, putup shall print exactly
+one warning that quotes that entry, and shall print no such warning for the first word of a command.

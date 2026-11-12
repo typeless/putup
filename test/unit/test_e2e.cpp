@@ -11064,6 +11064,73 @@ SCENARIO("Tracked tool names are separated by any run of whitespace", "[e2e][inc
     }
 }
 
+SCENARIO("A tracked tool name that resolves to no file is reported", "[e2e][incremental]")
+{
+    auto const [value, reported, silent] = GENERATE(table<char const*, char const*, char const*>({
+        { "./absent.sh ./tool.sh", "warning: CONFIG_TRACKED_TOOLS: no file found for './absent.sh'\n", "'./tool.sh'" },
+        { "./tool.sh no-such-tool-616", "warning: CONFIG_TRACKED_TOOLS: no file found for 'no-such-tool-616'\n", "'./tool.sh'" },
+    }));
+
+    GIVEN("a project whose config tracks one tool that exists and one name with no file")
+    {
+        auto f = E2EFixture { "tracked_tools" };
+        f.mkdir("build");
+        f.write_file("build/tup.config", std::string { "CONFIG_TRACKED_TOOLS=" } + value + "\n");
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build({ "-B", "build" });
+
+            THEN("the build succeeds and warns about the name with no file only")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                auto const first = result.stderr_output.find(reported);
+                REQUIRE(first != std::string::npos);
+                REQUIRE(result.stderr_output.find(reported, first + 1) == std::string::npos);
+                REQUIRE(result.stderr_output.find(silent) == std::string::npos);
+            }
+
+            AND_WHEN("the tool that exists changes")
+            {
+                f.write_file("tool.sh", "echo v2 # longer\n");
+                auto rebuilt = f.build({ "-B", "build" });
+
+                THEN("the command re-runs")
+                {
+                    REQUIRE(rebuilt.success());
+                    REQUIRE(f.read_file("build/out.txt") == "v2\n");
+                }
+            }
+        }
+    }
+}
+
+SCENARIO("A command whose first word has no file is not reported", "[e2e][incremental]")
+{
+    GIVEN("a project whose tracked tools all exist and whose rule starts with a word that names no file")
+    {
+        auto f = E2EFixture { "tracked_tools" };
+        f.mkdir("build");
+        f.write_file("Tupfile", ": |> no-such-tool-616 2>/dev/null; sh tool.sh > %o |> out.txt\n");
+        f.write_file("build/tup.config", "CONFIG_TRACKED_TOOLS=./tool.sh\n");
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build({ "-B", "build" });
+
+            THEN("no warning about a file that was not found is printed")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(result.stderr_output.find("no file found") == std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("A PATH change that shadows a tracked tool re-runs its commands", "[e2e][incremental][envdep]")
 {
     GIVEN("a project whose config tracks a tool by a bare name found on PATH")
