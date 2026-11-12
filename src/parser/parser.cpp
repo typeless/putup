@@ -657,12 +657,11 @@ auto parse_conditional(ParserState& s, Conditional::Kind kind) -> Result<Conditi
         advance(s);
     } else {
         // ifeq/ifneq (lhs, rhs)
+        s.lexer.set_context(Lexer::Context::Conditional);
         auto open = expect(s, TokenType::OpenParen, "Expected '(' after ifeq/ifneq");
         if (!open) {
             return pup::unexpected<Error>(open.error());
         }
-
-        s.lexer.set_context(Lexer::Context::Conditional);
 
         // Parse LHS until comma
         auto lhs = parse_expression_until(s, [](Token const& t) {

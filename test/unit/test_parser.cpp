@@ -373,6 +373,34 @@ TEST_CASE("An ifeq right-hand side runs to the last close paren on its line", "[
     CHECK(cond->rhs.as_literal() == rhs);
 }
 
+TEST_CASE("An ifeq left-hand side ends at the first comma on its line", "[parser]")
+{
+    auto const [source, lhs, rhs] = GENERATE(table<char const*, char const*, char const*>({
+        { "ifeq (1,2)\nendif", "1", "2" },
+        { "ifeq (-1,2)\nendif", "-1", "2" },
+        { "ifeq (1.5,2)\nendif", "1.5", "2" },
+        { "ifeq (.a,.b)\nendif", ".a", ".b" },
+        { "ifeq (+a,+b)\nendif", "+a", "+b" },
+        { "ifeq (*,?)\nendif", "*", "?" },
+        { "ifeq (#,#)\nendif", "#", "#" },
+        { "ifeq (#a,b)\nendif", "#a", "b" },
+        { "ifeq (a,1,2)\nendif", "a", "1,2" },
+        { "ifeq (1,2,3)\nendif", "1", "2,3" },
+        { "ifeq (\"a,b\",c)\nendif", "\"a", "b\",c" },
+        { "ifneq (0,1)\nendif", "0", "1" },
+    }));
+    CAPTURE(source);
+
+    auto result = parse_tupfile(source, "test.tup");
+
+    CHECK(result.errors.empty());
+    REQUIRE(result.tupfile.statements.size() == 1);
+    auto const* cond = result.tupfile.statements[0]->as<Conditional>();
+    REQUIRE(cond != nullptr);
+    CHECK(cond->lhs.as_literal() == lhs);
+    CHECK(cond->rhs.as_literal() == rhs);
+}
+
 TEST_CASE("An ifeq missing its comma or close paren is refused on its own line", "[parser]")
 {
     auto const* source = GENERATE(

@@ -298,7 +298,7 @@ auto Lexer::scan_token() -> Token
     }
 
     // Quoted strings
-    if (c == '"' || c == '\'') {
+    if ((c == '"' || c == '\'') && context_ != Context::Conditional) {
         return scan_string(c);
     }
 
@@ -381,7 +381,7 @@ auto Lexer::scan_text() -> Token
         auto const c = peek_char();
 
         // Stop at delimiters or variable references
-        if (is_delimiter(c) || c == '$' || c == '@' || c == '&') {
+        if (is_delimiter(c) || c == '$' || c == '@' || c == '&' || (c == ',' && context_ == Context::Conditional)) {
             break;
         }
 
