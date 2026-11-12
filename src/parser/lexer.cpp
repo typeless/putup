@@ -175,9 +175,13 @@ auto Lexer::scan_token() -> Token
     }
 
     // Comment
-    if (c == '#' && context_ != Context::Conditional) {
-        skip_to_eol();
-        return make_token(TokenType::Hash, start);
+    if (c == '#') {
+        auto const before = source_.substr(0, start);
+        auto const last_text = before.find_last_not_of(" \t");
+        if (last_text == std::string_view::npos || before[last_text] == '\n') {
+            skip_to_eol();
+            return make_token(TokenType::Hash, start);
+        }
     }
 
     // In command context, check for |> first before scanning text
@@ -450,7 +454,7 @@ auto Lexer::is_identifier_char(char c) -> bool
 auto Lexer::is_text_char(char c) -> bool
 {
     // Characters that can appear in paths, filenames, patterns
-    return is_identifier_char(c) || c == '.' || c == '/' || c == '*' || c == '?' || c == '+' || c == '-' || c == '%';
+    return is_identifier_char(c) || c == '.' || c == '/' || c == '*' || c == '?' || c == '+' || c == '-' || c == '%' || c == '#';
 }
 
 auto Lexer::is_path_char(char c) -> bool
@@ -461,7 +465,7 @@ auto Lexer::is_path_char(char c) -> bool
 
 auto Lexer::is_delimiter(char c) -> bool
 {
-    constexpr auto delims = std::string_view { " \t\n#|:=(){}[]<>" };
+    constexpr auto delims = std::string_view { " \t\n|:=(){}[]<>" };
     return delims.find(c) != std::string_view::npos;
 }
 

@@ -128,13 +128,36 @@ as written.
 ### REQ-EVAL-HASH-TEXT
 
 - conformance: tup-conformant
-- reference: upstream `parse_tupfile` (`src/tup/parser.c`) skips the whitespace before a line and drops the line when `line[0] == '#'`; it tests no other position, so a `#` after the start of a line stays in the value, the path or the command. Read from parser.c, not run against tup. A value can need the character (`-DCOLOR=#fff`, a URL fragment). The documents showed comments after a value in their examples (#607)
+- reference: upstream `parse_tupfile` (`src/tup/parser.c`) skips the whitespace before a line and drops the line when `line[0] == '#'`; it tests no other position, so a `#` after the start of a line stays in the value, the path or the command. Read from parser.c, not run against tup. A value can need the character (`-DCOLOR=#fff`, a URL fragment). The documents showed comments after a value in their examples (#607). Upstream `parse_rule` splits a rule at `|>` and reads no `#`; putup ended the line at a `#` in the input section of a rule, before a later field of its output section, and at the start of a command (#609)
 - discharge: test "A hash after the start of a line is text"
+- discharge: test "A hash in a section of a rule is text"
+- discharge: test "A hash in a variable name is part of the name"
 - discharge: test "A line that starts with a hash after spaces and tabs is a comment"
 
 When a Tupfile holds a `#`, putup shall ignore the line where the `#` is the first character
-after any spaces and tabs, and keep as text a `#` that stands later in an assignment value, an
-include path or a command.
+after any spaces and tabs, and keep as text a `#` that stands later in a variable name, an
+assignment value, an include path, or a path or the command of a rule.
+
+### REQ-EVAL-DIRECTIVE-NAME
+
+- conformance: deliberate-deviation
+- reference: upstream takes the rest of an `ifdef`, `ifndef` or `export` line as the name, and the text before the `=` of an `import` (`var_ifdef`, `export`, `import` in `src/tup/parser.c`; read, not run), so a name can hold a space there. putup ends the name at the first space or tab, which leaves room for a note (REQ-EVAL-DIRECTIVE-TRAILING-TEXT); a name with a space cannot be assigned in a way a reference can spell. putup took one token as the name, so `ifdef V#1` and `ifdef X:Y` tested `V` and `X` (#609). The name is the written text and is not expanded, as in upstream. An `import` operator `?=` or `??=` written against the name is read into the name, where upstream ends the name at the `=`; that is a defect (#611)
+- discharge: test "A directive name runs to the next whitespace"
+
+When a Tupfile writes an `ifdef`, `ifndef`, `export` or `import`, putup shall read as its name the
+text up to the next space or tab outside a quoted string, and for an `import` up to an `=` or to
+an operator that follows whitespace, if one comes first.
+
+### REQ-EVAL-DIRECTIVE-TRAILING-TEXT
+
+- conformance: deliberate-deviation
+- reference: upstream matches `else`, `endif` and `include_rules` as the whole line with `strcmp`, and takes the rest of an `ifdef`, `ifndef`, `export` or `import` line as the name (`parse_tupfile`, `var_ifdef`, `export`, `import` in `src/tup/parser.c`; read, not run), so `endif # debug` falls to `set_variable` there and is a syntax error. putup accepts a note that starts with `#`: it is a common way to mark the end of a long conditional, and a refusal gains nothing. putup refuses other text, where it took the text as a statement of its own (`endif V=1` set `V`, `endif else` read two keywords) or dropped it (`else ifeq (a,b)`, which upstream does not have, took the else branch without a test) (#609). Text after the close paren of an `ifeq` is ignored, as in upstream (REQ-EVAL-IFEQ-LAST-PAREN)
+- discharge: test "A note that starts with a hash after a complete directive is ignored"
+- discharge: test "Text after a complete directive that is not a note is refused on its line"
+
+When a Tupfile writes text after the name of an `ifdef`, `ifndef`, `export` or `import` that has
+no default, or after `else`, `endif` or `include_rules`, putup shall ignore the text if it starts
+with `#` and otherwise report an error on that line.
 
 ### REQ-EVAL-IFEQ-NO-SPACE
 

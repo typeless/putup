@@ -792,10 +792,10 @@ The continuation separates words rather than joining them, so `gcc -c\` followed
 **Comments:**
 
 A line whose first character after any spaces and tabs is `#` is a comment. A `#` later on a line
-is text, as in tup: it is part of the assignment value, the include path or the command it stands
-in. A continuation joins lines before this test, so a comment that ends in a backslash takes the
-next line with it, and a `#` line inside a continued statement is part of that statement. Write
-each comment on its own line:
+is text, as in tup: it is part of the name, the value, the path or the command it stands in (a
+group or bin name cannot hold one). A continuation joins lines before this test, so a comment
+that ends in a backslash takes the next line with it, and a `#` line inside a continued statement
+is part of that statement. Write each comment on its own line:
 
 ```tup
 # Debug information

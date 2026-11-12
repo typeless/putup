@@ -157,6 +157,34 @@ auto skip_to_eol(ParserState& s) -> void
     }
 }
 
+enum class DirectiveNameEnd {
+    Whitespace,
+    WhitespaceOrAssignment,
+};
+
+auto parse_directive_name(ParserState& s, DirectiveNameEnd end) -> StringId
+{
+    auto name = Buf {};
+    name += s.current.text;
+    advance(s);
+    while (current_touches_previous(s) && !s.current.is_end_of_statement()
+           && !(end == DirectiveNameEnd::WhitespaceOrAssignment && s.current.is_assignment_op())) {
+        name += s.current.text;
+        advance(s);
+    }
+    return name.intern(global_pool());
+}
+
+auto end_directive_line(ParserState& s, std::string_view directive) -> void
+{
+    if (!s.current.is_end_of_statement() && !s.current.text.starts_with('#')) {
+        auto err = Buf {};
+        err.fmt("Unexpected text after '{}'; a note on this line starts with '#'", directive);
+        report_error(s, err.view());
+    }
+    skip_to_eol(s);
+}
+
 template<typename Predicate>
 auto parse_statement_body(ParserState& s, Predicate is_terminator)
     -> Vec<std::unique_ptr<Statement>>
@@ -653,8 +681,8 @@ auto parse_conditional(ParserState& s, Conditional::Kind kind) -> Result<Conditi
         if (!check(s, TokenType::Identifier) && !check(s, TokenType::Text)) {
             return pup::make_error<Conditional>(ErrorCode::ParseError, "Expected variable name after ifdef/ifndef");
         }
-        cond.var_name = global_pool().intern(s.current.text);
-        advance(s);
+        cond.var_name = parse_directive_name(s, DirectiveNameEnd::Whitespace);
+        end_directive_line(s, kind == Conditional::Kind::Ifdef ? "ifdef" : "ifndef");
     } else {
         // ifeq/ifneq (lhs, rhs)
         s.lexer.set_context(Lexer::Context::Conditional);
@@ -699,16 +727,15 @@ auto parse_conditional(ParserState& s, Conditional::Kind kind) -> Result<Conditi
         }
 
         s.lexer.set_context(Lexer::Context::LineStart);
+        skip_to_eol(s);
     }
-
-    skip_to_eol(s);
 
     cond.then_body = parse_statement_body(s, [](TokenType t) {
         return t == TokenType::KwElse || t == TokenType::KwEndif;
     });
 
     if (match(s, TokenType::KwElse)) {
-        skip_to_eol(s);
+        end_directive_line(s, "else");
         cond.else_body = parse_statement_body(s, [](TokenType t) {
             return t == TokenType::KwEndif;
         });
@@ -718,6 +745,7 @@ auto parse_conditional(ParserState& s, Conditional::Kind kind) -> Result<Conditi
     if (!match(s, TokenType::KwEndif)) {
         return pup::make_error<Conditional>(ErrorCode::ParseError, "Expected 'endif'");
     }
+    end_directive_line(s, "endif");
 
     return cond;
 }
@@ -734,6 +762,8 @@ auto parse_include(ParserState& s, bool is_rules) -> Result<Include>
             return pup::unexpected<Error>(path.error());
         }
         inc.path = std::move(*path);
+    } else {
+        end_directive_line(s, "include_rules");
     }
 
     return inc;
@@ -748,8 +778,8 @@ auto parse_export(ParserState& s) -> Result<Export>
         return pup::make_error<Export>(ErrorCode::ParseError, "Expected variable name after 'export'");
     }
 
-    exp.var_name = global_pool().intern(s.current.text);
-    advance(s);
+    exp.var_name = parse_directive_name(s, DirectiveNameEnd::Whitespace);
+    end_directive_line(s, "export");
 
     return exp;
 }
@@ -763,8 +793,7 @@ auto parse_import(ParserState& s) -> Result<Import>
         return pup::make_error<Import>(ErrorCode::ParseError, "Expected variable name after 'import'");
     }
 
-    imp.var_name = global_pool().intern(s.current.text);
-    advance(s);
+    imp.var_name = parse_directive_name(s, DirectiveNameEnd::WhitespaceOrAssignment);
 
     // Optional default value (=, ?=, and ??= are all equivalent for import)
     if (match(s, TokenType::Equals) || match(s, TokenType::QuestionEquals) || match(s, TokenType::DoubleQuestionEquals)) {
@@ -774,6 +803,7 @@ auto parse_import(ParserState& s) -> Result<Import>
         }
         imp.default_value = std::move(*value);
     }
+    end_directive_line(s, "import");
 
     return imp;
 }

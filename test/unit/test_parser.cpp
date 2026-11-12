@@ -80,6 +80,215 @@ TEST_CASE("A hash after the start of a line is text", "[parser]")
     }
 }
 
+TEST_CASE("A hash in a section of a rule is text", "[parser]")
+{
+    SECTION("inside an input name")
+    {
+        auto result = parse_tupfile(": a.c#x |> cp %f %o |> o1.out\n", "test.tup");
+
+        CHECK(result.errors.empty());
+        REQUIRE(result.tupfile.statements.size() == 1);
+        auto const* rule = result.tupfile.statements[0]->as<Rule>();
+        REQUIRE(rule != nullptr);
+        REQUIRE(rule->inputs.size() == 1);
+        CHECK(rule->inputs[0].path.as_literal() == "a.c#x");
+        REQUIRE(rule->outputs.size() == 1);
+        CHECK(rule->outputs[0].path.as_literal() == "o1.out");
+    }
+
+    SECTION("at the start of an input name")
+    {
+        auto result = parse_tupfile(": a.c #b |> cat %f > %o |> o2.out\n", "test.tup");
+
+        CHECK(result.errors.empty());
+        REQUIRE(result.tupfile.statements.size() == 1);
+        auto const* rule = result.tupfile.statements[0]->as<Rule>();
+        REQUIRE(rule != nullptr);
+        REQUIRE(rule->inputs.size() == 2);
+        CHECK(rule->inputs[0].path.as_literal() == "a.c");
+        CHECK(rule->inputs[1].path.as_literal() == "#b");
+    }
+
+    SECTION("inside an order-only input name")
+    {
+        auto result = parse_tupfile(": a.c | b.h#x |> cp a.c %o |> oo.out\n", "test.tup");
+
+        CHECK(result.errors.empty());
+        REQUIRE(result.tupfile.statements.size() == 1);
+        auto const* rule = result.tupfile.statements[0]->as<Rule>();
+        REQUIRE(rule != nullptr);
+        REQUIRE(rule->order_only_inputs.size() == 1);
+        CHECK(rule->order_only_inputs[0].path.as_literal() == "b.h#x");
+    }
+
+    SECTION("inside an output name that a bin follows")
+    {
+        auto result = parse_tupfile(": a.c |> cp %f %o |> o#1.out #2.out {b}\n", "test.tup");
+
+        CHECK(result.errors.empty());
+        REQUIRE(result.tupfile.statements.size() == 1);
+        auto const* rule = result.tupfile.statements[0]->as<Rule>();
+        REQUIRE(rule != nullptr);
+        REQUIRE(rule->outputs.size() == 2);
+        CHECK(rule->outputs[0].path.as_literal() == "o#1.out");
+        CHECK(rule->outputs[1].path.as_literal() == "#2.out");
+        REQUIRE(rule->output_group.has_value());
+        CHECK(pup::global_pool().get(*rule->output_group) == "b");
+    }
+
+    SECTION("at the start of a command")
+    {
+        auto result = parse_tupfile(": a.c |>#x; cp a.c %o |> o.out\n", "test.tup");
+
+        CHECK(result.errors.empty());
+        REQUIRE(result.tupfile.statements.size() == 1);
+        auto const* rule = result.tupfile.statements[0]->as<Rule>();
+        REQUIRE(rule != nullptr);
+        CHECK(rule->command.as_literal() == "#x; cp a.c %o");
+        REQUIRE(rule->outputs.size() == 1);
+    }
+
+    SECTION("in a bang macro")
+    {
+        auto result = parse_tupfile("!m = | b.h#x |>#y; cp %f %o |> %B#.out\n", "test.tup");
+
+        CHECK(result.errors.empty());
+        REQUIRE(result.tupfile.statements.size() == 1);
+        auto const* macro = result.tupfile.statements[0]->as<BangMacro>();
+        REQUIRE(macro != nullptr);
+        REQUIRE(macro->order_only_inputs.size() == 1);
+        CHECK(macro->order_only_inputs[0].path.as_literal() == "b.h#x");
+        CHECK(macro->command.as_literal() == "#y; cp %f %o");
+        REQUIRE(macro->outputs.size() == 1);
+        CHECK(macro->outputs[0].path.as_literal() == "%B#.out");
+    }
+}
+
+TEST_CASE("A note that starts with a hash after a complete directive is ignored", "[parser]")
+{
+    auto const* source = GENERATE(
+        "ifdef Q\nendif #V=1\n",
+        "ifdef Q\nendif # else\n",
+        "ifdef Q\nelse #V=1\nendif\n",
+        "ifdef Q #V=1\nendif\n",
+        "ifndef Q #V=1\nendif\n",
+        "export HOME #V=1\n",
+        "import ZZ #V=1\n",
+        "include_rules #V=1\n",
+        "include_rules #V=1");
+    CAPTURE(source);
+
+    auto result = parse_tupfile(source, "test.tup");
+
+    CHECK(result.errors.empty());
+    REQUIRE(result.tupfile.statements.size() == 1);
+    CHECK(result.tupfile.statements[0]->as<Assignment>() == nullptr);
+    if (auto const* cond = result.tupfile.statements[0]->as<Conditional>()) {
+        CHECK(cond->then_body.empty());
+        CHECK(cond->else_body.empty());
+    }
+}
+
+TEST_CASE("Text after a complete directive that is not a note is refused on its line", "[parser]")
+{
+    auto const [source, line, statements] = GENERATE(table<char const*, int, int>({
+        { "ifdef Q\nendif V=1\n", 2, 1 },
+        { "ifdef Q\nelse ifeq (a,b)\nendif\n", 2, 1 },
+        { "ifdef Q junk\nendif\n", 1, 1 },
+        { "ifndef Q junk\nendif\n", 1, 1 },
+        { "ifndef A\nifdef B\nendif else\nR=E\nendif\n", 3, 1 },
+        { "export HOME V=1\n", 1, 1 },
+        { "export HOME : a |> b |> c\n", 1, 1 },
+        { "import ZZ junk\n", 1, 1 },
+        { "include_rules junk\n", 1, 1 },
+        { "ifdef Q\nendif endif\nV = 1\n", 2, 2 },
+    }));
+    CAPTURE(source);
+
+    auto result = parse_tupfile(source, "test.tup");
+
+    REQUIRE(result.errors.size() == 1);
+    CHECK(result.errors[0].location.line == static_cast<std::uint32_t>(line));
+    CHECK(pup::global_pool().get(result.errors[0].message).starts_with("Unexpected text after"));
+    CHECK(result.tupfile.statements.size() == static_cast<std::size_t>(statements));
+}
+
+TEST_CASE("A directive name runs to the next whitespace", "[parser]")
+{
+    SECTION("ifdef and ifndef")
+    {
+        auto const [source, name] = GENERATE(table<char const*, char const*>({
+            { "ifdef V#1\nendif\n", "V#1" },
+            { "ifndef X:Y\nendif\n", "X:Y" },
+            { "ifdef A.b#c # note\nendif\n", "A.b#c" },
+            { "ifdef V\nendif\n", "V" },
+            { "ifdef X=Y\nendif\n", "X=Y" },
+            { "ifdef X$(Y)\nendif\n", "X$(Y)" },
+            { "ifdef A\"b c\"\nendif\n", "A\"b c\"" },
+        }));
+        CAPTURE(source);
+
+        auto result = parse_tupfile(source, "test.tup");
+
+        CHECK(result.errors.empty());
+        REQUIRE(result.tupfile.statements.size() == 1);
+        auto const* cond = result.tupfile.statements[0]->as<Conditional>();
+        REQUIRE(cond != nullptr);
+        CHECK(pup::global_pool().get(cond->var_name) == name);
+    }
+
+    SECTION("export")
+    {
+        auto result = parse_tupfile("export A#B\n", "test.tup");
+
+        CHECK(result.errors.empty());
+        REQUIRE(result.tupfile.statements.size() == 1);
+        auto const* exp = result.tupfile.statements[0]->as<Export>();
+        REQUIRE(exp != nullptr);
+        CHECK(pup::global_pool().get(exp->var_name) == "A#B");
+    }
+
+    SECTION("import, where an assignment operator ends the name too")
+    {
+        auto const [source, name, has_default] = GENERATE(table<char const*, char const*, bool>({
+            { "import A#B\n", "A#B", false },
+            { "import A#B=d\n", "A#B", true },
+            { "import CC=gcc\n", "CC", true },
+            { "import CC ?= gcc\n", "CC", true },
+        }));
+        CAPTURE(source);
+
+        auto result = parse_tupfile(source, "test.tup");
+
+        CHECK(result.errors.empty());
+        REQUIRE(result.tupfile.statements.size() == 1);
+        auto const* imp = result.tupfile.statements[0]->as<Import>();
+        REQUIRE(imp != nullptr);
+        CHECK(pup::global_pool().get(imp->var_name) == name);
+        CHECK(imp->default_value.has_value() == has_default);
+    }
+}
+
+TEST_CASE("Text after the close paren of an ifeq is ignored", "[parser]")
+{
+    auto result = parse_tupfile("ifeq (a,a) junk\nendif\n", "test.tup");
+
+    CHECK(result.errors.empty());
+    REQUIRE(result.tupfile.statements.size() == 1);
+}
+
+TEST_CASE("A hash in a variable name is part of the name", "[parser]")
+{
+    auto result = parse_tupfile("V#1 = a # b  \n", "test.tup");
+
+    CHECK(result.errors.empty());
+    REQUIRE(result.tupfile.statements.size() == 1);
+    auto const* assign = result.tupfile.statements[0]->as<Assignment>();
+    REQUIRE(assign != nullptr);
+    CHECK(assign->name.as_literal() == "V#1");
+    CHECK(assign->value.as_literal() == "a # b");
+}
+
 TEST_CASE("A line that starts with a hash after spaces and tabs is a comment", "[parser]")
 {
     auto result = parse_tupfile("  # W = 2\n\t# : |> x |> y\n \t # include z.tup\nV = 1\n", "test.tup");
