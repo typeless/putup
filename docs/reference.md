@@ -1087,6 +1087,8 @@ else
 endif
 ```
 
+Whitespace at the ends of each side is dropped, and a run of whitespace inside a side counts as one space: `ifeq ($(CC), gcc)` equals `ifeq ($(CC),gcc)`. tup keeps the whitespace, so the first form is false there.
+
 **`ifdef`/`ifndef` semantics:**
 
 `ifdef NAME` takes a bare variable name (no `$()` or `@()`) and tests *definedness*, not emptiness — a variable set to the empty string counts as defined. Two namespaces are checked in order:

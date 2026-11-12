@@ -401,6 +401,43 @@ TEST_CASE("An ifeq left-hand side ends at the first comma on its line", "[parser
     CHECK(cond->rhs.as_literal() == rhs);
 }
 
+TEST_CASE("An ifeq side drops the whitespace at its ends and joins a run inside it to one space", "[parser]")
+{
+    auto const [source, lhs, rhs] = GENERATE(table<char const*, char const*, char const*>({
+        { "ifeq (foo, foo)\nendif", "foo", "foo" },
+        { "ifeq ( foo ,foo )\nendif", "foo", "foo" },
+        { "ifeq (\tfoo,\tfoo\t)\nendif", "foo", "foo" },
+        { "ifeq (a  b,a \t b)\nendif", "a b", "a b" },
+        { "ifeq ( , )\nendif", "", "" },
+        { "ifneq (foo, bar)\nendif", "foo", "bar" },
+    }));
+    CAPTURE(source);
+
+    auto result = parse_tupfile(source, "test.tup");
+
+    CHECK(result.errors.empty());
+    REQUIRE(result.tupfile.statements.size() == 1);
+    auto const* cond = result.tupfile.statements[0]->as<Conditional>();
+    REQUIRE(cond != nullptr);
+    CHECK(cond->lhs.as_literal() == lhs);
+    CHECK(cond->rhs.as_literal() == rhs);
+}
+
+TEST_CASE("An ifeq needs no space before its open paren", "[parser]")
+{
+    auto const* source = GENERATE("ifeq(a,b)\nendif", "ifneq(a,b)\nendif");
+    CAPTURE(source);
+
+    auto result = parse_tupfile(source, "test.tup");
+
+    CHECK(result.errors.empty());
+    REQUIRE(result.tupfile.statements.size() == 1);
+    auto const* cond = result.tupfile.statements[0]->as<Conditional>();
+    REQUIRE(cond != nullptr);
+    CHECK(cond->lhs.as_literal() == "a");
+    CHECK(cond->rhs.as_literal() == "b");
+}
+
 TEST_CASE("An ifeq missing its comma or close paren is refused on its own line", "[parser]")
 {
     auto const* source = GENERATE(

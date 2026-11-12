@@ -102,6 +102,24 @@ When a Tupfile writes `ifeq` or `ifneq`, putup shall end the left-hand side at t
 that line, end the right-hand side at the last `)` on that line, read a `#` or a quote on that
 line as text, and reject a line that has no `,` or no `)` with an error on that line.
 
+### REQ-EVAL-IFEQ-WHITESPACE
+
+- conformance: deliberate-deviation
+- reference: upstream prunes no whitespace from the two sides (`tup.1`, `ifeq (lval,rval)`: "ifeq (foo, foo) is false, while ifeq (foo,foo) is true"; `eval_eq` in `src/tup/parser.c` compares the text as written with `strcmp`). putup reads the sides as tokens, which drops the whitespace at the ends of a side and joins a run inside it to one space. A space after the comma is a common way to write the line and makes the comparison fail in upstream without a diagnostic, so putup keeps its reading (COMPATIBILITY.md, "Includes and Conditionals")
+- discharge: test "An ifeq side drops the whitespace at its ends and joins a run inside it to one space"
+
+When a Tupfile writes `ifeq` or `ifneq`, putup shall compare the two sides without the whitespace
+at the ends of each side and with each run of whitespace inside a side as one space.
+
+### REQ-EVAL-IFEQ-NO-SPACE
+
+- conformance: deliberate-deviation
+- reference: upstream recognises the statement by `strncmp(line, "ifeq ", 5)` and `strncmp(line, "ifneq ", 6)` (`src/tup/parser.c`, `parse_tupfile`), so `ifeq(a,b)` is not a conditional there. putup reads `ifeq` as a keyword token and accepts the `(` that follows with or without a space; the line has one meaning only, so nothing is gained by a refusal (COMPATIBILITY.md, "Includes and Conditionals")
+- discharge: test "An ifeq needs no space before its open paren"
+
+Where an `ifeq` or `ifneq` has no space before its `(`, putup shall read the statement as it reads
+the one with the space.
+
 ## Group: macros
 
 What defining a bang macro in terms of another one binds.

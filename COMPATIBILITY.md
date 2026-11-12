@@ -105,6 +105,14 @@ processed textually like tup: the losing branch does not exist.
 
 `ifdef`/`ifndef` check Tupfile variables before config variables; tup checks only `@`-variables.
 
+`ifeq`/`ifneq` read the text of each side without the whitespace at its ends, and with a run of
+whitespace inside it as one space, so `ifeq (foo, foo)` is true. tup prunes
+no whitespace: there `ifeq (foo, foo)` is false and only `ifeq (foo,foo)` is true. A Tupfile that
+relies on a space to make two sides differ takes the other branch in putup.
+
+`ifeq(a,b)` with no space before the `(` is accepted; tup matches `ifeq ` with the space, so
+it does not read that line as a conditional.
+
 `include` processes a file at most once **per conditional context**:
 
 | Case | Tup | Putup |
