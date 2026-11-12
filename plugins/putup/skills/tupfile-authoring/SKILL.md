@@ -15,10 +15,14 @@ Guide for writing Tupfiles with putup. For the full manual, see
 ```
 
 ```tup
-: main.c |> gcc -c %f -o %o |> main.o              # simple
-: foreach *.c |> gcc -c %f -o %o |> %B.o            # one command per input
-: foo.o bar.o |> gcc %f -o %o |> program             # multiple inputs
-: main.c | config.h |> gcc -c %f -o %o |> main.o    # order-only after |
+# simple
+: main.c |> gcc -c %f -o %o |> main.o
+# one command per input
+: foreach *.c |> gcc -c %f -o %o |> %B.o
+# multiple inputs
+: foo.o bar.o |> gcc %f -o %o |> program
+# order-only after |
+: main.c | config.h |> gcc -c %f -o %o |> main.o
 ```
 
 ## 2. Pattern Flags
@@ -73,13 +77,18 @@ from Make.
 | `??=` | Weak set | Deferred default (last wins) |
 
 ```tup
-CC ?= gcc          # first ?= wins
-CC ?= clang        # ignored -- CC already defined
+# first ?= wins
+CC ?= gcc
+# ignored -- CC already defined
+CC ?= clang
 
-CFLAGS ??= -O0     # fallback if nothing else sets CFLAGS
-CFLAGS ??= -O2     # this wins (last ??= wins)
+# fallback if nothing else sets CFLAGS
+CFLAGS ??= -O0
+# this wins (last ??= wins)
+CFLAGS ??= -O2
 
-CC = clang         # unconditional set always wins
+# unconditional set always wins
+CC = clang
 ```
 
 `?=` and `??=` check whether a variable is *defined*, not whether it is empty.
@@ -115,7 +124,8 @@ value for `$(CONFIG_NAME)` only; `@()` always reads tup.config. Kernel-style
 projects use `$(CONFIG_NAME)` to compose variable names:
 
 ```tup
-srcs-$(CONFIG_KERNEL_FS) += fs.c      # appends to srcs-y when CONFIG_KERNEL_FS=y
+# appends to srcs-y when CONFIG_KERNEL_FS=y
+srcs-$(CONFIG_KERNEL_FS) += fs.c
 : foreach $(srcs-y) |> !cc |> %B.o {objs}
 ```
 
@@ -280,9 +290,12 @@ and outputs. This is the recommended style for multi-line rules.
 it does not pass a Tupfile variable's value.
 
 ```tup
-import CC=gcc               # read $CC from env, default to gcc
-import CROSS_COMPILE=       # read $CROSS_COMPILE, default empty
-export PKG_CONFIG_PATH      # pass $PKG_CONFIG_PATH from putup's environment
+# read $CC from env, default to gcc
+import CC=gcc
+# read $CROSS_COMPILE, default empty
+import CROSS_COMPILE=
+# pass $PKG_CONFIG_PATH from putup's environment
+export PKG_CONFIG_PATH
 ```
 
 Commands get a minimal environment (`PATH`, `HOME`, `TMPDIR`); any other
@@ -326,7 +339,8 @@ means adding one line to a Tupfile — no rule changes needed.
 Exclude files from a glob with `^` followed by a regular expression:
 
 ```tup
-: foreach *.c ^b.*\.c |> !cc |> {objs}   # skips b1.c, bb.c
+# skips b1.c, bb.c
+: foreach *.c ^b.*\.c |> !cc |> {objs}
 ```
 
 Use globs for small stable directories. Use explicit lists when files change

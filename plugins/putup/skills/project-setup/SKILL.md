@@ -264,7 +264,8 @@ CONFIG_DEBUG=y
 Names must start with `CONFIG_`. Access in Tupfiles with `@(NAME)`:
 
 ```tup
-CC = @(CC)                         # resolves to "clang"
+# resolves to "clang"
+CC = @(CC)
 ```
 
 There is no default syntax for `@(NAME)`. Supply a default with `ifeq`:

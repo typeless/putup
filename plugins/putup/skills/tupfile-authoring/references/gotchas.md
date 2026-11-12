@@ -53,12 +53,15 @@ Use bare `$` intentionally when you want shell expansion:
 
 ```tup
 # ?= (soft set) -- first definition wins
-CC ?= gcc       # CC is now "gcc"
-CC ?= clang     # ignored
+# CC is now "gcc"
+CC ?= gcc
+# ignored
+CC ?= clang
 
 # ??= (weak set) -- last definition wins, applied at end of parse
 OPTFLAGS ??= -O0
-OPTFLAGS ??= -O2   # this wins
+# this wins
+OPTFLAGS ??= -O2
 ```
 
 ### Component Tuprules.tup Conventions
@@ -81,8 +84,10 @@ Run `putup parse` to see these. `putup parse --check=error` (alias `--strict`) f
 # tup.config contains: CONFIG_CC=clang
 
 CC = @(CC)
-CC = @(CONFIG_CC)    # same value; the CONFIG_ prefix is optional
-CC = $(CONFIG_CC)    # same value
+# same value; the CONFIG_ prefix is optional
+CC = @(CONFIG_CC)
+# same value
+CC = $(CONFIG_CC)
 ```
 
 There is no default syntax: `@(CC:-gcc)` expands to empty even when
@@ -147,10 +152,12 @@ Both access config variables but differently:
 
 ```tup
 # @(FOO) reads tup.config, strips CONFIG_ prefix automatically
-CC = @(CC)           # reads CONFIG_CC from tup.config
+# reads CONFIG_CC from tup.config
+CC = @(CC)
 
 # $(CONFIG_FOO) is a regular variable set by the config system
-srcs-$(CONFIG_FOO) += foo.c    # expands CONFIG_FOO to y or empty
+# expands CONFIG_FOO to y or empty
+srcs-$(CONFIG_FOO) += foo.c
 ```
 
 Both work, but mixing styles in the same project causes confusion. Pick one

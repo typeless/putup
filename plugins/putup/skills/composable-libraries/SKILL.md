@@ -15,10 +15,12 @@ Every Tuprules.tup sets `S = $(TUP_CWD)` to anchor source paths. When a componen
 
 ```tup
 # Root Tuprules.tup
-S = $(TUP_CWD)       # S = ../..  (from mpfr/src/)
+# S = ../..  (from mpfr/src/)
+S = $(TUP_CWD)
 
 # mpfr/Tuprules.tup
-S = $(TUP_CWD)       # OVERWRITES S = ..  -- root's value lost!
+# OVERWRITES S = ..  -- root's value lost!
+S = $(TUP_CWD)
 ```
 
 ## The Convention

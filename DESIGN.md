@@ -1834,11 +1834,15 @@ branch is taken. Exclusive branches share one output node, and at most one of th
 **Nested conditionals**: guards are a list; every entry must hold for the branch to be taken.
 
 ```tup
-ifeq (@(A),x)           # cond1
-  ifeq (@(B),y)         # cond2
-    : s.c |> ... |> out # guards = [Guard{cond1,true}, Guard{cond2,true}]
+# cond1
+ifeq (@(A),x)
+  # cond2
+  ifeq (@(B),y)
+    # guards = [Guard{cond1,true}, Guard{cond2,true}]
+    : s.c |> ... |> out
   else
-    : s.c |> ... |> out # guards = [Guard{cond1,true}, Guard{cond2,false}]
+    # guards = [Guard{cond1,true}, Guard{cond2,false}]
+    : s.c |> ... |> out
   endif
 endif
 ```

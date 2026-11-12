@@ -36,6 +36,59 @@ TEST_CASE("Parser comments and blank lines", "[parser]")
     REQUIRE(result.tupfile.statements.empty());
 }
 
+TEST_CASE("A hash after the start of a line is text", "[parser]")
+{
+    SECTION("in an assignment value")
+    {
+        auto const [source, value] = GENERATE(table<char const*, char const*>({
+            { "V = a # b\n", "a # b" },
+            { "V = a#b\n", "a#b" },
+            { "V += -g  # Append\n", "-g  # Append" },
+            { "V = #fff\n", "#fff" },
+        }));
+        CAPTURE(source);
+
+        auto result = parse_tupfile(source, "test.tup");
+
+        CHECK(result.errors.empty());
+        REQUIRE(result.tupfile.statements.size() == 1);
+        auto const* assign = result.tupfile.statements[0]->as<Assignment>();
+        REQUIRE(assign != nullptr);
+        CHECK(assign->value.as_literal() == value);
+    }
+
+    SECTION("in an include path")
+    {
+        auto result = parse_tupfile("include a.tup # b\n", "test.tup");
+
+        CHECK(result.errors.empty());
+        REQUIRE(result.tupfile.statements.size() == 1);
+        auto const* inc = result.tupfile.statements[0]->as<Include>();
+        REQUIRE(inc != nullptr);
+        CHECK(inc->path.as_literal() == "a.tup # b");
+    }
+
+    SECTION("in a command")
+    {
+        auto result = parse_tupfile(": |> echo a # b |>\n", "test.tup");
+
+        CHECK(result.errors.empty());
+        REQUIRE(result.tupfile.statements.size() == 1);
+        auto const* rule = result.tupfile.statements[0]->as<Rule>();
+        REQUIRE(rule != nullptr);
+        CHECK(rule->command.as_literal() == "echo a # b");
+    }
+}
+
+TEST_CASE("A line that starts with a hash after spaces and tabs is a comment", "[parser]")
+{
+    auto result = parse_tupfile("  # W = 2\n\t# : |> x |> y\n \t # include z.tup\nV = 1\n", "test.tup");
+
+    CHECK(result.errors.empty());
+    REQUIRE(result.tupfile.statements.size() == 1);
+    CHECK(result.tupfile.statements[0]->as<Assignment>() != nullptr);
+}
+
 TEST_CASE("Parser simple assignment", "[parser]")
 {
     SECTION("set")

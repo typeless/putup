@@ -105,6 +105,16 @@ processed textually like tup: the losing branch does not exist.
 
 `ifdef`/`ifndef` check Tupfile variables before config variables; tup checks only `@`-variables.
 
+Text after the name of an `ifdef`, `ifndef`, `export` or `import`, and after `else`, `endif` or
+`include_rules`, is ignored, so `endif # debug` is accepted. tup matches `else`, `endif` and
+`include_rules` as the whole line and takes the rest of an `ifdef`, `export` or `import` line as
+the name (read from `parser.c`, not run).
+
+A `#` after the start of a line is text in both, in an assignment value, an include path and a
+command. In the input section of a rule, and before a later field of its output section, putup
+ends the line at the `#`: `: a.c#x |> ... |> out` is a syntax error, and tup reads `a.c#x` as a
+name. This is a defect, not a choice (#609).
+
 `ifeq`/`ifneq` read the text written on each side without the whitespace at its ends, so
 `ifeq (foo, foo)` is true. tup prunes no whitespace: there `ifeq (foo, foo)` is false and only
 `ifeq (foo,foo)` is true. A Tupfile that relies on a space to make two sides differ takes the
@@ -153,7 +163,8 @@ Tup uses FUSE to intercept file accesses and automatically discover dependencies
 Putup auto-generates dep-scan rules for recognized C/C++ compile commands by default (`PUP_IMPLICIT_DEPS`, enabled) — `gcc -M` for GNU-driver compilers, `clang-cl /clang:-M` for the MSVC driver — so header dependencies are discovered without extra flags. Adding `-MD` is a recommended alternative that has the compiler emit `.d` files during compilation:
 
 ```tup
-CFLAGS += -MD  # Generate foo.d alongside foo.o
+# Generate foo.d alongside foo.o
+CFLAGS += -MD
 : foreach *.c |> $(CC) $(CFLAGS) -c %f -o %o |> %B.o
 ```
 

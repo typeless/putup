@@ -125,6 +125,17 @@ When a Tupfile assigns a value to a variable, putup shall store the text from th
 of the value that is not a space or a tab to the last one, with each space and tab between them
 as written.
 
+### REQ-EVAL-HASH-TEXT
+
+- conformance: tup-conformant
+- reference: upstream `parse_tupfile` (`src/tup/parser.c`) skips the whitespace before a line and drops the line when `line[0] == '#'`; it tests no other position, so a `#` after the start of a line stays in the value, the path or the command. Read from parser.c, not run against tup. A value can need the character (`-DCOLOR=#fff`, a URL fragment). The documents showed comments after a value in their examples (#607)
+- discharge: test "A hash after the start of a line is text"
+- discharge: test "A line that starts with a hash after spaces and tabs is a comment"
+
+When a Tupfile holds a `#`, putup shall ignore the line where the `#` is the first character
+after any spaces and tabs, and keep as text a `#` that stands later in an assignment value, an
+include path or a command.
+
 ### REQ-EVAL-IFEQ-NO-SPACE
 
 - conformance: deliberate-deviation

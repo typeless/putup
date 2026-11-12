@@ -91,10 +91,13 @@ GCC's configure detects host properties. Key entries for x86_64 Linux:
 Each library has its own `Tuprules.tup` with `?=` defaults:
 
 ```tup
-S ?= $(TUP_CWD)           # Standalone: config root is here
+# Standalone: config root is here
+S ?= $(TUP_CWD)
 B ?= $(TUP_VARIANT_OUTPUTDIR)/$(S)
-CC ?= gcc                   # Standalone default
-GMP_DIR ?= .                # Standalone: I am the root
+# Standalone default
+CC ?= gcc
+# Standalone: I am the root
+GMP_DIR ?= .
 
 !gen-config = |> awk ... $(B)/$(GMP_DIR)/tup.config > %o |>
 ```

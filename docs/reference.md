@@ -789,6 +789,22 @@ same as the one-line spelling with those spaces in it:
 The continuation separates words rather than joining them, so `gcc -c\` followed by `%f` runs
 `gcc -c foo.c`, not `gcc -cfoo.c`. No command, variable value or path ever contains a newline.
 
+**Comments:**
+
+A line whose first character after any spaces and tabs is `#` is a comment. A `#` later on a line
+is text, as in tup: it is part of the assignment value, the include path or the command it stands
+in. A continuation joins lines before this test, so a comment that ends in a backslash takes the
+next line with it, and a `#` line inside a continued statement is part of that statement. Write
+each comment on its own line:
+
+```tup
+# Debug information
+CFLAGS += -g
+```
+
+`CFLAGS += -g  # Debug information` puts `# Debug information` in the value, and the shell then
+reads the rest of each command that spells `$(CFLAGS)` as a comment.
+
 ### 5.1 Rules
 
 Rules define how to transform inputs into outputs.
@@ -881,10 +897,14 @@ would not say what broke. As in tup, `-v` switches from the display to the comma
 ```tup
 CC = gcc
 CFLAGS = -Wall -O2
-CFLAGS += -g          # Append
-SAME := $(VAR)        # Same as =
-DEFAULT ?= value      # Soft set (if undefined, first wins)
-FALLBACK ??= value    # Weak set (if undefined, last wins)
+# Append
+CFLAGS += -g
+# Same as =
+SAME := $(VAR)
+# Soft set (if undefined, first wins)
+DEFAULT ?= value
+# Weak set (if undefined, last wins)
+FALLBACK ??= value
 ```
 
 **Assignment Operators:**
@@ -904,15 +924,20 @@ tabs between them are kept as written, and so are the spaces a line continuation
 **Conditional Assignment Examples:**
 ```tup
 # Soft set - first assignment wins
-CC ?= gcc           # Sets CC to "gcc" if not already defined
-CC ?= clang         # Ignored - CC already defined
+# Sets CC to "gcc" if not already defined
+CC ?= gcc
+# Ignored - CC already defined
+CC ?= clang
 
 # Weak set - last assignment wins, applied before rules
-CFLAGS ??= -O0      # Fallback if nothing else sets CFLAGS
-CFLAGS ??= -O2      # This wins (last ??= wins)
+# Fallback if nothing else sets CFLAGS
+CFLAGS ??= -O0
+# This wins (last ??= wins)
+CFLAGS ??= -O2
 
 # Explicit assignment always wins
-CC = clang          # Always sets, ignores any ?= or ??=
+# Always sets, ignores any ?= or ??=
+CC = clang
 ```
 
 > **Note:** `?=` and `??=` check if a variable is *defined*, not if it's *empty*.
@@ -1145,9 +1170,12 @@ A file already included under the same conditions is not read again. The conditi
 
 **`include_rules`** - Include all `Tuprules.tup` files from the project root down to the current directory, in root-first order. Each directory in the path from root to the directory of the file that contains the statement is checked; gaps (directories without a `Tuprules.tup`) are silently skipped. In a Tupfile that is the Tupfile's directory; in an included file it is that file's directory. A file outside the tree that holds the Tupfiles has no such directories, so `include_rules` in it reads nothing. A `Tuprules.tup` already read in the same conditional context is not read again. While `include_rules` reads a `Tuprules.tup`, a second `include_rules` in that file or in a file it includes is an error. That holds in both branches of a condition on a config or environment variable. For `sub/deep/Tupfile`, this is equivalent to:
 ```tup
-include ../../Tuprules.tup   # root
-include ../Tuprules.tup      # sub/ (if it exists)
-include Tuprules.tup          # sub/deep/ (if it exists)
+# root
+include ../../Tuprules.tup
+# sub/ (if it exists)
+include ../Tuprules.tup
+# sub/deep/ (if it exists)
+include Tuprules.tup
 ```
 
 **`export`** - Export variable to command environment:
@@ -1191,9 +1219,12 @@ variable if its value must decide whether a command is out of date.
 
 **`import`** - Import an environment variable into the Tupfile namespace:
 ```tup
-import CC                 # Read the CC environment variable (empty if unset)
-import OPTIMIZE = O2      # Optional default, used when the env var is unset
-import OPTIMIZE ?= O2     # Same effect — =, ?=, and ??= are equivalent here
+# Read the CC environment variable (empty if unset)
+import CC
+# Optional default, used when the env var is unset
+import OPTIMIZE = O2
+# Same effect — =, ?=, and ??= are equivalent here
+import OPTIMIZE ?= O2
 ```
 
 `import` reads from the process **environment**, not from `tup.config`. It never errors when the variable is unset — the optional default (`=`, `?=`, or `??=`, all equivalent) supplies the value instead. Changing an imported variable's value re-runs the commands that depend on it, because the value is folded into command identity. With `import VAR ?= default`, unsetting the environment variable on a later (warm) build reverts the value to `default` and re-runs the affected commands.
@@ -1338,7 +1369,8 @@ CLI overrides have highest precedence and apply to all scoped configs.
 
 ```tup
 # Access stripped name (recommended)
-CC = @(CC)              # Gets value of CONFIG_CC
+# Gets value of CONFIG_CC
+CC = @(CC)
 
 # Access with default value
 DEBUG = @(DEBUG)
