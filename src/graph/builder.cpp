@@ -304,7 +304,7 @@ auto transform_input_path(
 
 /// Transform an output path to Tupfile-relative for command expansion.
 /// Outputs are already stored at variant-mapped paths (e.g., "build/src/main.o").
-/// This function just converts to Tupfile-relative (e.g., "../../build/src/main.o").
+/// This function just converts to Tupfile-relative (e.g., "../build/src/main.o" from "src").
 auto transform_output_path(
     PathTransformContext const& tc,
     std::string_view out
