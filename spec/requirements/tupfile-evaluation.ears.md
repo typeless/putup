@@ -105,16 +105,18 @@ line as text, and reject a line that has no `,` or no `)` with an error on that 
 ### REQ-EVAL-IFEQ-WHITESPACE
 
 - conformance: deliberate-deviation
-- reference: upstream prunes no whitespace from the two sides (`tup.1`, `ifeq (lval,rval)`: "ifeq (foo, foo) is false, while ifeq (foo,foo) is true"; `eval_eq` in `src/tup/parser.c` compares the text as written with `strcmp`). putup reads the sides as tokens, which drops the whitespace at the ends of a side and joins a run inside it to one space. A space after the comma is a common way to write the line and makes the comparison fail in upstream without a diagnostic, so putup keeps its reading (COMPATIBILITY.md, "Includes and Conditionals")
-- discharge: test "An ifeq side drops the whitespace at its ends and joins a run inside it to one space"
+- reference: upstream prunes no whitespace from the two sides (`tup.1`, `ifeq (lval,rval)`: "ifeq (foo, foo) is false, while ifeq (foo,foo) is true"; `eval_eq` in `src/tup/parser.c` compares the text as written with `strcmp`). putup drops the whitespace written at the ends of a side. A space after the comma is a common way to write the line and makes the comparison fail in upstream without a diagnostic, so putup keeps its reading (COMPATIBILITY.md, "Includes and Conditionals"). The rule is about the text on the line: the value of a `$()` or `@()` reference is compared as it is. putup also joins a run of whitespace inside the text of a side to one space; that is a defect and no part of this requirement (#606)
+- discharge: test "An ifeq side drops the whitespace written at its ends"
+- discharge: test "An ifeq side of whitespace only is empty"
+- discharge: test "An ifeq compares the value of a reference with the whitespace it holds"
 
 When a Tupfile writes `ifeq` or `ifneq`, putup shall compare the two sides without the whitespace
-at the ends of each side and with each run of whitespace inside a side as one space.
+written at the ends of each side, and with the value of each variable reference unchanged.
 
 ### REQ-EVAL-IFEQ-NO-SPACE
 
 - conformance: deliberate-deviation
-- reference: upstream recognises the statement by `strncmp(line, "ifeq ", 5)` and `strncmp(line, "ifneq ", 6)` (`src/tup/parser.c`, `parse_tupfile`), so `ifeq(a,b)` is not a conditional there. putup reads `ifeq` as a keyword token and accepts the `(` that follows with or without a space; the line has one meaning only, so nothing is gained by a refusal (COMPATIBILITY.md, "Includes and Conditionals")
+- reference: upstream recognises the statement by `strncmp(line, "ifeq ", 5)` and `strncmp(line, "ifneq ", 6)` (`src/tup/parser.c`, `parse_tupfile`), so `ifeq(a,b)` is not a conditional there: in a branch upstream reads, the line goes to `set_variable`, which reports a syntax error unless the line holds a `=`; in a branch upstream skips, the line is skipped and its `endif` closes the enclosing conditional. putup reads `ifeq` as a keyword token and accepts the `(` that follows with a space, a tab, or nothing before it; a diagnostic that depends on the branch helps nobody (COMPATIBILITY.md, "Includes and Conditionals")
 - discharge: test "An ifeq needs no space before its open paren"
 
 Where an `ifeq` or `ifneq` has no space before its `(`, putup shall read the statement as it reads

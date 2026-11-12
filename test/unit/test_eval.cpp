@@ -7,6 +7,7 @@
 #include "pup/core/platform.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/parser/eval.hpp"
+#include "pup/parser/parser.hpp"
 
 using namespace pup::parser;
 using pup::StringId;
@@ -837,6 +838,33 @@ TEST_CASE("Evaluator pattern expansion - %g with no single glob input is refused
         REQUIRE_FALSE(result.has_value());
         REQUIRE(sv(result.error().message).find("%g flag found no globs") != std::string_view::npos);
     }
+}
+
+TEST_CASE("An ifeq compares the value of a reference with the whitespace it holds", "[eval]")
+{
+    auto const [config_value, source, equal] = GENERATE(table<char const*, char const*, bool>({
+        { "gcc", "ifeq (@(X), gcc)\nendif", true },
+        { "gcc", "ifeq ( @(X) , gcc )\nendif", true },
+        { " gcc", "ifeq (@(X),gcc)\nendif", false },
+        { "gcc ", "ifeq (@(X),gcc)\nendif", false },
+        { "a  b", "ifeq (@(X),a b)\nendif", false },
+        { "a  b", "ifeq (@(X),@(X))\nendif", true },
+        { "a  b", "ifeq ( @(X) ,@(X))\nendif", true },
+    }));
+    CAPTURE(config_value, source);
+
+    auto vars = VarDb {};
+    auto config_vars = VarDb {};
+    config_vars.set("X", config_value);
+    auto ctx = EvalContext { .vars = &vars, .config_vars = &config_vars };
+
+    auto parsed = parse_tupfile(source, "test.tup");
+    REQUIRE(parsed.errors.empty());
+    REQUIRE(parsed.tupfile.statements.size() == 1);
+    auto const* cond = parsed.tupfile.statements[0]->as<Conditional>();
+    REQUIRE(cond != nullptr);
+
+    CHECK(evaluate_condition(ctx, *cond) == equal);
 }
 
 TEST_CASE("Evaluator conditionals", "[eval]")

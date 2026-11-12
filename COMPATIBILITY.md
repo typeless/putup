@@ -105,13 +105,17 @@ processed textually like tup: the losing branch does not exist.
 
 `ifdef`/`ifndef` check Tupfile variables before config variables; tup checks only `@`-variables.
 
-`ifeq`/`ifneq` read the text of each side without the whitespace at its ends, and with a run of
-whitespace inside it as one space, so `ifeq (foo, foo)` is true. tup prunes
-no whitespace: there `ifeq (foo, foo)` is false and only `ifeq (foo,foo)` is true. A Tupfile that
-relies on a space to make two sides differ takes the other branch in putup.
+`ifeq`/`ifneq` read the text written on each side without the whitespace at its ends, so
+`ifeq (foo, foo)` is true. tup prunes no whitespace: there `ifeq (foo, foo)` is false and only
+`ifeq (foo,foo)` is true. A Tupfile that relies on a space to make two sides differ takes the
+other branch in putup. The value of a `$()` or `@()` reference is compared as it is.
 
-`ifeq(a,b)` with no space before the `(` is accepted; tup matches `ifeq ` with the space, so
-it does not read that line as a conditional.
+A run of whitespace in the text of a side, or in the value an assignment writes, becomes one
+space; tup keeps it. With `CONFIG_X=a  b` (two spaces), `ifeq (@(X),a  b)` is true in tup and
+false in putup, and `V = a  b` holds `a b`. This is a defect, not a choice (#606).
+
+`ifeq(a,b)`, with no space or with a tab before the `(`, is accepted. tup matches `ifeq ` with
+one space: it reports a syntax error on that line, or skips the line inside a false branch.
 
 `include` processes a file at most once **per conditional context**:
 
