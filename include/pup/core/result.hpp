@@ -16,11 +16,8 @@ namespace pup {
 enum class ErrorCode {
     // General errors
     None = 0,
-    Unknown,
     InvalidArgument,
     NotFound,
-    AlreadyExists,
-    PermissionDenied,
     IoError,
     InvalidState,
 
@@ -32,24 +29,14 @@ enum class ErrorCode {
 
     // Parser errors
     ParseError,
-    LexerError,
     UnexpectedToken,
-    UnterminatedString,
     IncludeNotFound,
-    InvalidVariableRef,
-    InvalidPattern,
 
     // Graph errors
     CyclicDependency,
     DuplicateNode,
     InvalidNodeId,
-    InvalidEdge,
     UnknownMacro,
-
-    // Execution errors
-    CommandFailed,
-    MissingInput,
-    OutputMismatch,
 };
 
 /// Error with code and message

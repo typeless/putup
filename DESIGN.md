@@ -205,9 +205,8 @@ Error codes are categorized:
 |----------|----------|
 | General | InvalidArgument, NotFound, IoError |
 | Index | IndexChecksumMismatch, IndexDamaged, IndexVersionMismatch |
-| Parser | ParseError, UnterminatedString, IncludeNotFound |
+| Parser | ParseError, UnexpectedToken, IncludeNotFound |
 | Graph | CyclicDependency, UnknownMacro |
-| Exec | CommandFailed, MissingInput |
 
 When a consumer filters these codes to decide what a build announces, announcing is the default
 arm's job: enumeration selects the wording of a particular announcement, or excuses an exception
