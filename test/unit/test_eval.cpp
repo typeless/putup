@@ -848,6 +848,9 @@ TEST_CASE("An ifeq compares the value of a reference with the whitespace it hold
         { " gcc", "ifeq (@(X),gcc)\nendif", false },
         { "gcc ", "ifeq (@(X),gcc)\nendif", false },
         { "a  b", "ifeq (@(X),a b)\nendif", false },
+        { "a  b", "ifeq (@(X),a  b)\nendif", true },
+        { "a\tb", "ifeq (@(X),a\tb)\nendif", true },
+        { "a b", "ifeq (@(X),a  b)\nendif", false },
         { "a  b", "ifeq (@(X),@(X))\nendif", true },
         { "a  b", "ifeq ( @(X) ,@(X))\nendif", true },
     }));

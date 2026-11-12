@@ -897,6 +897,10 @@ FALLBACK ??= value    # Weak set (if undefined, last wins)
 | `?=` | Soft Set | Set only if variable is undefined (first wins) |
 | `??=` | Weak Set | Deferred default - set at end if undefined (last wins) |
 
+A value runs from its first character that is not a space or a tab to its last one. The spaces and
+tabs between them are kept as written, and so are the spaces a line continuation becomes:
+`V = a  b` holds two spaces.
+
 **Conditional Assignment Examples:**
 ```tup
 # Soft set - first assignment wins

@@ -810,9 +810,7 @@ auto parse_expression_until(
                 flush_text();
                 break; // Stop at whitespace gap (for path patterns)
             }
-            // Add space to current_text for the gap
-            // This handles both "text var" and "var text" cases
-            current_text += ' ';
+            current_text += s.lexer.source().substr(last_end_offset, s.current.location.offset - last_end_offset);
         }
 
         // Variable references: $(VAR), @(VAR), &(VAR)

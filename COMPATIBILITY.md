@@ -110,10 +110,6 @@ processed textually like tup: the losing branch does not exist.
 `ifeq (foo,foo)` is true. A Tupfile that relies on a space to make two sides differ takes the
 other branch in putup. The value of a `$()` or `@()` reference is compared as it is.
 
-A run of whitespace in the text of a side, or in the value an assignment writes, becomes one
-space; tup keeps it. With `CONFIG_X=a  b` (two spaces), `ifeq (@(X),a  b)` is true in tup and
-false in putup, and `V = a  b` holds `a b`. This is a defect, not a choice (#606).
-
 `ifeq(a,b)`, with no space or with a tab before the `(`, is accepted. tup matches `ifeq ` with
 one space: it reports a syntax error on that line, or skips the line inside a false branch.
 

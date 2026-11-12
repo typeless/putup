@@ -105,13 +105,25 @@ line as text, and reject a line that has no `,` or no `)` with an error on that 
 ### REQ-EVAL-IFEQ-WHITESPACE
 
 - conformance: deliberate-deviation
-- reference: upstream prunes no whitespace from the two sides (`tup.1`, `ifeq (lval,rval)`: "ifeq (foo, foo) is false, while ifeq (foo,foo) is true"; `eval_eq` in `src/tup/parser.c` compares the text as written with `strcmp`). putup drops the whitespace written at the ends of a side. A space after the comma is a common way to write the line and makes the comparison fail in upstream without a diagnostic, so putup keeps its reading (COMPATIBILITY.md, "Includes and Conditionals"). The rule is about the text on the line: the value of a `$()` or `@()` reference is compared as it is. putup also joins a run of whitespace inside the text of a side to one space; that is a defect and no part of this requirement (#606)
+- reference: upstream prunes no whitespace from the two sides (`tup.1`, `ifeq (lval,rval)`: "ifeq (foo, foo) is false, while ifeq (foo,foo) is true"; `eval_eq` in `src/tup/parser.c` compares the text as written with `strcmp`). putup drops the whitespace written at the ends of a side. A space after the comma is a common way to write the line and makes the comparison fail in upstream without a diagnostic, so putup keeps its reading (COMPATIBILITY.md, "Includes and Conditionals"). The rule is about the text on the line: the value of a `$()` or `@()` reference is compared as it is. Whitespace inside the text of a side is compared as written, as in upstream; putup joined a run of it to one space (#606)
 - discharge: test "An ifeq side drops the whitespace written at its ends"
 - discharge: test "An ifeq side of whitespace only is empty"
+- discharge: test "An ifeq side keeps a run of whitespace inside its text"
 - discharge: test "An ifeq compares the value of a reference with the whitespace it holds"
 
 When a Tupfile writes `ifeq` or `ifneq`, putup shall compare the two sides without the whitespace
-written at the ends of each side, and with the value of each variable reference unchanged.
+written at the ends of each side, with the whitespace inside the text of a side as written, and
+with the value of each variable reference unchanged.
+
+### REQ-EVAL-VALUE-WHITESPACE
+
+- conformance: tup-conformant
+- reference: upstream `set_variable` (`src/tup/parser.c`) skips the whitespace after the operator and stores the rest of the line, whose trailing whitespace the line reader removed, so a run of spaces or tabs inside a value is part of it; a continuation is already spaces at that point (REQ-CONT-SPACES). Read from parser.c, not run against tup. putup rebuilt the value from its tokens with one space for each gap, so `CFLAGS = -O2  -g` held `-O2 -g`; a run inside a quoted string was one token and was kept (#606)
+- discharge: test "An assignment value keeps a run of whitespace as written"
+
+When a Tupfile assigns a value to a variable, putup shall store the text from the first character
+of the value that is not a space or a tab to the last one, with each space and tab between them
+as written.
 
 ### REQ-EVAL-IFEQ-NO-SPACE
 

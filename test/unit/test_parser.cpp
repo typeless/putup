@@ -434,6 +434,47 @@ TEST_CASE("An ifeq side of whitespace only is empty", "[parser]")
     CHECK(cond->rhs.parts.empty());
 }
 
+TEST_CASE("An assignment value keeps a run of whitespace as written", "[parser]")
+{
+    auto const [source, value] = GENERATE(table<char const*, char const*>({
+        { "V = a  b\n", "a  b" },
+        { "V = a\t\tb\n", "a\t\tb" },
+        { "V =   a \t b   \n", "a \t b" },
+        { "V = a \\\n  b\n", "a     b" },
+        { "V += a  b\n", "a  b" },
+        { "V := a  b\n", "a  b" },
+    }));
+    CAPTURE(source);
+
+    auto result = parse_tupfile(source, "test.tup");
+
+    CHECK(result.errors.empty());
+    REQUIRE(result.tupfile.statements.size() == 1);
+    auto const* assign = result.tupfile.statements[0]->as<Assignment>();
+    REQUIRE(assign != nullptr);
+    CHECK(assign->value.as_literal() == value);
+}
+
+TEST_CASE("An ifeq side keeps a run of whitespace inside its text", "[parser]")
+{
+    auto const [source, lhs, rhs] = GENERATE(table<char const*, char const*, char const*>({
+        { "ifeq (a  b,c\t\td)\nendif", "a  b", "c\t\td" },
+        { "ifeq ( a  b , c \t d )\nendif", "a  b", "c \t d" },
+        { "ifneq (a  b,a b)\nendif", "a  b", "a b" },
+        { "ifeq (a \\\nb,a b)\nendif", "a   b", "a b" },
+    }));
+    CAPTURE(source);
+
+    auto result = parse_tupfile(source, "test.tup");
+
+    CHECK(result.errors.empty());
+    REQUIRE(result.tupfile.statements.size() == 1);
+    auto const* cond = result.tupfile.statements[0]->as<Conditional>();
+    REQUIRE(cond != nullptr);
+    CHECK(cond->lhs.as_literal() == lhs);
+    CHECK(cond->rhs.as_literal() == rhs);
+}
+
 TEST_CASE("An ifeq needs no space before its open paren", "[parser]")
 {
     auto const* source = GENERATE("ifeq(a,b)\nendif", "ifneq(a,b)\nendif", "ifeq\t(a,b)\nendif");
