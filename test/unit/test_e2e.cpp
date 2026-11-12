@@ -13519,6 +13519,95 @@ SCENARIO("One file included by two paths in turn is read by each path", "[e2e][p
     }
 }
 
+SCENARIO("An include of a file being read is not followed in a branch not taken", "[e2e][parse]")
+{
+    GIVEN("a file that includes itself through a symlink to its directory, under a condition not taken")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.create_symlink(".", "d");
+        f.write_file("a.tup", "V += a\nifeq (@(X),y)\ninclude d/a.tup\nendif\n");
+        f.write_file("Tupfile", "include a.tup\n: |> echo $(V) > %o |> out.txt\n");
+
+        WHEN("the project is built")
+        {
+            auto result = f.pup({});
+
+            THEN("the file is read once")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("out.txt") == "a\n");
+            }
+        }
+    }
+
+    GIVEN("a file with twenty includes of itself, each under its own condition, none taken")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        auto text = std::string { "V += a\n" };
+        for (auto i = 0; i < 20; ++i) {
+            text += "ifeq (@(X" + std::to_string(i) + "),y)\ninclude a.tup\nendif\n";
+        }
+        f.write_file("a.tup", text);
+        f.write_file("Tupfile", "include a.tup\n: |> echo $(V) > %o |> out.txt\n");
+
+        WHEN("the project is built")
+        {
+            auto result = f.pup({});
+
+            THEN("the file is read once")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("out.txt") == "a\n");
+            }
+        }
+    }
+
+    GIVEN("a file with a rule that includes itself under a condition not taken")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.tup", ": |> echo r > %o |> o.txt\nifeq (@(X),y)\ninclude a.tup\nendif\n");
+        f.write_file("Tupfile", "include a.tup\n");
+
+        WHEN("the project is built")
+        {
+            auto result = f.pup({});
+
+            THEN("the rule does not conflict with itself")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("o.txt") == "r\n");
+            }
+        }
+    }
+
+    GIVEN("a branch not taken whose rule names its output from a variable that a further reading would change")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("tup.config", "CONFIG_Y=y\n");
+        f.write_file("a.tup", "N = $(N)1\nifeq (@(Y),y)\nK = m\ninclude a.tup\nendif\n");
+        f.write_file("Tupfile", "ifeq (@(X),y)\ninclude a.tup\n: |> echo $(N) > %o |> o$(N)$(K).txt\nendif\n: |> echo t > %o |> o1m.txt\n");
+
+        WHEN("the project is built")
+        {
+            auto result = f.pup({});
+
+            THEN("the rule in the branch is declared with the value of one reading, and conflicts in no configuration but is refused")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("Unable to create output 'o1m.txt'") != std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("Sibling directory inputs work with incremental variant builds", "[e2e][incremental][variant]")
 {
     GIVEN("a variant build with sibling directory input")

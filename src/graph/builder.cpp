@@ -1397,6 +1397,19 @@ auto resolve_include_path(
     return resolved_id;
 }
 
+/// Two spellings name one reading when the same directory holds them under the same file name:
+/// a symlinked directory is resolved, a symlinked file is not, because its directory sets TUP_CWD.
+auto reading_identity(Builder& state, StringId spelled_path) -> StringId
+{
+    if (auto const* known = state.reading_identities.find(to_underlying(spelled_path))) {
+        return StringId { *known };
+    }
+    auto const directory = pup::platform::canonical(pup::path::parent(str(spelled_path)));
+    auto const identity = directory ? pup::path::join(str(*directory), pup::path::filename(str(spelled_path))) : spelled_path;
+    state.reading_identities.insert(to_underlying(spelled_path), to_underlying(identity));
+    return identity;
+}
+
 auto include_single_file(
     BuilderContext& ctx,
     Builder& state,
@@ -1404,6 +1417,15 @@ auto include_single_file(
     std::string_view include_path
 ) -> Result<void>
 {
+    if (!is_context_active(ctx)) {
+        auto const target = reading_identity(state, intern(include_path));
+        for (auto const file : ctx.files_being_read) {
+            if (reading_identity(state, file) == target) {
+                return {};
+            }
+        }
+    }
+
     auto context_key = Buf {};
     context_key.fmt("{}", include_path);
     auto guard_keys = SortedIdVec {};
@@ -1464,6 +1486,7 @@ auto include_single_file(
 
     auto const old_current_file = ctx.current_file;
     ctx.current_file = intern(include_path);
+    ctx.files_being_read.push_back(ctx.current_file);
 
     auto outcome = Result<void> {};
     auto const active = is_context_active(ctx);
@@ -1477,6 +1500,7 @@ auto include_single_file(
         }
     }
 
+    ctx.files_being_read.pop_back();
     ctx.current_file = old_current_file;
     ctx.eval->tup_cwd = old_tup_cwd;
     ctx.eval->tup_variantdir = old_tup_variantdir;
@@ -2783,6 +2807,7 @@ auto add_tupfile(
         .current_dir = intern(relative_dir_str),
         .current_file = tupfile.filename,
     };
+    ctx.files_being_read.push_back(tupfile.filename);
 
     auto tupfile_rel = global_pool().get(pup::path::relative(tupfile_filename_sv, tupfile_root));
     auto tupfile_path_id = ctx.state->graph.paths.intern_path(tupfile_rel, global_pool(), PathId::SourceRoot);

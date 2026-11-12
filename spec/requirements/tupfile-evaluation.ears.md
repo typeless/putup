@@ -41,12 +41,21 @@ included.
 ### REQ-EVAL-INCLUDE-CONTEXT-BY-STATEMENT
 
 - conformance: deliberate-deviation
-- reference: upstream's `parser_include_file` (`src/tup/parser.c`) holds no include-once set, and it does not reach an `include` in a branch it does not take. putup parses both branches of a condition on a config or environment variable, so the conditional context of REQ-EVAL-INCLUDE-CONTEXT has to repeat for a chain of includes to end. putup identified a condition by the node it made each time it evaluated the statement, so a file that included itself under such a condition was a new context at every level and putup read it until it crashed, in either branch. A condition is now the conditional statement, by file and line, with the branch; a context is the set of those. Under its own condition a file is read once more, as upstream reads it when the branch is taken, and upstream reads it again after that without end unless the file's text stops it. Where the file's text stops it after more than one further reading, putup lacks the later readings. A rule in the further reading declares the output of the first reading again, which putup reports as a conflict in either branch (COMPATIBILITY.md, "Includes and Conditionals"). A file with k such statements is read once for each set of them, so the readings grow as 2^k
+- reference: upstream's `parser_include_file` (`src/tup/parser.c`) holds no include-once set, and it does not reach an `include` in a branch it does not take. putup parses both branches of a condition on a config or environment variable, so the conditional context of REQ-EVAL-INCLUDE-CONTEXT has to repeat for a chain of includes to end. putup identified a condition by the node it made each time it evaluated the statement, so a file that included itself under such a condition was a new context at every level and putup read it until it crashed, in either branch. A condition is now the conditional statement, by file and line, with the branch; a context is the set of those. Under its own condition a file is read once more, as upstream reads it when the branch is taken, and upstream reads it again after that without end unless the file's text stops it. Where the file's text stops it after more than one further reading, putup lacks the later readings. A rule in the further reading declares the output of the first reading again, which putup reports as a conflict (COMPATIBILITY.md, "Includes and Conditionals"). A file with k such statements is read once for each set of them, so the readings grow as 2^k. All of this holds for a branch the configuration takes; REQ-EVAL-INCLUDE-RETURN-UNTAKEN covers the other branch
 - discharge: test "Scenario: A chain of includes that returns to a file being read ends"
 
 Where an `include` sits under conditions that differ from those of an earlier `include` of the
 same file only by a repeat of a conditional statement and branch, putup shall skip the file as
 already included.
+
+### REQ-EVAL-INCLUDE-RETURN-UNTAKEN
+
+- conformance: deliberate-deviation
+- reference: upstream does not reach an `include` in a branch it does not take (`src/tup/parser.c`, the `if` handling in `parse_tupfile`). putup parses that branch to declare its rules, and by REQ-EVAL-INCLUDE-CONTEXT-BY-STATEMENT alone it read a file once for each set of its conditional includes of itself (2^k readings for k statements), and it followed an include through a symlink to the file's own directory until the OS refused the path. An include that returns to a file being read is one that upstream can repeat without end if the configuration takes the branch, and putup lets one reading stand for it. The file is identified by its real directory and its spelled name: a symlinked directory names the same reading, a symlinked file in another directory does not, because the directory sets `TUP_CWD`. The cost: later statements in that branch expand with the variables of one reading, where a taken branch has those of the further readings too, so the eager conflict check on that branch (COMPATIBILITY.md, "Includes and Conditionals") can miss a conflict or report one that no configuration has. Chains through several files still grow with the number of distinct paths among them
+- discharge: test "Scenario: An include of a file being read is not followed in a branch not taken"
+
+Where an `include` sits in a branch the configuration does not take and names a file that is being
+read, putup shall not read the file.
 
 ---
 

@@ -110,9 +110,10 @@ struct BuilderContext {
 
     Vec<std::pair<std::uint32_t, BangMacroDef>> macros = {}; ///< Sorted by interned name key
     GroupMemberTable groups = {};
-    SortedIdVec included_contexts = {}; ///< Interned (path, set of guards by conditional statement and polarity) keys
-    bool reading_tuprules = false;      ///< An include_rules statement is being carried out
-    SortedIdVec exported_vars = {};     ///< Interned environment variable names to export
+    SortedIdVec included_contexts = {};  ///< Interned (path, set of guards by conditional statement and polarity) keys
+    bool reading_tuprules = false;       ///< An include_rules statement is being carried out
+    Vec<StringId> files_being_read = {}; ///< The Tupfile and each include being read, as spelled, outermost first
+    SortedIdVec exported_vars = {};      ///< Interned environment variable names to export
 
     StringId current_dir = StringId::Empty;
     StringId current_file = StringId::Empty;
@@ -243,6 +244,9 @@ struct Builder {
 
     /// Config variable nodes (interned name StringId → NodeId)
     SortedPairVec config_var_nodes;
+
+    /// Reading identity of an include path (spelled path StringId → real directory joined with the spelled file name)
+    SortedPairVec reading_identities;
 
     /// Virtual $ directory for imported environment variables (like tup's env_dt)
     std::optional<NodeId> env_var_dir_id = {};
