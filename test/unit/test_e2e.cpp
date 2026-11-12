@@ -13491,6 +13491,34 @@ SCENARIO("A chain of includes that returns to a file being read ends", "[e2e][pa
     }
 }
 
+SCENARIO("One file included by two paths in turn is read by each path", "[e2e][parse]")
+{
+    GIVEN("a Tuprules.tup that a subdirectory links to, and a file included directly and through a directory symlink")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", "");
+        f.write_file("Tuprules.tup", "DIRS += $(TUP_CWD)\n");
+        f.write_file("a.tup", "V += a\n");
+        f.create_symlink(".", "d");
+        f.mkdir("sub");
+        f.create_symlink("../Tuprules.tup", "sub/Tuprules.tup");
+        f.write_file("sub/Tupfile", "include_rules\ninclude ../a.tup\ninclude ../d/a.tup\n: |> echo $(DIRS) $(V) > %o |> out.txt\n");
+
+        WHEN("the project is built")
+        {
+            auto result = f.pup({});
+
+            THEN("each path contributes")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("sub/out.txt") == ".. . a a\n");
+            }
+        }
+    }
+}
+
 SCENARIO("Sibling directory inputs work with incremental variant builds", "[e2e][incremental][variant]")
 {
     GIVEN("a variant build with sibling directory input")

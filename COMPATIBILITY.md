@@ -110,6 +110,9 @@ processed textually like tup: the losing branch does not exist.
 | Case | Tup | Putup |
 |------|-----|-------|
 | Same file included twice in the same context | Parses twice (duplicate rules fail) | Second include deduplicated |
+| One file included by two paths (a symlink) | Reads it by each path | Reads it by each path: the include-once set names a file by the path the `include` spells |
+| A file includes itself through a symlink to its directory, in a branch not taken | Does not reach the include | Fails with "Cannot open include file" when the OS refuses the path (32 levels on macOS) |
+| A file with many conditional includes of itself | Branches not taken: does not reach them | Reads the file once for each set of the conditions, in either branch; about 18 conditions exhaust memory ("bump region exhausted") |
 | A file includes itself under a config condition | Branch not taken: the include is not reached. Branch taken: parses the file again without end unless its text stops it | Either branch: reads the file once more under the condition, then deduplicates. A recursion that the file's text ends later than that loses the later readings; a rule in the file conflicts with itself |
 | Included in an inactive config branch, then unconditionally | Parses the active one | Both contexts processed; a same-output conflict is reported eagerly, even under configs where tup would parse only one copy |
 
