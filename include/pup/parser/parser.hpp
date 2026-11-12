@@ -17,12 +17,6 @@ struct ParseError {
     StringId message = StringId::Empty;
 };
 
-/// Parser options
-struct ParserOptions {
-    bool process_includes = true;
-    int max_include_depth = 100;
-};
-
 /// Result of parsing a Tupfile
 struct ParseResult {
     Tupfile tupfile;
@@ -39,8 +33,7 @@ struct ParseResult {
 [[nodiscard]]
 auto parse_tupfile(
     std::string_view source,
-    std::string_view filename,
-    ParserOptions opts = {}
+    std::string_view filename
 ) -> ParseResult;
 
 } // namespace pup::parser

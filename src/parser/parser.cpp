@@ -38,10 +38,7 @@ struct RuleBody {
 
 struct ParserState {
     Lexer lexer;
-    ParserOptions options;
     Vec<ParseError> errors;
-    Vec<StringId> included_files;
-    int include_depth = 0;
 
     Token current;
     Token previous;
@@ -995,12 +992,10 @@ auto parse_command(ParserState& s, std::optional<Expression>& display) -> Result
 
 auto parse_tupfile(
     std::string_view source,
-    std::string_view filename,
-    ParserOptions opts
+    std::string_view filename
 ) -> ParseResult
 {
     auto s = ParserState { source, filename };
-    s.options = opts;
     advance(s); // Prime the parser with first token
 
     auto tupfile = Tupfile {};

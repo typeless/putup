@@ -205,7 +205,7 @@ Error codes are categorized:
 |----------|----------|
 | General | InvalidArgument, NotFound, IoError |
 | Index | IndexChecksumMismatch, IndexDamaged, IndexVersionMismatch |
-| Parser | ParseError, UnterminatedString, CircularInclude |
+| Parser | ParseError, UnterminatedString, IncludeNotFound |
 | Graph | CyclicDependency, UnknownMacro |
 | Exec | CommandFailed, MissingInput |
 
@@ -411,7 +411,7 @@ struct ParseResult {
     Vec<ParseError> errors;
 };
 
-auto parse_tupfile(std::string_view source, std::string_view filename, ParserOptions opts = {}) -> ParseResult;
+auto parse_tupfile(std::string_view source, std::string_view filename) -> ParseResult;
 ```
 
 ### Evaluator

@@ -214,7 +214,6 @@ struct Statement final : AstNode {
 struct Tupfile final : AstNode {
     StringId filename = StringId::Empty;
     Vec<std::unique_ptr<Statement>> statements;
-    Vec<StringId> included_files;
 };
 
 } // namespace pup::parser

@@ -35,7 +35,6 @@ enum class ErrorCode {
     LexerError,
     UnexpectedToken,
     UnterminatedString,
-    CircularInclude,
     IncludeNotFound,
     InvalidVariableRef,
     InvalidPattern,
