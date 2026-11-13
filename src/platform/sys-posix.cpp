@@ -6,6 +6,7 @@
 #ifndef _WIN32
 
 #    include <cerrno>
+#    include <climits>
 #    include <csignal>
 #    include <cstdint>
 #    include <cstdio>
@@ -173,6 +174,20 @@ auto getcwd(char* buf, std::size_t n) -> std::int64_t
 auto chdir(char const* path) -> int
 {
     return or_errno(::chdir(path));
+}
+
+auto realpath(char const* path, char (&out)[path_max]) -> std::int64_t
+{
+    char resolved[PATH_MAX];
+    if (::realpath(path, resolved) == nullptr) {
+        return err();
+    }
+    auto const len = std::strlen(resolved);
+    if (len >= path_max) {
+        return -ENAMETOOLONG;
+    }
+    std::memcpy(out, resolved, len + 1);
+    return static_cast<std::int64_t>(len);
 }
 
 auto open_dir(char const* path, Dir& d) -> int

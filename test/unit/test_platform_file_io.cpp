@@ -679,6 +679,39 @@ SCENARIO("canonical resolves a symlinked prefix before cancelling what follows i
 }
 #endif
 
+SCENARIO("canonical spells an existing path the way its directory entries do", "[platform][file_io][canonical]")
+{
+    GIVEN("a file whose names mix letter case, on a volume that ignores letter case")
+    {
+        auto dir = TempDir { "canonical_case" };
+        dir.write("Mixed/Name.txt", "x");
+        if (!std::filesystem::exists(dir.path() / "MIXED" / "NAME.TXT")) {
+            SKIP("this volume distinguishes letter case");
+        }
+        auto const as_stored = pup::platform::canonical((dir.path() / "Mixed" / "Name.txt").string());
+        REQUIRE(as_stored.has_value());
+
+        WHEN("the path is spelled in another letter case")
+        {
+            auto const existing = pup::platform::canonical((dir.path() / "MIXED" / "NAME.TXT").string());
+            auto const absent_tail = pup::platform::canonical((dir.path() / "MIXED" / "Absent.txt").string());
+
+            THEN("the result is the stored spelling")
+            {
+                REQUIRE(existing.has_value());
+                REQUIRE(pup::global_pool().get(*existing) == pup::global_pool().get(*as_stored));
+                REQUIRE(pup::global_pool().get(*existing).ends_with("/Mixed/Name.txt"));
+            }
+
+            THEN("a name that does not exist keeps its spelling after the stored spelling of its directory")
+            {
+                REQUIRE(absent_tail.has_value());
+                REQUIRE(pup::global_pool().get(*absent_tail).ends_with("/Mixed/Absent.txt"));
+            }
+        }
+    }
+}
+
 TEST_CASE("canonical resolves the existing prefix of a path that does not exist", "[platform][file_io][canonical]")
 {
     auto dir = TempDir { "canonical_prefix" };

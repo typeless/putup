@@ -96,6 +96,8 @@ auto current_directory() -> Result<StringId>;
 /// repeated or trailing separator) and `/`-separated, and for a path that exists it is physical --
 /// every symlink resolved. For a path that does not exist, the deepest existing prefix is resolved
 /// and the rest appended, so a file yet to be built is spelled the way its directory is (#314, #330).
+/// On Windows and macOS each name that exists takes the spelling its directory entry has, so a
+/// volume that ignores letter case still gives one result per file (#620).
 ///
 /// Not guaranteed the same everywhere: on Windows a `..` cancels the name before it, as the OS
 /// itself reads the path; on POSIX it cancels against the resolved target of a symlinked prefix.

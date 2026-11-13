@@ -11171,8 +11171,8 @@ SCENARIO("A tracked tool entry that names an output of a rule is refused", "[e2e
 
 SCENARIO("A tracked tool entry that reaches an output of a rule by another spelling is refused", "[e2e][incremental][envdep]")
 {
-    enum class Spelling { Absolute, Symlink, BareNameOnPath, OutOfTheRootAndBack };
-    auto const spelling = GENERATE(Spelling::Absolute, Spelling::Symlink, Spelling::BareNameOnPath, Spelling::OutOfTheRootAndBack);
+    enum class Spelling { Absolute, Symlink, BareNameOnPath, OutOfTheRootAndBack, OtherLetterCase };
+    auto const spelling = GENERATE(Spelling::Absolute, Spelling::Symlink, Spelling::BareNameOnPath, Spelling::OutOfTheRootAndBack, Spelling::OtherLetterCase);
 
     GIVEN("a project whose config reaches a generated file by that spelling")
     {
@@ -11194,6 +11194,12 @@ SCENARIO("A tracked tool entry that reaches an output of a rule by another spell
             break;
         case Spelling::OutOfTheRootAndBack:
             entry = "../" + f.workdir().filename().string() + "/build/gen.sh";
+            break;
+        case Spelling::OtherLetterCase:
+            if (!std::filesystem::exists(f.workdir() / "BUILD")) {
+                SKIP("this volume distinguishes letter case");
+            }
+            entry = "./BUILD/gen.sh";
             break;
         }
         f.write_file("build/tup.config", "CONFIG_TRACKED_TOOLS=" + entry + "\n");
