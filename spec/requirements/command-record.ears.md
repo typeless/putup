@@ -880,3 +880,15 @@ characters as one separator between two names.
 
 Where an entry of `CONFIG_TRACKED_TOOLS` resolves to nothing at its path, putup shall print exactly
 one warning that quotes that entry, and shall print no such warning for the first word of a command.
+
+### REQ-ENV-TRACKED-TOOLS-GENERATED
+
+- leg: invariant
+- conformance: putup-only
+- discharge: test "Scenario: A tracked tool entry that names an output of a rule is refused"
+- discharge: test "Scenario: A tracked tool entry that reaches an output of a rule by another spelling is refused"
+- discharge: test "Scenario: A tracked source file that shares its path with an output in the build tree is accepted"
+
+Where the physical path that an entry of `CONFIG_TRACKED_TOOLS` resolves to at parse time is an
+output of a rule, putup shall end every command that parses the Tupfiles other than `configure`
+with an error that quotes that entry.

@@ -11131,6 +11131,115 @@ SCENARIO("A command whose first word has no file is not reported", "[e2e][increm
     }
 }
 
+SCENARIO("A tracked tool entry that names an output of a rule is refused", "[e2e][incremental]")
+{
+    auto const entry = GENERATE(as<std::string> {}, "./build/gen.sh", "build/gen.sh", "./build/../build/gen.sh");
+
+    GIVEN("a project whose config tracks a file that one of its rules generates")
+    {
+        auto f = E2EFixture { "tracked_tools" };
+        f.mkdir("build");
+        f.write_file("Tupfile", ": |> printf 'echo gen' > %o |> gen.sh\n: gen.sh |> sh %f > %o |> out.txt\n");
+        f.write_file("build/tup.config", std::string { "CONFIG_TRACKED_TOOLS=" } + entry + "\n");
+
+        WHEN("the project is built")
+        {
+            auto result = f.build({ "-B", "build" });
+
+            THEN("the build fails and names the entry")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find(std::string { "CONFIG_TRACKED_TOOLS: '" } + entry + "' is an output of a rule") != std::string::npos);
+                REQUIRE_FALSE(f.exists("build/out.txt"));
+            }
+        }
+
+        WHEN("the project is configured")
+        {
+            auto result = f.pup({ "configure", "-B", "build" });
+
+            THEN("configure succeeds, so a config rule can replace the file that holds the entry")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+            }
+        }
+    }
+}
+
+SCENARIO("A tracked tool entry that reaches an output of a rule by another spelling is refused", "[e2e][incremental][envdep]")
+{
+    enum class Spelling { Absolute, Symlink, BareNameOnPath, OutOfTheRootAndBack };
+    auto const spelling = GENERATE(Spelling::Absolute, Spelling::Symlink, Spelling::BareNameOnPath, Spelling::OutOfTheRootAndBack);
+
+    GIVEN("a project whose config reaches a generated file by that spelling")
+    {
+        auto f = E2EFixture { "tracked_tools" };
+        f.mkdir("build");
+        f.write_file("Tupfile", ": |> printf 'echo gen' > %o |> gen.sh\n: gen.sh |> sh %f > %o |> out.txt\n");
+        auto const generated = (f.workdir() / "build" / "gen.sh").string();
+        auto entry = std::string {};
+        switch (spelling) {
+        case Spelling::Absolute:
+            entry = generated;
+            break;
+        case Spelling::Symlink:
+            f.create_symlink("build/gen.sh", "link.sh");
+            entry = "./link.sh";
+            break;
+        case Spelling::BareNameOnPath:
+            entry = "gen.sh";
+            break;
+        case Spelling::OutOfTheRootAndBack:
+            entry = "../" + f.workdir().filename().string() + "/build/gen.sh";
+            break;
+        }
+        f.write_file("build/tup.config", "CONFIG_TRACKED_TOOLS=" + entry + "\n");
+        auto const* inherited = std::getenv("PATH");
+        auto env = EnvGuard { "PATH", (f.workdir() / "build").string() + ":" + (inherited != nullptr ? inherited : "/usr/bin:/bin") };
+
+        WHEN("the generated file exists and the project is built")
+        {
+            f.write_file("build/gen.sh", "echo gen");
+            auto result = f.build({ "-B", "build" });
+
+            THEN("the build fails and names the entry")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("CONFIG_TRACKED_TOOLS: '" + entry + "' is an output of a rule") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("A tracked source file that shares its path with an output in the build tree is accepted", "[e2e][incremental]")
+{
+    GIVEN("a project that tracks a source file and generates a file of the same name in the build tree")
+    {
+        auto f = E2EFixture { "tracked_tools" };
+        f.mkdir("build");
+        f.write_file("Tupfile", ": |> printf x > %o |> tool.sh\n: |> sh tool.sh > %o |> out.txt\n");
+        f.write_file("build/tup.config", "CONFIG_TRACKED_TOOLS=./tool.sh\n");
+
+        WHEN("the project is built twice")
+        {
+            auto first = f.build({ "-B", "build" });
+            auto second = f.build({ "-B", "build" });
+
+            THEN("the first build succeeds and the second runs nothing")
+            {
+                INFO("stderr: " << first.stderr_output);
+                REQUIRE(first.success());
+                REQUIRE(second.is_noop());
+            }
+        }
+    }
+}
+
 SCENARIO("A PATH change that shadows a tracked tool re-runs its commands", "[e2e][incremental][envdep]")
 {
     GIVEN("a project whose config tracks a tool by a bare name found on PATH")

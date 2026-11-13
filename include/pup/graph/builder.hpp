@@ -224,6 +224,12 @@ struct InputInAbsentDir {
     SourcePosition location = {};         ///< Rule that wrote the input
 };
 
+/// A CONFIG_TRACKED_TOOLS entry and the file its fingerprint reads
+struct TrackedToolFile {
+    StringId written = StringId::Empty; ///< The entry as the config spells it
+    StringId path = StringId::Empty;    ///< The path the fingerprint stats, or would stat once the file exists
+};
+
 /// Per-session state that persists across multiple Tupfiles
 struct Builder {
     BuilderOptions options;
@@ -253,6 +259,10 @@ struct Builder {
 
     /// Synthetic Variable node holding the CONFIG_TRACKED_TOOLS fingerprint
     std::optional<NodeId> toolchain_node_id = {};
+
+    /// The file each CONFIG_TRACKED_TOOLS entry stands for, checked against the outputs of the
+    /// rules once every Tupfile is parsed
+    Vec<TrackedToolFile> tracked_tool_files;
 
     /// Imported environment variable nodes (interned name StringId → NodeId)
     SortedPairVec imported_env_var_nodes;
@@ -303,6 +313,15 @@ auto check_glob_stability(
 [[nodiscard]]
 auto check_input_dirs_provided(
     BuildGraph& build_state,
+    Builder const& state
+) -> Result<void>;
+
+/// Refuse a `CONFIG_TRACKED_TOOLS` entry that resolves to an output of a rule: the command that
+/// writes the file changes the fingerprint it depends on, so no build would be a no-op. Reads
+/// `options.output_root` as the canonical path the layout makes it.
+[[nodiscard]]
+auto check_tracked_tools_not_generated(
+    BuildGraph const& build_state,
     Builder const& state
 ) -> Result<void>;
 

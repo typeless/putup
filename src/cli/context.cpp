@@ -1118,6 +1118,13 @@ auto build_context(
         eprint("{}\n", line.view());
     }
 
+    if (!ctx_opts.root_config_only) {
+        auto tracked = graph::check_tracked_tools_not_generated(ctx.impl_->graph, builder_state);
+        if (!tracked) {
+            return unexpected<Error>(print_located(tracked.error()));
+        }
+    }
+
     if (ctx_opts.verbose) {
         vprint(ctx_opts.variant_name, "Parsed {} Tupfiles\n", ctx.impl_->state.parsed.size());
     }

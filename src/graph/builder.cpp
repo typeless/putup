@@ -549,7 +549,7 @@ auto ensure_env_var_node(BuilderContext& ctx, Builder& state, std::string_view v
 auto find_internal_var_node(Builder const& state, std::string_view name) -> std::optional<NodeId>;
 auto ensure_internal_var_node(BuilderContext& ctx, Builder& state, std::string_view name, std::string_view value)
     -> std::optional<NodeId>;
-auto append_tool_stat(Buf& out, std::string_view name, std::string_view source_root) -> bool;
+auto append_tool_stat(Buf& out, std::string_view name, std::string_view source_root) -> std::optional<StringId>;
 
 auto create_command_node(
     BuilderContext& ctx,
@@ -1610,8 +1610,8 @@ auto ensure_internal_var_node(BuilderContext& ctx, Builder& state, std::string_v
 /// Append "path:size:mtime" for a tracked tool, or "<missing>" if it cannot be
 /// resolved. Bare names resolve through PATH (the same PATH build commands get);
 /// names containing a separator resolve against the source root.
-/// @return Whether the name resolved to a file
-auto append_tool_stat(Buf& out, std::string_view name, std::string_view source_root) -> bool
+/// @return The path the name resolved to, or nullopt when it resolved to nothing
+auto append_tool_stat(Buf& out, std::string_view name, std::string_view source_root) -> std::optional<StringId>
 {
     auto stat_and_append = [&out](std::string_view path) -> bool {
         auto st = pup::platform::stat_file(path);
@@ -1640,7 +1640,7 @@ auto append_tool_stat(Buf& out, std::string_view name, std::string_view source_r
             ? name
             : global_pool().get(pup::path::join(source_root, name));
         if (stat_and_append(path)) {
-            return true;
+            return intern(path);
         }
     } else if (auto const* path_env = pup::platform::get_env("PATH")) {
         auto dirs = std::string_view { path_env };
@@ -1653,12 +1653,12 @@ auto append_tool_stat(Buf& out, std::string_view name, std::string_view source_r
             }
             auto candidate = global_pool().get(pup::path::join(dir, name));
             if (stat_and_append(candidate)) {
-                return true;
+                return intern(candidate);
             }
         }
     }
     out += "<missing>";
-    return false;
+    return std::nullopt;
 }
 
 auto process_export(
@@ -2880,10 +2880,19 @@ auto add_tupfile(
                 auto name = tracked.substr(start, end == std::string_view::npos ? end : end - start);
                 fingerprint += name;
                 fingerprint += '=';
-                if (!append_tool_stat(fingerprint, name, str(state.options.source_root))) {
+                auto const source_root = str(state.options.source_root);
+                if (auto const found = append_tool_stat(fingerprint, name, source_root)) {
+                    state.tracked_tool_files.push_back({ .written = intern(name), .path = *found });
+                } else {
                     auto warn = Buf {};
                     warn.fmt("CONFIG_TRACKED_TOOLS: no file found for '{}'", name);
                     state.warnings.push_back(warn.intern(global_pool()));
+                    if (name.find('/') != std::string_view::npos) {
+                        state.tracked_tool_files.push_back({
+                            .written = intern(name),
+                            .path = pup::path::is_absolute(name) ? intern(name) : pup::path::join(source_root, name),
+                        });
+                    }
                 }
                 fingerprint += ';';
                 start = tracked.find_first_not_of(whitespace, end);
@@ -3116,6 +3125,38 @@ auto check_input_dirs_provided(
         auto error = Error { ErrorCode::ParseError, err.view() };
         error.location = absent.location;
         return pup::unexpected<Error>(error);
+    }
+    return {};
+}
+
+auto check_tracked_tools_not_generated(
+    BuildGraph const& build_state,
+    Builder const& state
+) -> Result<void>
+{
+    auto const& g = build_state.graph;
+
+    auto under_output_root = Buf {};
+    under_output_root += str(state.options.output_root);
+    under_output_root += '/';
+
+    for (auto const& tool : state.tracked_tool_files) {
+        auto const physical = pup::platform::canonical(str(tool.path));
+        if (!physical || !str(*physical).starts_with(under_output_root.view())) {
+            continue;
+        }
+        auto const from_output_root = str(*physical).substr(under_output_root.view().size());
+        auto const path = g.paths.find_path(from_output_root, global_pool(), PathId::BuildRoot);
+        if (!path) {
+            continue;
+        }
+        auto const* node = g.path_to_node.find(to_underlying(*path));
+        auto const file = node ? find_file(g, NodeId { *node }) : std::nullopt;
+        if (file && get<NodeType>(g, *file) == NodeType::Generated) {
+            auto message = Buf {};
+            message.fmt("CONFIG_TRACKED_TOOLS: '{}' is an output of a rule; remove the entry, because a rule that reads the file as an input already runs again when it changes", str(tool.written));
+            return pup::unexpected<Error>(Error { ErrorCode::ParseError, message.view() });
+        }
     }
     return {};
 }
