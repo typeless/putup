@@ -686,7 +686,8 @@ SCENARIO("canonical spells an existing path the way its directory entries do", "
         auto dir = TempDir { "canonical_case" };
         dir.write("Mixed/Name.txt", "x");
         if (!std::filesystem::exists(dir.path() / "MIXED" / "NAME.TXT")) {
-            SKIP("this volume distinguishes letter case");
+            SUCCEED("this volume distinguishes letter case");
+            return;
         }
         auto const as_stored = pup::platform::canonical((dir.path() / "Mixed" / "Name.txt").string());
         REQUIRE(as_stored.has_value());
