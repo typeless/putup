@@ -5,6 +5,10 @@
 
 #include <cstddef>
 
+namespace tiled {
+class Pool;
+}
+
 namespace pup::mem {
 
 // Process-wide bump allocator backing the global operator new and the
@@ -29,5 +33,7 @@ auto relocate(void* target, void const* source, std::size_t bytes) -> void;
 auto record_copy(std::size_t bytes) -> void;
 
 auto copied_bytes() -> std::size_t;
+
+auto process_pool() -> tiled::Pool&;
 
 } // namespace pup::mem
