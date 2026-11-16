@@ -18,6 +18,15 @@ inline constexpr auto memory_layout = tiled::Layout {
     .heap_log2 = 34,
     .min_tile_log2 = 24,
 };
+#elif defined(__APPLE__)
+inline constexpr auto memory_layout = tiled::Layout {
+    .root_log2 = 47,
+    .image_nodes = { { 0, 33 }, { std::uint64_t { 1 } << 46, 46 } },
+    .base = std::uint64_t { 1 } << 45,
+    .pool_log2 = 40,
+    .heap_log2 = 34,
+    .min_tile_log2 = 24,
+};
 #else
 inline constexpr auto memory_layout = tiled::Layout {
     .root_log2 = 47,
