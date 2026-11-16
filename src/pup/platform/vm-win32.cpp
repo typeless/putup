@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2024 Putup authors
 
-#include "pup/platform/vm.hpp"
 #include "tiled/platform.hpp"
 
 #include <cstdio>
@@ -64,21 +63,3 @@ auto fatal(char const* message, std::size_t length) -> void
 }
 
 } // namespace tiled
-
-namespace pup::platform::vm {
-
-auto reserve(std::size_t bytes) -> void*
-{
-    return ::VirtualAlloc(nullptr, round_up_to_page(bytes), MEM_RESERVE, PAGE_NOACCESS);
-}
-
-auto release(void* base, std::size_t /*bytes*/) -> void
-{
-    // MEM_RELEASE requires the reservation base and size 0; subrange
-    // release is impossible on Win32 — hence the whole-reservation API.
-    if (::VirtualFree(base, 0, MEM_RELEASE) == 0) {
-        die("fatal: vm release");
-    }
-}
-
-} // namespace pup::platform::vm
