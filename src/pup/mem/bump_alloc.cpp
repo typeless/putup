@@ -5,12 +5,15 @@
 #include "pup/mem/bump_alloc.hpp"
 #include "pup/platform/env.hpp"
 #include "pup/platform/stream.hpp"
+#include "tiled/platform.hpp"
 #include "tiled/space_storage.hpp"
 #include "tiled/stack.hpp"
 #include "tiled/tile.hpp"
 
+#include <bit>
 #include <charconv>
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <new>
@@ -108,22 +111,93 @@ auto record_site(void* ra, std::size_t size) -> void
 }
 } // namespace
 
+namespace {
+
+constexpr auto SPILL_BYTES = std::size_t { 1 } << 16;
+constexpr auto HEAP_END = memory_layout.base + (std::uint64_t { 1 } << memory_layout.heap_log2);
+constexpr auto POOL_END = memory_layout.base + (std::uint64_t { 1 } << memory_layout.pool_log2);
+
+auto on_tile(void const* p) -> bool
+{
+    auto const address = reinterpret_cast<std::uintptr_t>(p);
+    return address >= HEAP_END && address < POOL_END;
+}
+
+auto tile_log2_for(std::size_t bytes) -> std::uint8_t
+{
+    auto const wanted = static_cast<std::uint8_t>(std::bit_width(bytes - 1));
+    return wanted > memory_layout.min_tile_log2 ? wanted : memory_layout.min_tile_log2;
+}
+
+auto round_up_to_page(std::size_t bytes) -> std::size_t
+{
+    auto const page = tiled::page_size();
+    return (bytes + page - 1) & ~(page - 1);
+}
+
+auto acquire_tile(std::size_t size) -> void*
+{
+    auto const offset = process_pool().acquire(tile_log2_for(size));
+    if (!offset) {
+        platform::write_to(platform::Stream::Err, "fatal: the pool has no free tile for a spilled allocation\n");
+        std::abort();
+    }
+    auto* const base = reinterpret_cast<char*>(memory_layout.base + *offset);
+    tiled::commit(base, round_up_to_page(size));
+    return base;
+}
+
+auto extend_tile(void* p, std::size_t old_size, std::size_t new_size) -> bool
+{
+    if (new_size > std::size_t { 1 } << tile_log2_for(old_size)) {
+        return false;
+    }
+    auto const committed = round_up_to_page(old_size);
+    auto const needed = round_up_to_page(new_size);
+    if (needed > committed) {
+        tiled::commit(static_cast<char*>(p) + committed, needed - committed);
+    }
+    return true;
+}
+
+auto release_tile(void* p, std::size_t size) -> void
+{
+    auto const log2 = tile_log2_for(size);
+    tiled::decommit(p, std::size_t { 1 } << log2);
+    if (!process_pool().release(reinterpret_cast<std::uintptr_t>(p) - memory_layout.base, log2)) {
+        platform::write_to(platform::Stream::Err, "fatal: the pool refused the release of a spilled allocation\n");
+        std::abort();
+    }
+}
+
+} // namespace
+
 auto bump_alloc(std::size_t size, std::size_t align) -> void*
 {
     static bool const stats_enabled = pup::platform::get_env("PUP_BUMP_STATS") != nullptr;
     if (stats_enabled) {
         record_site(__builtin_return_address(0), size);
     }
+    if (size >= SPILL_BYTES) {
+        return acquire_tile(size);
+    }
     return heap().push(size, align);
 }
 
 auto bump_try_extend(void* p, std::size_t old_size, std::size_t new_size) -> bool
 {
+    if (on_tile(p)) {
+        return extend_tile(p, old_size, new_size);
+    }
     return heap().extend_top(p, old_size, new_size);
 }
 
 auto bump_try_pop(void* p, std::size_t size) -> void
 {
+    if (on_tile(p)) {
+        release_tile(p, size);
+        return;
+    }
     heap().pop_top(p, size);
 }
 

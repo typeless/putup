@@ -50,6 +50,7 @@ public:
         if (this != &other) {
             destroy_range(data_, size_);
             if (capacity_ < other.size_) {
+                mem::bump_try_pop(data_, capacity_ * sizeof(T));
                 data_ = alloc(other.size_);
                 capacity_ = other.size_;
             }
@@ -372,6 +373,7 @@ private:
                 data_[i].~T();
             }
         }
+        mem::bump_try_pop(data_, capacity_ * sizeof(T));
         data_ = new_data;
         capacity_ = new_cap;
     }
