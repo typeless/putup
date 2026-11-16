@@ -24,8 +24,9 @@ auto largest_free(std::uint8_t node_value, int node_log2) -> int
 
 } // namespace
 
-Pool::Pool(std::uint8_t* metadata, std::uint8_t pool_log2, std::uint8_t min_log2)
+Pool::Pool(std::uint8_t* metadata, std::uint64_t base, std::uint8_t pool_log2, std::uint8_t min_log2)
     : metadata_(metadata)
+    , base_(base)
     , pool_log2_(pool_log2)
     , min_log2_(min_log2)
 {
@@ -33,19 +34,20 @@ Pool::Pool(std::uint8_t* metadata, std::uint8_t pool_log2, std::uint8_t min_log2
 
 Pool::Pool(Pool&& other) noexcept
     : metadata_(std::exchange(other.metadata_, nullptr))
+    , base_(other.base_)
     , pool_log2_(other.pool_log2_)
     , min_log2_(other.min_log2_)
 {
 }
 
-auto Pool::make(std::span<std::uint8_t> metadata, std::uint8_t pool_log2, std::uint8_t min_log2)
+auto Pool::make(std::span<std::uint8_t> metadata, std::uint64_t base, std::uint8_t pool_log2, std::uint8_t min_log2)
     -> std::optional<Pool>
 {
     if (pool_log2 >= 64 || min_log2 > pool_log2 || pool_log2 - min_log2 > MAX_DEPTH
-        || metadata.size() != metadata_bytes(pool_log2, min_log2)) {
+        || metadata.size() != metadata_bytes(pool_log2, min_log2) || base % (std::uint64_t { 1 } << pool_log2) != 0) {
         return std::nullopt;
     }
-    return Pool { metadata.data(), pool_log2, min_log2 };
+    return Pool { metadata.data(), base, pool_log2, min_log2 };
 }
 
 auto Pool::acquire(std::uint8_t size_log2) -> std::optional<std::uint64_t>

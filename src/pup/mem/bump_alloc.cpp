@@ -5,6 +5,7 @@
 #include "pup/platform/env.hpp"
 #include "pup/platform/stream.hpp"
 #include "pup/platform/vm.hpp"
+#include "tiled/platform.hpp"
 
 #include <charconv>
 #include <cstdlib>
@@ -116,7 +117,6 @@ auto bump_alloc(std::size_t size, std::size_t align) -> void*
     if (stats_enabled) {
         record_site(__builtin_return_address(0), size);
     }
-    namespace vm = platform::vm;
 
     if (!base) {
         reserve_backing();
@@ -129,9 +129,9 @@ auto bump_alloc(std::size_t size, std::size_t align) -> void*
         std::abort();
     }
     if (end > committed) {
-        auto const page = vm::page_size();
+        auto const page = tiled::page_size();
         auto const new_committed = (end + page - 1) & ~(page - 1);
-        vm::commit(base + committed, new_committed - committed);
+        tiled::commit(base + committed, new_committed - committed);
         committed = new_committed;
     }
     used = end;
@@ -143,15 +143,14 @@ auto bump_try_extend(void* p, std::size_t old_size, std::size_t new_size) -> boo
     if (static_cast<char*>(p) + old_size != base + used) {
         return false;
     }
-    namespace vm = platform::vm;
     auto const end = static_cast<std::size_t>(static_cast<char*>(p) - base) + new_size;
     if (end > reserved) {
         return false;
     }
     if (end > committed) {
-        auto const page = vm::page_size();
+        auto const page = tiled::page_size();
         auto const new_committed = (end + page - 1) & ~(page - 1);
-        vm::commit(base + committed, new_committed - committed);
+        tiled::commit(base + committed, new_committed - committed);
         committed = new_committed;
     }
     used = end;

@@ -336,6 +336,21 @@ auto reserve(std::size_t bytes) -> void*
     return map_result(raw(__NR_mmap, 0, static_cast<long>(bytes), PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0));
 }
 
+auto reserve_at(void* addr, std::size_t bytes) -> int
+{
+    constexpr auto fixed_noreplace = 0x100000;
+    auto r = raw(__NR_mmap, arg(addr), static_cast<long>(bytes), PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | fixed_noreplace, -1, 0);
+    auto* p = map_result(r);
+    if (p == nullptr) {
+        return static_cast<int>(r);
+    }
+    if (p != addr) {
+        raw(__NR_munmap, arg(p), static_cast<long>(bytes));
+        return -EEXIST;
+    }
+    return 0;
+}
+
 auto remap_none(void* addr, std::size_t bytes) -> int
 {
     auto r = raw(__NR_mmap, arg(addr), static_cast<long>(bytes), PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);

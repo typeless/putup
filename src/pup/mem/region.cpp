@@ -4,6 +4,7 @@
 #include "pup/mem/region.hpp"
 #include "pup/platform/stream.hpp"
 #include "pup/platform/vm.hpp"
+#include "tiled/platform.hpp"
 
 #include <charconv>
 #include <cstdlib>
@@ -17,7 +18,7 @@ namespace {
 
 auto round_up_to_page(std::size_t bytes) -> std::size_t
 {
-    auto const page = vm::page_size();
+    auto const page = tiled::page_size();
     return (bytes + page - 1) & ~(page - 1);
 }
 
@@ -88,7 +89,7 @@ auto Region::ensure(std::size_t bytes) -> void
         platform::write_to(platform::Stream::Err, " bytes)\n");
         std::abort();
     }
-    vm::commit(static_cast<char*>(base_) + committed_, new_committed - committed_);
+    tiled::commit(static_cast<char*>(base_) + committed_, new_committed - committed_);
     committed_ = new_committed;
 }
 
@@ -107,7 +108,7 @@ auto Region::shrink(std::size_t keep_bytes) -> void
     if (keep >= committed_) {
         return;
     }
-    vm::decommit(static_cast<char*>(base_) + keep, committed_ - keep);
+    tiled::decommit(static_cast<char*>(base_) + keep, committed_ - keep);
     committed_ = keep;
 }
 

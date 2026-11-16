@@ -53,36 +53,41 @@ TEST_CASE("Pool construction validates its geometry once", "[tiled][pool]")
 {
     auto metadata = std::vector<std::uint8_t>(Pool::metadata_bytes(POOL_LOG2, MIN_LOG2));
 
-    REQUIRE(Pool::make(metadata, POOL_LOG2, MIN_LOG2).has_value());
+    REQUIRE(Pool::make(metadata, 0, POOL_LOG2, MIN_LOG2).has_value());
 
     SECTION("metadata one byte short or long")
     {
-        REQUIRE_FALSE(Pool::make(std::span(metadata).first(metadata.size() - 1), POOL_LOG2, MIN_LOG2).has_value());
+        REQUIRE_FALSE(Pool::make(std::span(metadata).first(metadata.size() - 1), 0, POOL_LOG2, MIN_LOG2).has_value());
         auto longer = std::vector<std::uint8_t>(metadata.size() + 1);
-        REQUIRE_FALSE(Pool::make(longer, POOL_LOG2, MIN_LOG2).has_value());
+        REQUIRE_FALSE(Pool::make(longer, 0, POOL_LOG2, MIN_LOG2).has_value());
+    }
+    SECTION("base not aligned to the pool size")
+    {
+        REQUIRE_FALSE(Pool::make(metadata, block_bytes(POOL_LOG2) / 2, POOL_LOG2, MIN_LOG2).has_value());
+        REQUIRE(Pool::make(metadata, block_bytes(POOL_LOG2) * 3, POOL_LOG2, MIN_LOG2).has_value());
     }
     SECTION("leaf larger than the pool")
     {
         auto two = std::array<std::uint8_t, 2> {};
-        REQUIRE_FALSE(Pool::make(two, 3, 4).has_value());
-        REQUIRE_FALSE(Pool::make(std::span<std::uint8_t> {}, 3, 4).has_value());
+        REQUIRE_FALSE(Pool::make(two, 0, 3, 4).has_value());
+        REQUIRE_FALSE(Pool::make(std::span<std::uint8_t> {}, 0, 3, 4).has_value());
     }
     SECTION("pool of 2^64 bytes, with metadata of the size the formula gives")
     {
         REQUIRE(Pool::metadata_bytes(64, 58) == metadata.size());
-        REQUIRE_FALSE(Pool::make(metadata, 64, 58).has_value());
+        REQUIRE_FALSE(Pool::make(metadata, 0, 64, 58).has_value());
     }
     SECTION("depth whose node count does not fit in 64 bits")
     {
         REQUIRE(Pool::metadata_bytes(63, 0) == 0);
-        REQUIRE_FALSE(Pool::make(std::span<std::uint8_t> {}, 63, 0).has_value());
+        REQUIRE_FALSE(Pool::make(std::span<std::uint8_t> {}, 0, 63, 0).has_value());
     }
 }
 
 TEST_CASE("Pool hands out offset 0 first on zeroed metadata", "[tiled][pool]")
 {
     auto metadata = std::vector<std::uint8_t>(Pool::metadata_bytes(POOL_LOG2, MIN_LOG2));
-    auto pool = *Pool::make(metadata, POOL_LOG2, MIN_LOG2);
+    auto pool = *Pool::make(metadata, 0, POOL_LOG2, MIN_LOG2);
 
     for (auto log2 = MIN_LOG2; log2 <= POOL_LOG2; ++log2) {
         CAPTURE(log2);
@@ -94,7 +99,7 @@ TEST_CASE("Pool hands out offset 0 first on zeroed metadata", "[tiled][pool]")
 TEST_CASE("Pool refuses everything once the whole pool is taken", "[tiled][pool]")
 {
     auto metadata = std::vector<std::uint8_t>(Pool::metadata_bytes(POOL_LOG2, MIN_LOG2));
-    auto pool = *Pool::make(metadata, POOL_LOG2, MIN_LOG2);
+    auto pool = *Pool::make(metadata, 0, POOL_LOG2, MIN_LOG2);
 
     REQUIRE(pool.acquire(POOL_LOG2) == std::uint64_t { 0 });
     REQUIRE_FALSE(pool.acquire(MIN_LOG2).has_value());
@@ -105,7 +110,7 @@ TEST_CASE("Pool refuses everything once the whole pool is taken", "[tiled][pool]
 TEST_CASE("Pool with a single leaf", "[tiled][pool]")
 {
     auto metadata = std::array<std::uint8_t, 2> {};
-    auto pool = *Pool::make(metadata, MIN_LOG2, MIN_LOG2);
+    auto pool = *Pool::make(metadata, 0, MIN_LOG2, MIN_LOG2);
 
     REQUIRE(pool.acquire(MIN_LOG2) == std::uint64_t { 0 });
     REQUIRE_FALSE(pool.acquire(MIN_LOG2).has_value());
@@ -116,7 +121,7 @@ TEST_CASE("Pool with a single leaf", "[tiled][pool]")
 TEST_CASE("Pool fills a smaller free block before splitting a larger one", "[tiled][pool]")
 {
     auto metadata = std::vector<std::uint8_t>(Pool::metadata_bytes(POOL_LOG2, MIN_LOG2));
-    auto pool = *Pool::make(metadata, POOL_LOG2, MIN_LOG2);
+    auto pool = *Pool::make(metadata, 0, POOL_LOG2, MIN_LOG2);
     auto const half = static_cast<std::uint8_t>(POOL_LOG2 - 1);
     auto const quarter = static_cast<std::uint8_t>(POOL_LOG2 - 2);
 
@@ -131,7 +136,7 @@ TEST_CASE("Pool fills a smaller free block before splitting a larger one", "[til
 TEST_CASE("Pool refuses sizes outside its range", "[tiled][pool]")
 {
     auto metadata = std::vector<std::uint8_t>(Pool::metadata_bytes(POOL_LOG2, MIN_LOG2));
-    auto pool = *Pool::make(metadata, POOL_LOG2, MIN_LOG2);
+    auto pool = *Pool::make(metadata, 0, POOL_LOG2, MIN_LOG2);
 
     REQUIRE_FALSE(pool.acquire(MIN_LOG2 - 1).has_value());
     REQUIRE_FALSE(pool.acquire(POOL_LOG2 + 1).has_value());
@@ -140,7 +145,7 @@ TEST_CASE("Pool refuses sizes outside its range", "[tiled][pool]")
 TEST_CASE("Pool reports a release that does not name a live block", "[tiled][pool]")
 {
     auto metadata = std::vector<std::uint8_t>(Pool::metadata_bytes(POOL_LOG2, MIN_LOG2));
-    auto pool = *Pool::make(metadata, POOL_LOG2, MIN_LOG2);
+    auto pool = *Pool::make(metadata, 0, POOL_LOG2, MIN_LOG2);
     auto const a = *pool.acquire(6);
     auto const b = *pool.acquire(6);
 
@@ -181,7 +186,7 @@ TEST_CASE("Pool refuses a release below the leaf size without reading past its m
     auto const bytes = Pool::metadata_bytes(POOL_LOG2, MIN_LOG2);
     auto backing = std::vector<std::uint8_t>(2 * bytes, std::uint8_t { 0xFF });
     std::fill(backing.begin(), backing.begin() + static_cast<long>(bytes), std::uint8_t { 0 });
-    auto pool = *Pool::make(std::span(backing).first(bytes), POOL_LOG2, MIN_LOG2);
+    auto pool = *Pool::make(std::span(backing).first(bytes), 0, POOL_LOG2, MIN_LOG2);
 
     REQUIRE_FALSE(pool.release(0, MIN_LOG2 - 1));
 }
@@ -192,7 +197,7 @@ TEST_CASE("Pool agrees with a set of disjoint aligned blocks over random sequenc
         CAPTURE(seed);
         auto rng = std::mt19937 { seed };
         auto metadata = std::vector<std::uint8_t>(Pool::metadata_bytes(POOL_LOG2, MIN_LOG2));
-        auto pool = *Pool::make(metadata, POOL_LOG2, MIN_LOG2);
+        auto pool = *Pool::make(metadata, 0, POOL_LOG2, MIN_LOG2);
         auto live = std::map<std::uint64_t, std::uint8_t> {};
 
         for (auto step = 0; step < 400; ++step) {

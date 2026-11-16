@@ -229,6 +229,26 @@ auto reserve(std::size_t bytes) -> void*
     return p == MAP_FAILED ? nullptr : p;
 }
 
+auto reserve_at(void* addr, std::size_t bytes) -> int
+{
+    auto flags = MAP_PRIVATE | MAP_ANONYMOUS;
+#    ifdef MAP_NORESERVE
+    flags |= MAP_NORESERVE;
+#    endif
+#    ifdef MAP_FIXED_NOREPLACE
+    flags |= MAP_FIXED_NOREPLACE;
+#    endif
+    auto* p = ::mmap(addr, bytes, PROT_NONE, flags, -1, 0);
+    if (p == MAP_FAILED) {
+        return err();
+    }
+    if (p != addr) {
+        ::munmap(p, bytes);
+        return -EEXIST;
+    }
+    return 0;
+}
+
 auto remap_none(void* addr, std::size_t bytes) -> int
 {
     auto* p = ::mmap(addr, bytes, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
