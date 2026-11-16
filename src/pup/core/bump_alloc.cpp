@@ -21,6 +21,7 @@ char* base = nullptr;
 std::size_t reserved = 0;
 std::size_t committed = 0;
 std::size_t used = 0;
+std::size_t copied = 0;
 // NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
 
 constexpr auto INITIAL_RESERVE = std::size_t { 1 } << 32;
@@ -96,6 +97,9 @@ auto record_site(void* ra, std::size_t size) -> void
             write_to(Stream::Err, " net ");
             write_uint(used);
             write_to(Stream::Err, "\n");
+            write_to(Stream::Err, "copytotal ");
+            write_uint(copied_bytes());
+            write_to(Stream::Err, "\n");
         });
     }
 }
@@ -159,6 +163,16 @@ auto bump_try_pop(void* p, std::size_t size) -> void
 auto bump_allocated_bytes() -> std::size_t
 {
     return used;
+}
+
+auto record_copy(std::size_t bytes) -> void
+{
+    copied += bytes;
+}
+
+auto copied_bytes() -> std::size_t
+{
+    return copied;
 }
 
 } // namespace pup

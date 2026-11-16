@@ -63,6 +63,7 @@ test-srcs-y += test_path_utils.cpp
 test-srcs-y += test_platform_file_io.cpp
 test-srcs-y += test_platform_process.cpp
 test-srcs-y += test_platform_vm.cpp
+test-srcs-y += test_bump_alloc.cpp
 test-srcs-y += test_region.cpp
 test-srcs-y += test_robin_hood_index.cpp
 test-srcs-y += test_new_override.cpp

@@ -24,4 +24,8 @@ auto bump_try_pop(void* p, std::size_t size) -> void;
 
 auto bump_allocated_bytes() -> std::size_t;
 
+auto record_copy(std::size_t bytes) -> void;
+
+auto copied_bytes() -> std::size_t;
+
 } // namespace pup
