@@ -4,6 +4,8 @@
 #include "pup/core/arena.hpp"
 #include "pup/mem/bump_alloc.hpp"
 
+#include <bit>
+#include <cassert>
 #include <cstdint>
 #include <utility>
 
@@ -42,7 +44,7 @@ auto Arena32::slice(ArenaSlice s) const -> Span
     return { data() + s.offset, s.length };
 }
 
-// Every slice is born here and blocks are sized to the next power of two
+// Every slice is born here or in allocate, and blocks are sized to the next power of two
 // of the slice length, so a non-power-of-two length proves a spare slot
 // remains at the end of the block.
 auto Arena32::append_extend(ArenaSlice old, std::uint32_t new_value) -> ArenaSlice
@@ -60,6 +62,24 @@ auto Arena32::append_extend(ArenaSlice old, std::uint32_t new_value) -> ArenaSli
     data()[new_offset + old.length] = new_value;
     size_ += block;
     return ArenaSlice { new_offset, old.length + 1 };
+}
+
+auto Arena32::allocate(std::uint32_t length) -> ArenaSlice
+{
+    if (length == 0) {
+        return {};
+    }
+    auto const block = std::bit_ceil(length);
+    grow(size_ + block);
+    auto const offset = static_cast<std::uint32_t>(size_);
+    size_ += block;
+    return ArenaSlice { offset, length };
+}
+
+auto Arena32::write(ArenaSlice s, std::uint32_t i, std::uint32_t value) -> void
+{
+    assert(i < s.length);
+    data()[s.offset + i] = value;
 }
 
 auto Arena32::size() const -> std::size_t

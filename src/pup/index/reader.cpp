@@ -188,7 +188,7 @@ auto read_index(IndexFile const& f) -> Result<Index>
         if (!edge) {
             return pup::unexpected<Error>(edge.error());
         }
-        index.add_edge(*edge);
+        index.edges().push_back(*edge);
     }
 
     index.build_edge_indices();

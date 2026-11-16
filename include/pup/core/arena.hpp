@@ -52,6 +52,10 @@ public:
 
     auto append_extend(ArenaSlice old, std::uint32_t new_value) -> ArenaSlice;
 
+    auto allocate(std::uint32_t length) -> ArenaSlice;
+
+    auto write(ArenaSlice s, std::uint32_t i, std::uint32_t value) -> void;
+
     auto clear() -> void;
 
 private:
