@@ -83,6 +83,7 @@ auto read_dir(Dir& d, DirEntry& out) -> int;
 auto close_dir(Dir& d) -> int;
 
 auto reserve(std::size_t bytes) -> void*;
+auto reserve_at(void* addr, std::size_t bytes) -> int;
 auto remap_none(void* addr, std::size_t bytes) -> int;
 auto commit(void* addr, std::size_t bytes) -> int;
 auto map_file_ro(int fd, std::size_t bytes) -> void*;

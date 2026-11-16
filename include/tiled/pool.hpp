@@ -12,7 +12,7 @@ namespace tiled {
 class Pool final {
 public:
     [[nodiscard]]
-    static auto make(std::span<std::uint8_t> metadata, std::uint8_t pool_log2, std::uint8_t min_log2)
+    static auto make(std::span<std::uint8_t> metadata, std::uint64_t base, std::uint8_t pool_log2, std::uint8_t min_log2)
         -> std::optional<Pool>;
 
     [[nodiscard]]
@@ -34,11 +34,14 @@ public:
     ~Pool() = default;
 
 private:
-    Pool(std::uint8_t* metadata, std::uint8_t pool_log2, std::uint8_t min_log2);
+    friend class Tile;
+
+    Pool(std::uint8_t* metadata, std::uint64_t base, std::uint8_t pool_log2, std::uint8_t min_log2);
 
     auto recompute_ancestors(std::uint64_t node, int node_log2) -> void;
 
     std::uint8_t* metadata_;
+    std::uint64_t base_;
     std::uint8_t pool_log2_;
     std::uint8_t min_log2_;
 };

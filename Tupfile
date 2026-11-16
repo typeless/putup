@@ -61,7 +61,9 @@ srcs-y += src/pup/exec/scheduler.cpp
 
 # tiled
 srcs-y += src/tiled/pool.cpp
+srcs-y += src/tiled/stack.cpp
 srcs-y += src/tiled/stack_cursor.cpp
+srcs-y += src/tiled/tile.cpp
 
 # CLI
 srcs-y += src/pup/cli/cmd_build.cpp

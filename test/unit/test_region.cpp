@@ -3,7 +3,7 @@
 
 #include "catch_amalgamated.hpp"
 #include "pup/mem/region.hpp"
-#include "pup/platform/vm.hpp"
+#include "tiled/platform.hpp"
 
 #include <cstring>
 #include <utility>
@@ -23,7 +23,7 @@ TEST_CASE("Region empty state", "[region]")
 
 TEST_CASE("Region ensure", "[region]")
 {
-    auto const page = pup::platform::vm::page_size();
+    auto const page = tiled::page_size();
     auto r = Region {};
 
     SECTION("commits at least the requested bytes, page-rounded")
@@ -74,7 +74,7 @@ TEST_CASE("Region ensure", "[region]")
 
 TEST_CASE("Region shrink", "[region]")
 {
-    auto const page = pup::platform::vm::page_size();
+    auto const page = tiled::page_size();
     auto r = Region {};
 
     SECTION("decommits the tail and keeps the prefix intact")
@@ -117,7 +117,7 @@ TEST_CASE("Region shrink", "[region]")
 
 TEST_CASE("Region move semantics", "[region]")
 {
-    auto const page = pup::platform::vm::page_size();
+    auto const page = tiled::page_size();
 
     SECTION("move construction transfers ownership")
     {
@@ -149,7 +149,7 @@ TEST_CASE("Region move semantics", "[region]")
 
 TEST_CASE("Region custom reservation size", "[region]")
 {
-    auto const page = pup::platform::vm::page_size();
+    auto const page = tiled::page_size();
     auto r = Region { 16 * page };
     REQUIRE(r.reserved() == 0);
     r.ensure(16 * page);

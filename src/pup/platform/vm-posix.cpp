@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/platform/vm.hpp"
+#include "tiled/platform.hpp"
 
 #include "pup/platform/stream.hpp"
 #include "pup/platform/sys.hpp"
@@ -9,57 +10,74 @@
 #include <charconv>
 #include <cstdlib>
 
-namespace pup::platform::vm {
-
 namespace {
 
 auto round_up_to_page(std::size_t bytes) -> std::size_t
 {
-    auto const page = page_size();
+    auto const page = tiled::page_size();
     return (bytes + page - 1) & ~(page - 1);
 }
 
 [[noreturn]]
 auto die(char const* what, int rc) -> void
 {
+    using pup::platform::Stream;
     char buf[20];
     auto [end, ec] = std::to_chars(buf, buf + sizeof(buf), -rc);
-    write_to(Stream::Err, std::string_view { what });
-    write_to(Stream::Err, ": errno ");
-    write_to(Stream::Err, { buf, static_cast<std::size_t>(end - buf) });
-    write_to(Stream::Err, "\n");
+    pup::platform::write_to(Stream::Err, std::string_view { what });
+    pup::platform::write_to(Stream::Err, ": errno ");
+    pup::platform::write_to(Stream::Err, { buf, static_cast<std::size_t>(end - buf) });
+    pup::platform::write_to(Stream::Err, "\n");
     std::abort();
 }
 
 } // namespace
 
+namespace tiled {
+
 auto page_size() -> std::size_t
 {
-    return sys::page_size();
+    return pup::platform::sys::page_size();
 }
 
-auto reserve(std::size_t bytes) -> void*
+auto reserve_at(void* address, std::size_t bytes) -> bool
 {
-    return sys::reserve(round_up_to_page(bytes));
+    return pup::platform::sys::reserve_at(address, bytes) == 0;
 }
 
-auto commit(void* addr, std::size_t bytes) -> void
+auto commit(void* address, std::size_t bytes) -> void
 {
-    auto rc = sys::commit(addr, round_up_to_page(bytes));
+    auto rc = pup::platform::sys::commit(address, round_up_to_page(bytes));
     if (rc != 0) {
         die("fatal: vm commit", rc);
     }
 }
 
-auto decommit(void* addr, std::size_t bytes) -> void
+auto decommit(void* address, std::size_t bytes) -> void
 {
     // Remap with a fresh PROT_NONE anonymous mapping rather than madvise:
     // frees the pages and guarantees zero-fill on recommit with identical
     // semantics on Linux and macOS (MADV_DONTNEED differs between them).
-    auto rc = sys::remap_none(addr, round_up_to_page(bytes));
+    auto rc = pup::platform::sys::remap_none(address, round_up_to_page(bytes));
     if (rc != 0) {
         die("fatal: vm decommit", rc);
     }
+}
+
+auto fatal(char const* message, std::size_t length) -> void
+{
+    pup::platform::write_to(pup::platform::Stream::Err, std::string_view { message, length });
+    pup::platform::write_to(pup::platform::Stream::Err, "\n");
+    std::abort();
+}
+
+} // namespace tiled
+
+namespace pup::platform::vm {
+
+auto reserve(std::size_t bytes) -> void*
+{
+    return sys::reserve(round_up_to_page(bytes));
 }
 
 auto release(void* base, std::size_t bytes) -> void
