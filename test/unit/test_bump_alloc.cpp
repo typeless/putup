@@ -2,12 +2,37 @@
 // Copyright (c) 2026 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "pup/core/memory_layout.hpp"
 #include "pup/core/vec.hpp"
 #include "pup/mem/bump_alloc.hpp"
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
+
+namespace {
+
+auto in_heap_node(void const* p) -> bool
+{
+    auto const address = reinterpret_cast<std::uintptr_t>(p);
+    auto const base = pup::memory_layout.base;
+    return address >= base && address - base < (std::uint64_t { 1 } << pup::memory_layout.heap_log2);
+}
+
+} // namespace
+
+TEST_CASE("bump_alloc returns memory inside the declared heap node", "[bump]")
+{
+    REQUIRE(in_heap_node(pup::mem::bump_alloc(1, 1)));
+    REQUIRE(in_heap_node(pup::mem::bump_alloc(std::size_t { 1 } << 20, 64)));
+}
+
+TEST_CASE("bump_allocated_bytes is the offset of the heap's top", "[bump]")
+{
+    auto* const p = static_cast<std::byte*>(pup::mem::bump_alloc(24, 8));
+    auto const base = reinterpret_cast<std::byte*>(pup::memory_layout.base);
+    REQUIRE(pup::mem::bump_allocated_bytes() == static_cast<std::size_t>(p + 24 - base));
+}
 
 TEST_CASE("growing a Vec that is not on top of the heap counts its old bytes as copied", "[bump]")
 {
