@@ -21,6 +21,11 @@
 extern "C" auto main(int argc, char** argv) -> int;
 extern "C" void __cxa_finalize(void* dso); // NOLINT
 
+extern "C" {
+extern void (*__init_array_start[])(); // NOLINT — linker-provided bounds of .init_array
+extern void (*__init_array_end[])();   // NOLINT
+}
+
 namespace {
 
 auto sys3(long n, long a, long b, long c) -> long
@@ -55,11 +60,6 @@ struct AtexitEntry {
 AtexitEntry g_atexit[128];
 int g_atexit_count = 0;
 // NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
-
-extern "C" {
-extern void (*__init_array_start[])(); // NOLINT — linker-provided bounds of .init_array
-extern void (*__init_array_end[])();   // NOLINT
-}
 
 auto setup_tls(char** envp) -> void
 {
