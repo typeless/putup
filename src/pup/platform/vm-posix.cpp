@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2024 Putup authors
 
-#include "pup/platform/vm.hpp"
 #include "tiled/platform.hpp"
 
 #include "pup/platform/stream.hpp"
@@ -72,20 +71,3 @@ auto fatal(char const* message, std::size_t length) -> void
 }
 
 } // namespace tiled
-
-namespace pup::platform::vm {
-
-auto reserve(std::size_t bytes) -> void*
-{
-    return sys::reserve(round_up_to_page(bytes));
-}
-
-auto release(void* base, std::size_t bytes) -> void
-{
-    auto rc = sys::unmap(base, round_up_to_page(bytes));
-    if (rc != 0) {
-        die("fatal: vm release", rc);
-    }
-}
-
-} // namespace pup::platform::vm
