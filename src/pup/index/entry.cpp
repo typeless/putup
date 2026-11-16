@@ -19,6 +19,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <span>
 #include <string_view>
@@ -218,13 +219,28 @@ auto Index::build_edge_indices() -> void
     edges_from_index_.clear();
     edges_to_index_.clear();
 
+    constexpr auto UNPLACED = std::numeric_limits<std::uint32_t>::max();
+    auto const count = [](NodeIdArenaIndex& lists, NodeId node) {
+        auto const s = lists.get_slice(node);
+        lists.set_slice(node, ArenaSlice { UNPLACED, s.length + 1 });
+    };
+    for (auto const& edge : edges_) {
+        count(edges_from_index_, edge.from);
+        count(edges_to_index_, edge.to);
+    }
+    auto const place = [this](NodeIdArenaIndex& lists, NodeId node, std::uint32_t idx) {
+        auto s = lists.get_slice(node);
+        if (s.offset == UNPLACED) {
+            s = ArenaSlice { edge_arena_.allocate(s.length).offset, 0 };
+        }
+        auto const filled = ArenaSlice { s.offset, s.length + 1 };
+        edge_arena_.write(filled, s.length, idx);
+        lists.set_slice(node, filled);
+    };
     for (auto i = std::size_t { 0 }; i < edges_.size(); ++i) {
         auto const idx = static_cast<std::uint32_t>(i);
-        auto old_from = edges_from_index_.get_slice(edges_[i].from);
-        edges_from_index_.set_slice(edges_[i].from, edge_arena_.append_extend(old_from, idx));
-
-        auto old_to = edges_to_index_.get_slice(edges_[i].to);
-        edges_to_index_.set_slice(edges_[i].to, edge_arena_.append_extend(old_to, idx));
+        place(edges_from_index_, edges_[i].from, idx);
+        place(edges_to_index_, edges_[i].to, idx);
     }
 }
 

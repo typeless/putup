@@ -10,6 +10,7 @@
 #include "pup/core/global_pool.hpp"
 #include "pup/core/hash.hpp"
 #include "pup/core/buf.hpp"
+#include "pup/mem/bump_alloc.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/graph/dag.hpp"
 #include "pup/index/entry.hpp"
@@ -2456,4 +2457,42 @@ SCENARIO("A recorded command and a graph command expand a template the same way"
             }
         }
     }
+}
+
+TEST_CASE("Building edge indices relocates no edge list", "[index]")
+{
+    auto index = Index {};
+    for (auto from = NodeId { 1 }; from <= 50; ++from) {
+        for (auto to = NodeId { 1 }; to <= 37; ++to) {
+            index.edges().push_back(EdgeEntry { .from = from, .to = to + 100 });
+        }
+    }
+    auto const before = pup::mem::copied_bytes();
+
+    index.build_edge_indices();
+
+    REQUIRE(pup::mem::copied_bytes() == before);
+    REQUIRE(index.edges_from(7).size() == 37);
+    REQUIRE(index.edges_to(120).size() == 50);
+    REQUIRE(index.edges_to(120)[49]->from == 50);
+}
+
+TEST_CASE("An edge added after building the indices extends a bulk-built list", "[index]")
+{
+    auto index = Index {};
+    index.edges().push_back(EdgeEntry { .from = 1, .to = 10 });
+    index.edges().push_back(EdgeEntry { .from = 1, .to = 11 });
+    index.edges().push_back(EdgeEntry { .from = 1, .to = 12 });
+    index.edges().push_back(EdgeEntry { .from = 2, .to = 10 });
+    index.build_edge_indices();
+
+    index.add_edge(EdgeEntry { .from = 1, .to = 13 });
+    index.add_edge(EdgeEntry { .from = 2, .to = 13 });
+
+    auto const from_one = index.edges_from(1);
+    REQUIRE(from_one.size() == 4);
+    REQUIRE(from_one[3]->to == 13);
+    REQUIRE(index.edges_from(2).size() == 2);
+    REQUIRE(index.edges_to(10).size() == 2);
+    REQUIRE(index.edges_to(13).size() == 2);
 }
