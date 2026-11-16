@@ -27,6 +27,7 @@ SortedIdVec::SortedIdVec(SortedIdVec&& other) noexcept
 auto SortedIdVec::operator=(SortedIdVec&& other) noexcept -> SortedIdVec&
 {
     if (this != &other) {
+        mem::bump_try_pop(data_, capacity_ * sizeof(std::uint32_t));
         data_ = std::exchange(other.data_, nullptr);
         size_ = std::exchange(other.size_, 0);
         capacity_ = std::exchange(other.capacity_, 0);
@@ -40,6 +41,7 @@ auto SortedIdVec::grow() -> void
     if (!data_ || !mem::bump_try_extend(data_, capacity_ * sizeof(std::uint32_t), new_cap * sizeof(std::uint32_t))) {
         auto* p = static_cast<std::uint32_t*>(mem::bump_alloc(new_cap * sizeof(std::uint32_t), alignof(std::uint32_t)));
         mem::relocate(p, data_, size_ * sizeof(std::uint32_t));
+        mem::bump_try_pop(data_, capacity_ * sizeof(std::uint32_t));
         data_ = p;
     }
     capacity_ = new_cap;
@@ -143,6 +145,7 @@ SortedPairVec::SortedPairVec(SortedPairVec&& other) noexcept
 auto SortedPairVec::operator=(SortedPairVec&& other) noexcept -> SortedPairVec&
 {
     if (this != &other) {
+        mem::bump_try_pop(data_, capacity_ * sizeof(Pair));
         data_ = std::exchange(other.data_, nullptr);
         size_ = std::exchange(other.size_, 0);
         capacity_ = std::exchange(other.capacity_, 0);
@@ -156,6 +159,7 @@ auto SortedPairVec::grow() -> void
     if (!data_ || !mem::bump_try_extend(data_, capacity_ * sizeof(Pair), new_cap * sizeof(Pair))) {
         auto* p = static_cast<Pair*>(mem::bump_alloc(new_cap * sizeof(Pair), alignof(Pair)));
         mem::relocate(p, data_, size_ * sizeof(Pair));
+        mem::bump_try_pop(data_, capacity_ * sizeof(Pair));
         data_ = p;
     }
     capacity_ = new_cap;
