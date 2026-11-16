@@ -40,6 +40,7 @@ auto SortedIdVec::grow() -> void
     if (!data_ || !bump_try_extend(data_, capacity_ * sizeof(std::uint32_t), new_cap * sizeof(std::uint32_t))) {
         auto* p = static_cast<std::uint32_t*>(bump_alloc(new_cap * sizeof(std::uint32_t), alignof(std::uint32_t)));
         std::memcpy(p, data_, size_ * sizeof(std::uint32_t));
+        record_copy(size_ * sizeof(std::uint32_t));
         data_ = p;
     }
     capacity_ = new_cap;
@@ -156,6 +157,7 @@ auto SortedPairVec::grow() -> void
     if (!data_ || !bump_try_extend(data_, capacity_ * sizeof(Pair), new_cap * sizeof(Pair))) {
         auto* p = static_cast<Pair*>(bump_alloc(new_cap * sizeof(Pair), alignof(Pair)));
         std::memcpy(p, data_, size_ * sizeof(Pair));
+        record_copy(size_ * sizeof(Pair));
         data_ = p;
     }
     capacity_ = new_cap;

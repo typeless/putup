@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/core/buf.hpp"
+#include "pup/core/bump_alloc.hpp"
 #include "pup/core/format_to.hpp"
 #include "pup/core/region.hpp"
 #include "pup/core/string_id.hpp"
@@ -27,10 +28,12 @@ auto Buf::grow(std::size_t needed) -> void
         region_ = Region { new_cap > SPILL_RESERVE ? new_cap : SPILL_RESERVE };
         region_.ensure(new_cap);
         std::memcpy(region_.data(), buf_, size_);
+        record_copy(size_);
     } else if (new_cap > region_.reserved()) {
         auto bigger = Region { new_cap * 2 };
         bigger.ensure(new_cap);
         std::memcpy(bigger.data(), data_, size_);
+        record_copy(size_);
         region_ = std::move(bigger);
     } else {
         region_.ensure(new_cap);

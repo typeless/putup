@@ -363,6 +363,7 @@ private:
             return;
         }
         auto* new_data = alloc(new_cap);
+        record_copy(size_ * sizeof(T));
         if constexpr (std::is_trivially_copyable_v<T>) {
             std::memcpy(new_data, data_, size_ * sizeof(T));
         } else {
