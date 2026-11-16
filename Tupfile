@@ -59,6 +59,10 @@ srcs-y += src/pup/exec/progress_display.cpp
 srcs-y += src/pup/exec/runner.cpp
 srcs-y += src/pup/exec/scheduler.cpp
 
+# tiled
+srcs-y += src/tiled/pool.cpp
+srcs-y += src/tiled/stack_cursor.cpp
+
 # CLI
 srcs-y += src/pup/cli/cmd_build.cpp
 srcs-y += src/pup/cli/cmd_clean.cpp
