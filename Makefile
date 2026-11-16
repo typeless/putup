@@ -36,7 +36,7 @@ COVERAGE_REPORT := $(COVERAGE_DIR)/report
 GCC_MAJOR := $(shell g++ -dumpversion 2>/dev/null | cut -d. -f1)
 GCOV ?= $(shell command -v gcov-$(GCC_MAJOR) >/dev/null 2>&1 && echo gcov-$(GCC_MAJOR) || echo gcov)
 GCOVR ?= gcovr
-GCOVR_FLAGS := --root . --filter 'src/' --filter 'include/pup/' \
+GCOVR_FLAGS := --root . --filter 'src/' --filter 'include/pup/' --filter 'include/tiled/' \
 	--exclude-throw-branches --exclude-unreachable-branches \
 	--gcov-executable '$(GCOV)'
 
@@ -140,7 +140,7 @@ iwyu: compdb
 	uncompiled=$$(printf '%s\n' "$$sources" | grep -vxF "$$compiled"); \
 	if [ -n "$$uncompiled" ]; then echo "Not compiled on this host, so not checked:"; printf '  %s\n' $$uncompiled; fi; \
 	fail=0; \
-	for f in $$compiled $$(find include/pup test/unit -name '*.hpp' | sort); do \
+	for f in $$compiled $$(find include/pup include/tiled test/unit -name '*.hpp' | sort); do \
 		if ! out=$$($(CLANG_INCLUDE_CLEANER) -p . $(IWYU_FLAGS) --print=changes "$$f" 2>&1); then \
 			echo "$$f: $(CLANG_INCLUDE_CLEANER) could not analyze it:"; echo "$$out"; fail=1; continue; \
 		fi; \

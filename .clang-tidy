@@ -125,7 +125,7 @@ Checks: >
 
 WarningsAsErrors: ''
 
-HeaderFilterRegex: '(include/pup|src)/[a-zA-Z0-9_/]+\.(hpp|cpp|h)$'
+HeaderFilterRegex: '(include/pup|include/tiled|src)/[a-zA-Z0-9_/]+\.(hpp|cpp|h)$'
 
 FormatStyle: none
 
