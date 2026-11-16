@@ -3,7 +3,10 @@
 
 #pragma once
 
+#include "tiled/stack.hpp"
+
 #include <cstddef>
+#include <optional>
 
 namespace pup::mem {
 
@@ -16,7 +19,6 @@ public:
 
     Region() = default;
     explicit Region(std::size_t reserve_bytes);
-    ~Region();
 
     Region(Region const&) = delete;
     auto operator=(Region const&) -> Region& = delete;
@@ -37,9 +39,7 @@ public:
     auto reserved() const -> std::size_t;
 
 private:
-    void* base_ = nullptr;
-    std::size_t reserved_ = 0;
-    std::size_t committed_ = 0;
+    std::optional<tiled::Stack> stack_;
     std::size_t reserve_bytes_ = DEFAULT_RESERVE;
 };
 

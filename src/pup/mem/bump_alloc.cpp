@@ -148,4 +148,10 @@ auto copied_bytes() -> std::size_t
     return copied;
 }
 
+auto process_pool() -> tiled::Pool&
+{
+    heap();
+    return space.pool();
+}
+
 } // namespace pup::mem
