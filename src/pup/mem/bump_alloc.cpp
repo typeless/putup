@@ -1,15 +1,20 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2024 Putup authors
 
+#include "pup/core/memory_layout.hpp"
 #include "pup/mem/bump_alloc.hpp"
 #include "pup/platform/env.hpp"
 #include "pup/platform/stream.hpp"
-#include "pup/platform/vm.hpp"
-#include "tiled/platform.hpp"
+#include "tiled/space_storage.hpp"
+#include "tiled/stack.hpp"
+#include "tiled/tile.hpp"
 
 #include <charconv>
+#include <cstddef>
 #include <cstdlib>
 #include <cstring>
+#include <new>
+#include <type_traits>
 
 namespace pup::mem {
 
@@ -19,28 +24,20 @@ namespace pup::mem {
 namespace {
 
 // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables)
-char* base = nullptr;
-std::size_t reserved = 0;
-std::size_t committed = 0;
-std::size_t used = 0;
+constinit tiled::SpaceStorage<memory_layout> space;
+alignas(tiled::Stack) std::byte heap_storage[sizeof(tiled::Stack)];
+tiled::Stack* heap_stack = nullptr;
 std::size_t copied = 0;
 // NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
 
-constexpr auto INITIAL_RESERVE = std::size_t { 1 } << 32;
-constexpr auto MIN_RESERVE = std::size_t { 1 } << 24;
+static_assert(std::is_trivially_destructible_v<tiled::SpaceStorage<memory_layout>>);
 
-auto reserve_backing() -> void
+auto heap() -> tiled::Stack&
 {
-    namespace vm = platform::vm;
-    for (auto want = INITIAL_RESERVE; want >= MIN_RESERVE; want /= 2) {
-        if (auto* p = vm::reserve(want)) {
-            base = static_cast<char*>(p);
-            reserved = want;
-            return;
-        }
+    if (!heap_stack) {
+        heap_stack = new (heap_storage) tiled::Stack { tiled::Tile::acquire(space.pool(), memory_layout.heap_log2) };
     }
-    platform::write_to(platform::Stream::Err, "fatal: cannot reserve bump region\n");
-    std::abort();
+    return *heap_stack;
 }
 
 } // namespace
@@ -99,7 +96,7 @@ auto record_site(void* ra, std::size_t size) -> void
             platform::write_to(platform::Stream::Err, "bumptotal gross ");
             write_uint(gross);
             platform::write_to(platform::Stream::Err, " net ");
-            write_uint(used);
+            write_uint(bump_allocated_bytes());
             platform::write_to(platform::Stream::Err, " allocations ");
             write_uint(allocations);
             platform::write_to(platform::Stream::Err, "\n");
@@ -117,56 +114,22 @@ auto bump_alloc(std::size_t size, std::size_t align) -> void*
     if (stats_enabled) {
         record_site(__builtin_return_address(0), size);
     }
-
-    if (!base) {
-        reserve_backing();
-    }
-
-    auto const offset = (used + align - 1) & ~(align - 1);
-    auto const end = offset + size;
-    if (end > reserved) {
-        platform::write_to(platform::Stream::Err, "fatal: bump region exhausted\n");
-        std::abort();
-    }
-    if (end > committed) {
-        auto const page = tiled::page_size();
-        auto const new_committed = (end + page - 1) & ~(page - 1);
-        tiled::commit(base + committed, new_committed - committed);
-        committed = new_committed;
-    }
-    used = end;
-    return base + offset;
+    return heap().push(size, align);
 }
 
 auto bump_try_extend(void* p, std::size_t old_size, std::size_t new_size) -> bool
 {
-    if (static_cast<char*>(p) + old_size != base + used) {
-        return false;
-    }
-    auto const end = static_cast<std::size_t>(static_cast<char*>(p) - base) + new_size;
-    if (end > reserved) {
-        return false;
-    }
-    if (end > committed) {
-        auto const page = tiled::page_size();
-        auto const new_committed = (end + page - 1) & ~(page - 1);
-        tiled::commit(base + committed, new_committed - committed);
-        committed = new_committed;
-    }
-    used = end;
-    return true;
+    return heap().extend_top(p, old_size, new_size);
 }
 
 auto bump_try_pop(void* p, std::size_t size) -> void
 {
-    if (static_cast<char*>(p) + size == base + used) {
-        used = static_cast<std::size_t>(static_cast<char*>(p) - base);
-    }
+    heap().pop_top(p, size);
 }
 
 auto bump_allocated_bytes() -> std::size_t
 {
-    return used;
+    return heap().top();
 }
 
 auto relocate(void* target, void const* source, std::size_t bytes) -> void
