@@ -845,12 +845,13 @@ auto serialize_edges(
         if (!from || !to) {
             continue;
         }
-        index.add_edge(pup::index::EdgeEntry {
+        index.edges().push_back(pup::index::EdgeEntry {
             .from = *from,
             .to = *to,
             .type = edge.type,
         });
     }
+    index.build_edge_indices();
 }
 
 namespace {
@@ -952,7 +953,7 @@ auto process_implicit_deps(
             }
 
             if (ctx.added_edges.insert(dep_id, cmd_id)) {
-                ctx.index.add_edge(pup::index::EdgeEntry {
+                ctx.index.edges().push_back(pup::index::EdgeEntry {
                     .from = dep_id,
                     .to = cmd_id,
                     .type = pup::LinkType::Implicit,
@@ -960,6 +961,7 @@ auto process_implicit_deps(
             }
         }
     }
+    ctx.index.build_edge_indices();
 }
 
 /// How a set of commands is addressed for joining, in one place so that every join --
@@ -1176,13 +1178,14 @@ auto preserve_old_implicit_edges(
             : create_implicit_file(ctx, abs_path, old_file->path, old_file->type);
 
         if (ctx.added_edges.insert(new_from_id, new_to_id)) {
-            ctx.index.add_edge(pup::index::EdgeEntry {
+            ctx.index.edges().push_back(pup::index::EdgeEntry {
                 .from = new_from_id,
                 .to = new_to_id,
                 .type = pup::LinkType::Implicit,
             });
         }
     }
+    ctx.index.build_edge_indices();
 }
 
 auto contains_id(pup::Vec<pup::StringId> const& v, pup::StringId id) -> bool
@@ -1405,13 +1408,14 @@ auto merge_out_of_scope_commands(
             continue;
         }
         if (ctx.added_edges.insert(*from, *to)) {
-            ctx.index.add_edge(pup::index::EdgeEntry {
+            ctx.index.edges().push_back(pup::index::EdgeEntry {
                 .from = *from,
                 .to = *to,
                 .type = edge.type,
             });
         }
     }
+    ctx.index.build_edge_indices();
 }
 
 /// Walk index edges from a file to the commands that consume it, reporting each one's joined
