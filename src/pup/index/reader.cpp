@@ -460,10 +460,9 @@ auto index_verify_checksum(IndexFile const& f) -> bool
 
     auto computed = sha256(data.first(content_size));
 
-    auto footer_bytes = data.subspan(content_size, sizeof(RawFooter));
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    auto const* footer = reinterpret_cast<RawFooter const*>(footer_bytes.data());
-    return computed == footer->checksum;
+    auto footer = RawFooter {};
+    std::memcpy(&footer, data.subspan(content_size, sizeof(RawFooter)).data(), sizeof(RawFooter));
+    return computed == footer.checksum;
 }
 
 }
