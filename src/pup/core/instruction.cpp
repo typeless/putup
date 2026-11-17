@@ -4,8 +4,8 @@
 #include "pup/core/instruction.hpp"
 
 #include "pup/core/buf.hpp"
+#include "pup/core/function.hpp"
 #include "pup/core/global_pool.hpp"
-#include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
 
 #include <charconv>
@@ -116,12 +116,17 @@ auto is_unnumbered_flag(char letter) -> bool
 
 }
 
+InstructionBuilder::InstructionBuilder(Function<void(Atom)> const& emit)
+    : m_emit(&emit)
+{
+}
+
 auto InstructionBuilder::flush() -> void
 {
     if (m_pending.empty()) {
         return;
     }
-    m_atoms.push_back(Atom::literal(m_pending.intern(global_pool())));
+    (*m_emit)(Atom::literal(m_pending.intern(global_pool())));
     m_pending.clear();
 }
 
@@ -141,7 +146,7 @@ auto InstructionBuilder::literal(char c) -> void
 auto InstructionBuilder::flag(AtomKind kind) -> void
 {
     flush();
-    m_atoms.push_back(Atom::flag(kind));
+    (*m_emit)(Atom::flag(kind));
 }
 
 auto InstructionBuilder::nth(AtomKind kind, int operand) -> bool
@@ -150,71 +155,68 @@ auto InstructionBuilder::nth(AtomKind kind, int operand) -> bool
         return false;
     }
     flush();
-    m_atoms.push_back(Atom::nth(kind, static_cast<std::uint8_t>(operand)));
+    (*m_emit)(Atom::nth(kind, static_cast<std::uint8_t>(operand)));
     return true;
 }
 
 auto InstructionBuilder::group_ref(std::string_view name) -> void
 {
     flush();
-    m_atoms.push_back(Atom::group_ref(global_pool().intern(name)));
+    (*m_emit)(Atom::group_ref(global_pool().intern(name)));
 }
 
-auto InstructionBuilder::take() -> Instruction
+auto InstructionBuilder::finish() -> void
 {
     flush();
-    return std::move(m_atoms);
 }
 
-auto render_instruction(Instruction const& atoms) -> StringId
+auto render_atom(Buf& buf, Atom atom) -> void
 {
-    auto buf = Buf {};
-    for (auto const& atom : atoms) {
-        switch (atom.kind()) {
-        case AtomKind::Literal: {
-            auto const text = global_pool().get(atom.text());
-            for (auto const c : text) {
-                if (c == '%') {
-                    buf.append('%');
-                }
-                buf.append(c);
+    switch (atom.kind()) {
+    case AtomKind::Literal: {
+        auto const text = global_pool().get(atom.text());
+        for (auto const c : text) {
+            if (c == '%') {
+                buf.append('%');
             }
-            break;
+            buf.append(c);
         }
-        case AtomKind::GroupRef:
-            buf.append("%<");
-            buf.append(global_pool().get(atom.text()));
-            buf.append('>');
-            break;
-        case AtomKind::AllInputs:
-        case AtomKind::OrderOnlyInputs:
-        case AtomKind::InputBase:
-        case AtomKind::InputNoExt:
-        case AtomKind::InputExt:
-        case AtomKind::AllOutputs:
-        case AtomKind::OutputNoExt:
-        case AtomKind::InputDir:
-        case AtomKind::NthInput:
-        case AtomKind::NthInputBase:
-        case AtomKind::NthInputNoExt:
-        case AtomKind::NthOrderOnlyInput:
-        case AtomKind::NthOutput:
-            buf.append('%');
-            if (is_nth(atom.kind())) {
-                auto digits = Buf {};
-                digits.fmt("{}", static_cast<int>(atom.operand()));
-                buf.append(digits.view());
-            }
-            buf.append(letter_of(atom.kind()));
-            break;
-        }
+        break;
     }
-    return buf.intern(global_pool());
+    case AtomKind::GroupRef:
+        buf.append("%<");
+        buf.append(global_pool().get(atom.text()));
+        buf.append('>');
+        break;
+    case AtomKind::AllInputs:
+    case AtomKind::OrderOnlyInputs:
+    case AtomKind::InputBase:
+    case AtomKind::InputNoExt:
+    case AtomKind::InputExt:
+    case AtomKind::AllOutputs:
+    case AtomKind::OutputNoExt:
+    case AtomKind::InputDir:
+    case AtomKind::NthInput:
+    case AtomKind::NthInputBase:
+    case AtomKind::NthInputNoExt:
+    case AtomKind::NthOrderOnlyInput:
+    case AtomKind::NthOutput:
+        buf.append('%');
+        if (is_nth(atom.kind())) {
+            auto digits = Buf {};
+            digits.fmt("{}", static_cast<int>(atom.operand()));
+            buf.append(digits.view());
+        }
+        buf.append(letter_of(atom.kind()));
+        break;
+    }
 }
 
 auto parse_instruction(std::string_view text) -> Result<Instruction>
 {
-    auto builder = InstructionBuilder {};
+    auto atoms = Instruction {};
+    auto const collect = Function<void(Atom)> { [&atoms](Atom atom) { atoms.push_back(atom); } };
+    auto builder = InstructionBuilder { collect };
     auto pos = std::size_t { 0 };
 
     while (pos < text.size()) {
@@ -286,7 +288,8 @@ auto parse_instruction(std::string_view text) -> Result<Instruction>
         builder.literal(flag);
     }
 
-    return builder.take();
+    builder.finish();
+    return atoms;
 }
 
 }

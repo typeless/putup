@@ -703,11 +703,11 @@ auto Scheduler::build_job_list(
         // and every job would pay for it twice.
         auto display_id = graph::get<graph::Display>(g, id);
 
-        auto const& exported_raw = graph::view<graph::ExportedVars>(g, id);
+        auto const exported = graph::view<graph::ExportedVars>(g, id);
         auto exported_ids = Vec<StringId> {};
-        exported_ids.reserve(exported_raw.size());
-        for (auto raw_id : exported_raw) {
-            exported_ids.push_back(make_string_id(raw_id));
+        exported_ids.reserve(exported.size());
+        for (auto const var : exported) {
+            exported_ids.push_back(var);
         }
 
         auto job = BuildJob {

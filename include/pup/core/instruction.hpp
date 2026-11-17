@@ -4,6 +4,7 @@
 #pragma once
 
 #include "pup/core/buf.hpp"
+#include "pup/core/function.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/string_id.hpp"
@@ -73,6 +74,8 @@ private:
 
     AtomKind m_kind;
     std::uint8_t m_operand;
+    [[maybe_unused]]
+    std::uint16_t m_reserved {};
     StringId m_text;
 };
 
@@ -84,23 +87,35 @@ using Instruction = Vec<Atom>;
 /// closing '>', so it never spells one; render_instruction relies on that to round-trip.
 class InstructionBuilder final {
 public:
+    explicit InstructionBuilder(Function<void(Atom)> const& emit);
+
     auto literal(std::string_view text) -> void;
     auto literal(char c) -> void;
     auto flag(AtomKind kind) -> void;
     auto nth(AtomKind kind, int operand) -> bool;
     auto group_ref(std::string_view name) -> void;
-    auto take() -> Instruction;
+    auto finish() -> void;
 
 private:
     auto flush() -> void;
 
+    Function<void(Atom)> const* m_emit;
     Buf m_pending {};
-    Instruction m_atoms {};
 };
+
+auto render_atom(Buf& buf, Atom atom) -> void;
 
 /// Renders atoms back to the v24 template spelling. A literal's own '%' is escaped,
 /// so rendered text re-parses to the same atoms.
-auto render_instruction(Instruction const& atoms) -> StringId;
+template<typename Atoms>
+auto render_instruction(Atoms const& atoms) -> StringId
+{
+    auto buf = Buf {};
+    for (auto const atom : atoms) {
+        render_atom(buf, atom);
+    }
+    return buf.intern(global_pool());
+}
 
 /// The inverse of render_instruction: reads a recorded template back into atoms so a
 /// recorded command expands through the same funnel a parsed one does. Refuses the
@@ -108,57 +123,63 @@ auto render_instruction(Instruction const& atoms) -> StringId;
 auto parse_instruction(std::string_view text) -> Result<Instruction>;
 
 template<typename Site>
-auto fold_instruction(Instruction const& atoms, Site const& site) -> StringId
+auto fold_atom(Buf& buf, Atom atom, Site const& site) -> void
+{
+    switch (atom.kind()) {
+    case AtomKind::Literal:
+        site.append_literal(buf, atom.text());
+        break;
+    case AtomKind::GroupRef:
+        site.append_group_ref(buf, atom.text());
+        break;
+    case AtomKind::AllInputs:
+        site.append_all_inputs(buf);
+        break;
+    case AtomKind::OrderOnlyInputs:
+        site.append_order_only_inputs(buf);
+        break;
+    case AtomKind::InputBase:
+        site.append_input_base(buf);
+        break;
+    case AtomKind::InputNoExt:
+        site.append_input_noext(buf);
+        break;
+    case AtomKind::InputExt:
+        site.append_input_ext(buf);
+        break;
+    case AtomKind::AllOutputs:
+        site.append_all_outputs(buf);
+        break;
+    case AtomKind::OutputNoExt:
+        site.append_output_noext(buf);
+        break;
+    case AtomKind::InputDir:
+        site.append_input_dir(buf);
+        break;
+    case AtomKind::NthInput:
+        site.append_nth_input(buf, atom.operand());
+        break;
+    case AtomKind::NthInputBase:
+        site.append_nth_input_base(buf, atom.operand());
+        break;
+    case AtomKind::NthInputNoExt:
+        site.append_nth_input_noext(buf, atom.operand());
+        break;
+    case AtomKind::NthOrderOnlyInput:
+        site.append_nth_order_only_input(buf, atom.operand());
+        break;
+    case AtomKind::NthOutput:
+        site.append_nth_output(buf, atom.operand());
+        break;
+    }
+}
+
+template<typename Atoms, typename Site>
+auto fold_instruction(Atoms const& atoms, Site const& site) -> StringId
 {
     auto buf = Buf {};
-    for (auto const& atom : atoms) {
-        switch (atom.kind()) {
-        case AtomKind::Literal:
-            site.append_literal(buf, atom.text());
-            break;
-        case AtomKind::GroupRef:
-            site.append_group_ref(buf, atom.text());
-            break;
-        case AtomKind::AllInputs:
-            site.append_all_inputs(buf);
-            break;
-        case AtomKind::OrderOnlyInputs:
-            site.append_order_only_inputs(buf);
-            break;
-        case AtomKind::InputBase:
-            site.append_input_base(buf);
-            break;
-        case AtomKind::InputNoExt:
-            site.append_input_noext(buf);
-            break;
-        case AtomKind::InputExt:
-            site.append_input_ext(buf);
-            break;
-        case AtomKind::AllOutputs:
-            site.append_all_outputs(buf);
-            break;
-        case AtomKind::OutputNoExt:
-            site.append_output_noext(buf);
-            break;
-        case AtomKind::InputDir:
-            site.append_input_dir(buf);
-            break;
-        case AtomKind::NthInput:
-            site.append_nth_input(buf, atom.operand());
-            break;
-        case AtomKind::NthInputBase:
-            site.append_nth_input_base(buf, atom.operand());
-            break;
-        case AtomKind::NthInputNoExt:
-            site.append_nth_input_noext(buf, atom.operand());
-            break;
-        case AtomKind::NthOrderOnlyInput:
-            site.append_nth_order_only_input(buf, atom.operand());
-            break;
-        case AtomKind::NthOutput:
-            site.append_nth_output(buf, atom.operand());
-            break;
-        }
+    for (auto const atom : atoms) {
+        fold_atom(buf, atom, site);
     }
     return buf.intern(global_pool());
 }

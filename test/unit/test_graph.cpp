@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "command_fixture.hpp"
 #include "graph_support.hpp"
 #include "instruction_support.hpp"
 #include "pup/cli/config_commands.hpp"
@@ -20,7 +21,6 @@ using pup::NodeType;
 // White-box access for PathPool and interning tests (not part of public API)
 namespace pup::graph {
 auto get_file_node(Graph const& graph, NodeId id) -> FileNode const*;
-auto get_command_node(Graph const& graph, NodeId id) -> CommandNode const*;
 } // namespace pup::graph
 
 namespace {
@@ -186,7 +186,7 @@ TEST_CASE("BuildGraph basic operations", "[graph]")
     SECTION("add edges")
     {
         auto id1 = add_file_node(g, FileNode { .name = intern("foo.c") });
-        auto id2 = add_command_node(g, CommandNode { .instruction = pup::test::instruction("gcc foo.c") });
+        auto id2 = pup::test::add_command(g, pup::test::Command { .instruction = pup::test::instruction("gcc foo.c") });
         auto id3 = add_file_node(g, FileNode { .type = NodeType::Generated, .name = intern("foo.o") });
 
         REQUIRE(id1.has_value());
@@ -214,7 +214,7 @@ TEST_CASE("BuildGraph basic operations", "[graph]")
     {
         (void)add_file_node(g, FileNode { .name = intern("a.c") });
         (void)add_file_node(g, FileNode { .name = intern("b.c") });
-        (void)add_command_node(g, CommandNode { .instruction = pup::test::instruction("gcc") });
+        (void)pup::test::add_command(g, pup::test::Command { .instruction = pup::test::instruction("gcc") });
         (void)add_file_node(g, FileNode { .type = NodeType::Generated, .name = intern("out.o") });
 
         auto files = pup::test::files_of_type(g, NodeType::File);
@@ -226,6 +226,47 @@ TEST_CASE("BuildGraph basic operations", "[graph]")
         auto generated = pup::test::files_of_type(g, NodeType::Generated);
         REQUIRE(generated.size() == 1);
     }
+}
+
+TEST_CASE("Listing the commands of a graph with no command slots yields none", "[graph][record]")
+{
+    auto graph = Graph {};
+    CHECK(command_ids(graph).begin() == command_ids(graph).end());
+
+    graph.command_slots.clear();
+    auto const commands = command_ids(graph);
+
+    CHECK(commands.size() == 0);
+    CHECK(commands.begin() == commands.end());
+}
+
+TEST_CASE("A command whose build is dropped reads as no command node", "[graph][record]")
+{
+    auto bs = make_build_graph();
+    auto& g = bs.graph;
+    auto input = add_file_node(g, FileNode { .name = intern("in.c") });
+    REQUIRE(input.has_value());
+
+    auto opened = open_command(g, CommandHead { .display = intern("dropped") });
+    auto const dropped_id = opened.first;
+    {
+        auto const dropped = std::move(opened.second);
+    }
+
+    CHECK_FALSE(find_command(g, dropped_id).has_value());
+    CHECK(pup::test::commands_of(g).empty());
+    CHECK(node_count(g) == 2);
+    CHECK(add_edge(g, input->id(), dropped_id).has_value());
+
+    auto kept = pup::test::add_command(g, pup::test::Command { .display = intern("kept") });
+    REQUIRE(kept.has_value());
+    CHECK(kept->id() != dropped_id);
+
+    auto const commands = pup::test::commands_of(g);
+    REQUIRE(commands.size() == 1);
+    CHECK(commands[0] == *kept);
+    CHECK(sv(get<Display>(g, *kept)) == "kept");
+    CHECK_FALSE(find_command(g, dropped_id).has_value());
 }
 
 TEST_CASE("Topological sort", "[graph]")
@@ -347,27 +388,30 @@ TEST_CASE("BuildGraph node types", "[graph]")
         REQUIRE(in2.has_value());
         REQUIRE(out.has_value());
 
-        auto cmd = add_command_node(g, CommandNode {
+        auto cmd = pup::test::add_command(g, pup::test::Command {
             .instruction = pup::test::instruction("gcc -c %f -o %o"),
             .inputs = { in1->id(), in2->id() },
             .outputs = { out->id() },
         });
         REQUIRE(cmd.has_value());
 
-        auto const& inputs = view<Inputs>(g, *cmd);
+        auto const inputs = view<Inputs>(g, *cmd);
         REQUIRE(inputs.size() == 2);
-        CHECK(inputs[0] == in1->id());
-        CHECK(inputs[1] == in2->id());
+        CHECK(inputs[0].id == in1->id());
+        CHECK(inputs[0].token == 1);
+        CHECK(inputs[1].id == in2->id());
+        CHECK(inputs[1].token == 2);
 
-        auto const& outputs = view<Outputs>(g, *cmd);
+        auto const outputs = view<Outputs>(g, *cmd);
         REQUIRE(outputs.size() == 1);
-        CHECK(outputs[0] == out->id());
+        CHECK(outputs[0].id == out->id());
+        CHECK(outputs[0].token == 1);
     }
 
     SECTION("all node types")
     {
         auto file_id = add_file_node(g, FileNode { .name = intern("a.c") });
-        auto cmd_id = add_command_node(g, CommandNode { .instruction = pup::test::instruction("gcc") });
+        auto cmd_id = pup::test::add_command(g, pup::test::Command { .instruction = pup::test::instruction("gcc") });
         auto gen_id = add_file_node(g, FileNode { .type = NodeType::Generated, .name = intern("a.o") });
         auto dir_id = add_file_node(g, FileNode { .type = NodeType::Directory, .name = intern("src") });
         auto var_id = add_file_node(g, FileNode { .type = NodeType::Variable, .name = intern("CC") });
@@ -406,7 +450,7 @@ TEST_CASE("get<T> template accessor for unique-return-type properties", "[graph]
         .parent_dir = dir->id(),
         .content_hash = hash,
     });
-    auto cmd = add_command_node(g, CommandNode { .instruction = pup::test::instruction("gcc") });
+    auto cmd = pup::test::add_command(g, pup::test::Command { .instruction = pup::test::instruction("gcc") });
     REQUIRE(dir.has_value());
     REQUIRE(file.has_value());
     REQUIRE(cmd.has_value());
@@ -434,7 +478,7 @@ TEST_CASE("BuildGraph edge types", "[graph]")
     SECTION("order-only edges")
     {
         auto id1 = add_file_node(g, FileNode { .name = intern("header.h") });
-        auto id2 = add_command_node(g, CommandNode { .instruction = pup::test::instruction("gcc") });
+        auto id2 = pup::test::add_command(g, pup::test::Command { .instruction = pup::test::instruction("gcc") });
 
         REQUIRE(id1.has_value());
         REQUIRE(id2.has_value());
@@ -450,7 +494,7 @@ TEST_CASE("BuildGraph edge types", "[graph]")
     SECTION("group edges")
     {
         // Group edge: command -> group (command produces outputs in group)
-        auto cmd_id = add_command_node(g, CommandNode { .instruction = pup::test::instruction("gcc") });
+        auto cmd_id = pup::test::add_command(g, pup::test::Command { .instruction = pup::test::instruction("gcc") });
         auto out_id = add_file_node(g, FileNode { .type = NodeType::Generated, .name = intern("a.o") });
         auto group_id = add_file_node(g, FileNode { .type = NodeType::Group, .name = intern("{objs}") });
 
@@ -511,7 +555,7 @@ TEST_CASE("Order-only dependencies in topological sort", "[graph]")
 
     auto header_id = add_file_node(g, FileNode { .name = intern("header.h") });
     auto input_id = add_file_node(g, FileNode { .name = intern("input.c") });
-    auto cmd_id = add_command_node(g, CommandNode { .instruction = pup::test::instruction("gcc") });
+    auto cmd_id = pup::test::add_command(g, pup::test::Command { .instruction = pup::test::instruction("gcc") });
     auto output_id = add_file_node(g, FileNode { .type = NodeType::Generated, .name = intern("output.o") });
 
     REQUIRE(header_id.has_value());
@@ -583,7 +627,7 @@ TEST_CASE("Unified edge storage for order-only edges", "[graph]")
 
     auto group_id = add_file_node(g, FileNode { .type = NodeType::Group, .name = intern("<libs>") });
     auto input_id = add_file_node(g, FileNode { .name = intern("input.c") });
-    auto cmd_id = add_command_node(g, CommandNode { .instruction = pup::test::instruction("gcc") });
+    auto cmd_id = pup::test::add_command(g, pup::test::Command { .instruction = pup::test::instruction("gcc") });
     auto output_id = add_file_node(g, FileNode { .type = NodeType::Generated, .name = intern("output.o") });
 
     REQUIRE(group_id.has_value());
@@ -658,7 +702,7 @@ TEST_CASE("get_outputs excludes sticky edges", "[graph][regression]")
 
     auto tupfile_id = add_file_node(g, FileNode { .name = intern("Tupfile") });
     auto source_id = add_file_node(g, FileNode { .name = intern("source.c") });
-    auto cmd_id = add_command_node(g, CommandNode { .instruction = pup::test::instruction("gcc source.c") });
+    auto cmd_id = pup::test::add_command(g, pup::test::Command { .instruction = pup::test::instruction("gcc source.c") });
     auto output_id = add_file_node(g, FileNode { .type = NodeType::Generated, .name = intern("output.o") });
 
     (void)add_edge(g, source_id->id(), cmd_id->id(), LinkType::Normal);
@@ -689,7 +733,7 @@ TEST_CASE("Sticky edge API", "[graph]")
 
     auto tupfile_id = add_file_node(g, FileNode { .name = intern("Tupfile") });
     auto source_id = add_file_node(g, FileNode { .name = intern("source.c") });
-    auto cmd_id = add_command_node(g, CommandNode { .instruction = pup::test::instruction("gcc source.c") });
+    auto cmd_id = pup::test::add_command(g, pup::test::Command { .instruction = pup::test::instruction("gcc source.c") });
     auto output_id = add_file_node(g, FileNode { .type = NodeType::Generated, .name = intern("output.o") });
 
     (void)add_edge(g, source_id->id(), cmd_id->id(), LinkType::Normal);
@@ -729,7 +773,7 @@ TEST_CASE("Sticky edge API", "[graph]")
 
     SECTION("multiple sticky edges from same node")
     {
-        auto cmd2_id = add_command_node(g, CommandNode { .instruction = pup::test::instruction("gcc other.c") });
+        auto cmd2_id = pup::test::add_command(g, pup::test::Command { .instruction = pup::test::instruction("gcc other.c") });
         (void)add_edge(g, tupfile_id->id(), cmd2_id->id(), LinkType::Sticky);
 
         REQUIRE(edges_where(g, tupfile_id->id(), EdgeDirection::Forward, edge_mask::sticky).size() == 2);
@@ -738,7 +782,7 @@ TEST_CASE("Sticky edge API", "[graph]")
 
     SECTION("mixed edge types from same node")
     {
-        auto cmd2_id = add_command_node(g, CommandNode { .instruction = pup::test::instruction("lint source.c") });
+        auto cmd2_id = pup::test::add_command(g, pup::test::Command { .instruction = pup::test::instruction("lint source.c") });
         (void)add_edge(g, source_id->id(), cmd2_id->id(), LinkType::Sticky);
 
         auto source_outputs = get_outputs(g, source_id->id());
@@ -774,72 +818,63 @@ TEST_CASE("Template tracking via StringId deduplication", "[graph][template]")
     }
 }
 
-TEST_CASE("CommandNode stores an instruction", "[graph][instruction]")
+TEST_CASE("A command record stores an instruction", "[graph][instruction]")
 {
     auto bs = make_build_graph();
     auto& g = bs.graph;
 
     SECTION("command node with an instruction")
     {
-        auto node = CommandNode {
+        auto node = pup::test::Command {
             .display = intern("CC foo.o"),
             .instruction = pup::test::instruction("gcc -O2 -c -o %o %f"),
         };
-        auto cmd_id = add_command_node(g, std::move(node));
+        auto cmd_id = pup::test::add_command(g, node);
         REQUIRE(cmd_id.has_value());
 
-        auto const* cmd = get_command_node(g, cmd_id->id());
-        REQUIRE(cmd != nullptr);
-        REQUIRE(cmd->instruction.empty() == false);
+        REQUIRE(view<Atoms>(g, *cmd_id).size() != 0);
         REQUIRE(sv(get<InstructionPattern>(g, *cmd_id)) == "gcc -O2 -c -o %o %f");
     }
 
     SECTION("command node with literal instruction (no patterns)")
     {
-        auto node = CommandNode {
+        auto node = pup::test::Command {
             .instruction = pup::test::instruction("cp foo bar"),
         };
-        auto cmd_id = add_command_node(g, std::move(node));
+        auto cmd_id = pup::test::add_command(g, node);
         REQUIRE(cmd_id.has_value());
 
-        auto const* cmd = get_command_node(g, cmd_id->id());
-        REQUIRE(cmd != nullptr);
-        REQUIRE(cmd->instruction.empty() == false);
+        REQUIRE(view<Atoms>(g, *cmd_id).size() != 0);
         REQUIRE(sv(get<InstructionPattern>(g, *cmd_id)) == "cp foo bar");
         REQUIRE(sv(expand_instruction(g, *cmd_id)) == "cp foo bar");
     }
 
     SECTION("command node with no instruction")
     {
-        auto node = CommandNode {};
-        auto cmd_id = add_command_node(g, std::move(node));
+        auto node = pup::test::Command {};
+        auto cmd_id = pup::test::add_command(g, node);
         REQUIRE(cmd_id.has_value());
 
-        auto const* cmd = get_command_node(g, cmd_id->id());
-        REQUIRE(cmd != nullptr);
-        REQUIRE(cmd->instruction.empty());
+        REQUIRE(view<Atoms>(g, *cmd_id).size() == 0);
         REQUIRE(sv(get<InstructionPattern>(g, *cmd_id)).empty());
     }
 
     SECTION("multiple commands share same instruction")
     {
-        auto node1 = CommandNode {
+        auto node1 = pup::test::Command {
             .instruction = pup::test::instruction("gcc -c -o %o %f"),
         };
-        auto node2 = CommandNode {
+        auto node2 = pup::test::Command {
             .instruction = pup::test::instruction("gcc -c -o %o %f"),
         };
 
-        auto cmd1_id = add_command_node(g, std::move(node1));
-        auto cmd2_id = add_command_node(g, std::move(node2));
+        auto cmd1_id = pup::test::add_command(g, node1);
+        auto cmd2_id = pup::test::add_command(g, node2);
 
         REQUIRE(cmd1_id.has_value());
         REQUIRE(cmd2_id.has_value());
 
-        auto const* cmd1 = get_command_node(g, cmd1_id->id());
-        auto const* cmd2 = get_command_node(g, cmd2_id->id());
-
-        REQUIRE(render_instruction(cmd1->instruction) == render_instruction(cmd2->instruction));
+        REQUIRE(render_instruction(view<Atoms>(g, *cmd1_id)) == render_instruction(view<Atoms>(g, *cmd2_id)));
         REQUIRE(sv(get<InstructionPattern>(g, *cmd1_id)) == sv(get<InstructionPattern>(g, *cmd2_id)));
     }
 }
@@ -872,13 +907,13 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
 
     SECTION("%f and %o with source_dir")
     {
-        auto node = CommandNode {
+        auto node = pup::test::Command {
             .source_dir = intern("src"),
             .instruction = pup::test::instruction("gcc -c %f -o %o"),
             .inputs = { foo_c->id() },
             .outputs = { foo_o->id() },
         };
-        auto cmd_id = add_command_node(g, std::move(node));
+        auto cmd_id = pup::test::add_command(g, node);
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(g, *cmd_id);
@@ -887,13 +922,13 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
 
     SECTION("%f with multiple inputs")
     {
-        auto node = CommandNode {
+        auto node = pup::test::Command {
             .source_dir = intern("src"),
             .instruction = pup::test::instruction("gcc -c %f -o %o"),
             .inputs = { foo_c->id(), bar_c->id() },
             .outputs = { foo_o->id() },
         };
-        auto cmd_id = add_command_node(g, std::move(node));
+        auto cmd_id = pup::test::add_command(g, node);
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(g, *cmd_id);
@@ -909,13 +944,13 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
                                       });
         REQUIRE(bar_o.has_value());
 
-        auto node = CommandNode {
+        auto node = pup::test::Command {
             .source_dir = intern("src"),
             .instruction = pup::test::instruction("gen %f -o %o"),
             .inputs = { foo_c->id() },
             .outputs = { foo_o->id(), bar_o->id() },
         };
-        auto cmd_id = add_command_node(g, std::move(node));
+        auto cmd_id = pup::test::add_command(g, node);
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(g, *cmd_id);
@@ -924,12 +959,12 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
 
     SECTION("%b (basename of the one input)")
     {
-        auto node = CommandNode {
+        auto node = pup::test::Command {
             .source_dir = intern("src"),
             .instruction = pup::test::instruction("echo %b"),
             .inputs = { foo_c->id() },
         };
-        auto cmd_id = add_command_node(g, std::move(node));
+        auto cmd_id = pup::test::add_command(g, node);
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(g, *cmd_id);
@@ -938,12 +973,12 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
 
     SECTION("%b and %B name every input")
     {
-        auto node = CommandNode {
+        auto node = pup::test::Command {
             .source_dir = intern("src"),
             .instruction = pup::test::instruction("echo %b %B"),
             .inputs = { foo_c->id(), bar_c->id() },
         };
-        auto cmd_id = add_command_node(g, std::move(node));
+        auto cmd_id = pup::test::add_command(g, node);
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(g, *cmd_id);
@@ -952,12 +987,12 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
 
     SECTION("%B (stem of the one input)")
     {
-        auto node = CommandNode {
+        auto node = pup::test::Command {
             .source_dir = intern("src"),
             .instruction = pup::test::instruction("echo %B"),
             .inputs = { foo_c->id() },
         };
-        auto cmd_id = add_command_node(g, std::move(node));
+        auto cmd_id = pup::test::add_command(g, node);
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(g, *cmd_id);
@@ -966,12 +1001,12 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
 
     SECTION("%e (extension of first input)")
     {
-        auto node = CommandNode {
+        auto node = pup::test::Command {
             .source_dir = intern("src"),
             .instruction = pup::test::instruction("echo %e"),
             .inputs = { foo_c->id() },
         };
-        auto cmd_id = add_command_node(g, std::move(node));
+        auto cmd_id = pup::test::add_command(g, node);
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(g, *cmd_id);
@@ -982,12 +1017,12 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
     {
         // %d expands to the lowest-level directory name of the Tupfile (source_dir)
         // For source_dir="src", %d should be "src"
-        auto node = CommandNode {
+        auto node = pup::test::Command {
             .source_dir = intern("src"),
             .instruction = pup::test::instruction("echo %d"),
             .inputs = { foo_c->id() },
         };
-        auto cmd_id = add_command_node(g, std::move(node));
+        auto cmd_id = pup::test::add_command(g, node);
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(g, *cmd_id);
@@ -997,12 +1032,12 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
     SECTION("%d with nested source_dir")
     {
         // For source_dir="foo/bar/baz", %d should be "baz" (last component)
-        auto node = CommandNode {
+        auto node = pup::test::Command {
             .source_dir = intern("foo/bar/baz"),
             .instruction = pup::test::instruction("echo %d"),
             .inputs = { foo_c->id() },
         };
-        auto cmd_id = add_command_node(g, std::move(node));
+        auto cmd_id = pup::test::add_command(g, node);
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(g, *cmd_id);
@@ -1011,12 +1046,12 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
 
     SECTION("%O (the one output without its extension)")
     {
-        auto node = CommandNode {
+        auto node = pup::test::Command {
             .source_dir = intern("src"),
             .instruction = pup::test::instruction("echo %O"),
             .outputs = { foo_o->id() },
         };
-        auto cmd_id = add_command_node(g, std::move(node));
+        auto cmd_id = pup::test::add_command(g, node);
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(g, *cmd_id);
@@ -1025,12 +1060,12 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
 
     SECTION("%Nf (N-th input)")
     {
-        auto node = CommandNode {
+        auto node = pup::test::Command {
             .source_dir = intern("src"),
             .instruction = pup::test::instruction("gcc %1f %2f"),
             .inputs = { foo_c->id(), bar_c->id() },
         };
-        auto cmd_id = add_command_node(g, std::move(node));
+        auto cmd_id = pup::test::add_command(g, node);
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(g, *cmd_id);
@@ -1046,12 +1081,12 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
                                       });
         REQUIRE(bar_o.has_value());
 
-        auto node = CommandNode {
+        auto node = pup::test::Command {
             .source_dir = intern("src"),
             .instruction = pup::test::instruction("echo %2o"),
             .outputs = { foo_o->id(), bar_o->id() },
         };
-        auto cmd_id = add_command_node(g, std::move(node));
+        auto cmd_id = pup::test::add_command(g, node);
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(g, *cmd_id);
@@ -1060,10 +1095,10 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
 
     SECTION("%% escapes to literal percent")
     {
-        auto node = CommandNode {
+        auto node = pup::test::Command {
             .instruction = pup::test::instruction("echo 100%%"),
         };
-        auto cmd_id = add_command_node(g, std::move(node));
+        auto cmd_id = pup::test::add_command(g, node);
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(g, *cmd_id);
@@ -1072,10 +1107,10 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
 
     SECTION("no patterns returns verbatim")
     {
-        auto node = CommandNode {
+        auto node = pup::test::Command {
             .instruction = pup::test::instruction("cp /src/file /dst/file"),
         };
-        auto cmd_id = add_command_node(g, std::move(node));
+        auto cmd_id = pup::test::add_command(g, node);
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(g, *cmd_id);
@@ -1084,8 +1119,8 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
 
     SECTION("empty instruction returns empty")
     {
-        auto node = CommandNode {};
-        auto cmd_id = add_command_node(g, std::move(node));
+        auto node = pup::test::Command {};
+        auto cmd_id = pup::test::add_command(g, node);
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(g, *cmd_id);
@@ -1105,7 +1140,7 @@ TEST_CASE("collect_command_dependencies follows order-only deps through groups",
     //
     // When collecting dependencies of c2, we must find c1 through the group.
 
-    auto c1 = add_command_node(g, CommandNode { .instruction = pup::test::instruction("producer") });
+    auto c1 = pup::test::add_command(g, pup::test::Command { .instruction = pup::test::instruction("producer") });
     auto file1 = add_file_node(g, FileNode { .type = NodeType::Generated, .name = intern("file1") });
     auto group1 = add_file_node(g, FileNode { .type = NodeType::Group, .name = intern("<group>") });
 
@@ -1116,7 +1151,7 @@ TEST_CASE("collect_command_dependencies follows order-only deps through groups",
     (void)add_edge(g, c1->id(), file1->id(), LinkType::Normal);
     (void)add_edge(g, file1->id(), group1->id(), LinkType::Group);
 
-    auto c2 = add_command_node(g, CommandNode { .instruction = pup::test::instruction("consumer") });
+    auto c2 = pup::test::add_command(g, pup::test::Command { .instruction = pup::test::instruction("consumer") });
     auto file2 = add_file_node(g, FileNode { .type = NodeType::Generated, .name = intern("file2") });
 
     REQUIRE(c2.has_value());
@@ -1140,7 +1175,7 @@ TEST_CASE("Topological sort respects order-only deps through groups", "[topo][gr
     auto& g = bs.graph;
 
     // c1: produces file1, file1 is in group1
-    auto c1 = add_command_node(g, CommandNode { .instruction = pup::test::instruction("producer") });
+    auto c1 = pup::test::add_command(g, pup::test::Command { .instruction = pup::test::instruction("producer") });
     auto file1 = add_file_node(g, FileNode { .type = NodeType::Generated, .name = intern("file1") });
     auto group1 = add_file_node(g, FileNode { .type = NodeType::Group, .name = intern("<group>") });
 
@@ -1152,7 +1187,7 @@ TEST_CASE("Topological sort respects order-only deps through groups", "[topo][gr
     (void)add_edge(g, file1->id(), group1->id(), LinkType::Group);
 
     // c2: has order-only dep on group1
-    auto c2 = add_command_node(g, CommandNode { .instruction = pup::test::instruction("consumer") });
+    auto c2 = pup::test::add_command(g, pup::test::Command { .instruction = pup::test::instruction("consumer") });
     REQUIRE(c2.has_value());
     (void)add_edge(g, group1->id(), c2->id(), LinkType::OrderOnly);
 
@@ -1287,7 +1322,7 @@ TEST_CASE("edges_where parameterized edge query", "[graph]")
     auto output = add_file_node(g, FileNode { .type = NodeType::Generated, .name = intern("output.o") });
     auto tupfile = add_file_node(g, FileNode { .name = intern("Tupfile") });
     auto group = add_file_node(g, FileNode { .type = NodeType::Group, .name = intern("<libs>") });
-    auto cmd = add_command_node(g, CommandNode { .instruction = pup::test::instruction("gcc") });
+    auto cmd = pup::test::add_command(g, pup::test::Command { .instruction = pup::test::instruction("gcc") });
 
     REQUIRE(input.has_value());
     REQUIRE(output.has_value());
@@ -1393,7 +1428,7 @@ TEST_CASE("collect_affected_commands resolves directory-structured paths", "[gra
 
     auto src_dir = add_file_node(g, FileNode { .type = NodeType::Directory, .name = intern("src") });
     auto foo_c = add_file_node(g, FileNode { .name = intern("foo.c"), .parent_dir = src_dir->id() });
-    auto cmd = add_command_node(g, CommandNode { .instruction = pup::test::instruction("gcc -c src/foo.c -o foo.o") });
+    auto cmd = pup::test::add_command(g, pup::test::Command { .instruction = pup::test::instruction("gcc -c src/foo.c -o foo.o") });
     auto foo_o = add_file_node(g, FileNode { .type = NodeType::Generated, .name = intern("foo.o") });
 
     (void)add_edge(g, foo_c->id(), cmd->id());
@@ -1419,7 +1454,7 @@ TEST_CASE("collect_affected_commands resolves directory-structured paths", "[gra
 
     SECTION("generated file marks producing command affected")
     {
-        auto cmd2 = add_command_node(g, CommandNode { .instruction = pup::test::instruction("link foo.o -o app") });
+        auto cmd2 = pup::test::add_command(g, pup::test::Command { .instruction = pup::test::instruction("link foo.o -o app") });
         auto app = add_file_node(g, FileNode { .type = NodeType::Generated, .name = intern("app") });
         (void)add_edge(g, foo_o->id(), cmd2->id());
         (void)add_edge(g, cmd2->id(), app->id());
@@ -1440,11 +1475,11 @@ TEST_CASE("A forced command brings the scanner that reports what it read", "[gra
     auto& g = bs.graph;
 
     auto foo_c = add_file_node(g, FileNode { .name = intern("foo.c") });
-    auto gate = add_command_node(g, CommandNode { .instruction = pup::test::instruction("gcc -c foo.c -o /dev/null") });
+    auto gate = pup::test::add_command(g, pup::test::Command { .instruction = pup::test::instruction("gcc -c foo.c -o /dev/null") });
     REQUIRE(foo_c.has_value());
     REQUIRE(gate.has_value());
 
-    auto scanner = add_command_node(g, CommandNode { .instruction = pup::test::instruction("gcc -MM foo.c"), .parent_command = gate->id() });
+    auto scanner = pup::test::add_command(g, pup::test::Command { .instruction = pup::test::instruction("gcc -MM foo.c"), .parent_command = gate->id() });
     REQUIRE(scanner.has_value());
 
     (void)add_edge(g, foo_c->id(), scanner->id());
@@ -1463,7 +1498,7 @@ TEST_CASE("A forced command brings the scanner that reports what it read", "[gra
     SECTION("forcing does not make the forced command's consumers run")
     {
         auto out = add_file_node(g, FileNode { .type = NodeType::Generated, .name = intern("out.o") });
-        auto consumer = add_command_node(g, CommandNode { .instruction = pup::test::instruction("link out.o") });
+        auto consumer = pup::test::add_command(g, pup::test::Command { .instruction = pup::test::instruction("link out.o") });
         REQUIRE(out.has_value());
         REQUIRE(consumer.has_value());
         (void)add_edge(g, gate->id(), out->id());
@@ -1482,9 +1517,9 @@ TEST_CASE("A recorded discovery routes the consumer no edge points at", "[graph]
     auto& g = bs.graph;
 
     auto seed = add_file_node(g, FileNode { .name = intern("seed.txt") });
-    auto producer = add_command_node(g, CommandNode { .instruction = pup::test::instruction("cat seed.txt > p.txt") });
+    auto producer = pup::test::add_command(g, pup::test::Command { .instruction = pup::test::instruction("cat seed.txt > p.txt") });
     auto p_txt = add_file_node(g, FileNode { .type = NodeType::Generated, .name = intern("p.txt") });
-    auto consumer = add_command_node(g, CommandNode { .instruction = pup::test::instruction("sh gen.sh c.o") });
+    auto consumer = pup::test::add_command(g, pup::test::Command { .instruction = pup::test::instruction("sh gen.sh c.o") });
     auto c_o = add_file_node(g, FileNode { .type = NodeType::Generated, .name = intern("c.o") });
     REQUIRE(seed.has_value());
     REQUIRE(producer.has_value());
@@ -1522,7 +1557,7 @@ TEST_CASE("A recorded discovery routes the consumer no edge points at", "[graph]
     SECTION("a routed consumer brings the scanner that reports what it read")
     {
         // RED if the expansion moves below the scanner sweep: #228 by another door.
-        auto scanner = add_command_node(g, CommandNode { .instruction = pup::test::instruction("gcc -MM c.c"), .parent_command = consumer->id() });
+        auto scanner = pup::test::add_command(g, pup::test::Command { .instruction = pup::test::instruction("gcc -MM c.c"), .parent_command = consumer->id() });
         REQUIRE(scanner.has_value());
 
         auto changed = pup::Vec<pup::StringId> { intern("seed.txt") };
@@ -2060,9 +2095,9 @@ TEST_CASE("files_for_each visits the file endpoints of matching edges in order",
     REQUIRE(second.has_value());
     auto sticky = add_file_node(g, FileNode { .name = intern("c.c") });
     REQUIRE(sticky.has_value());
-    auto cmd = add_command_node(g, CommandNode {});
+    auto cmd = pup::test::add_command(g, pup::test::Command {});
     REQUIRE(cmd.has_value());
-    auto scan = add_command_node(g, CommandNode {});
+    auto scan = pup::test::add_command(g, pup::test::Command {});
     REQUIRE(scan.has_value());
     REQUIRE(add_edge(g, cmd->id(), second->id()));
     REQUIRE(add_edge(g, cmd->id(), scan->id()));
@@ -2083,7 +2118,7 @@ TEST_CASE("An id that names no node resolves to nothing", "[graph]")
     auto& g = bs.graph;
     auto file = add_file_node(g, FileNode { .name = intern("main.c") });
     REQUIRE(file.has_value());
-    auto cmd = add_command_node(g, CommandNode {});
+    auto cmd = pup::test::add_command(g, pup::test::Command {});
     REQUIRE(cmd.has_value());
 
     SECTION("a live id resolves to its own handle")
@@ -2124,11 +2159,11 @@ TEST_CASE("compute_command_key separates rules by directory", "[graph][identity]
 
     // Command text is Tupfile-relative, so identical rules in sibling directories
     // render the same string; identity must still tell them apart.
-    auto in_a = add_command_node(g, CommandNode {
+    auto in_a = pup::test::add_command(g, pup::test::Command {
         .source_dir = intern("a"),
         .instruction = pup::test::instruction("cat src.txt > out.txt"),
     });
-    auto in_b = add_command_node(g, CommandNode {
+    auto in_b = pup::test::add_command(g, pup::test::Command {
         .source_dir = intern("b"),
         .instruction = pup::test::instruction("cat src.txt > out.txt"),
     });
@@ -2149,7 +2184,7 @@ TEST_CASE("compute_command_key separates rules by directory", "[graph][identity]
 
     SECTION("different text in the same directory yields different keys")
     {
-        auto other = add_command_node(g, CommandNode {
+        auto other = pup::test::add_command(g, pup::test::Command {
             .source_dir = intern("a"),
             .instruction = pup::test::instruction("cat other.txt > out.txt"),
         });
@@ -2166,11 +2201,11 @@ TEST_CASE("Display text stays out of command identity", "[graph][identity][displ
 
     // A display annotation is presentation only: were it folded in, capturing one would restate
     // every annotated command's identity and rebuild every project carrying one.
-    auto plain = add_command_node(g, CommandNode {
+    auto plain = pup::test::add_command(g, pup::test::Command {
         .source_dir = intern("a"),
         .instruction = pup::test::instruction("cc -c main.c -o main.o"),
     });
-    auto annotated = add_command_node(g, CommandNode {
+    auto annotated = pup::test::add_command(g, pup::test::Command {
         .display = intern("CC main.o"),
         .source_dir = intern("a"),
         .instruction = pup::test::instruction("cc -c main.c -o main.o"),
@@ -2198,23 +2233,23 @@ TEST_CASE("compute_command_key separates dep-scan commands by parent", "[graph][
 
     // A dep-scan command drops its parent's -o, so two compiles of one source with
     // equal flags render byte-identical scans; only the parent tells them apart.
-    auto compile_a = add_command_node(g, CommandNode {
+    auto compile_a = pup::test::add_command(g, pup::test::Command {
         .source_dir = intern("a"),
         .instruction = pup::test::instruction("g++ -c ggc.cc -o one.o"),
     });
-    auto compile_b = add_command_node(g, CommandNode {
+    auto compile_b = pup::test::add_command(g, pup::test::Command {
         .source_dir = intern("a"),
         .instruction = pup::test::instruction("g++ -c ggc.cc -o two.o"),
     });
     REQUIRE(compile_a.has_value());
     REQUIRE(compile_b.has_value());
 
-    auto scan_a = add_command_node(g, CommandNode {
+    auto scan_a = pup::test::add_command(g, pup::test::Command {
         .source_dir = intern("a"),
         .instruction = pup::test::instruction("g++ -M ggc.cc"),
         .parent_command = compile_a->id(),
     });
-    auto scan_b = add_command_node(g, CommandNode {
+    auto scan_b = pup::test::add_command(g, pup::test::Command {
         .source_dir = intern("a"),
         .instruction = pup::test::instruction("g++ -M ggc.cc"),
         .parent_command = compile_b->id(),

@@ -15,9 +15,12 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace pup;
@@ -1618,6 +1621,210 @@ TEST_CASE("GraphBuilder duplicate output fails at the line of the second rule", 
     REQUIRE_FALSE(result.has_value());
     CHECK(result.error().msg().find("already owned by command") != std::string_view::npos);
     CHECK(result.error().location == SourcePosition { .file = intern(fixture.tupfile_path("")), .line = 3 });
+}
+
+TEST_CASE("GraphBuilder output named twice in one rule names that rule's command", "[builder][owner]")
+{
+    auto fixture = BuilderTestFixture {};
+
+    auto result = add_tupfile_from_source(fixture, ": |> touch %o |> out out\n");
+
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error().msg() == "Unable to create output 'out' because it is already owned by command:\n  touch out out");
+}
+
+TEST_CASE("GraphBuilder output of a rule that failed after claiming it names no command", "[builder][owner]")
+{
+    auto fixture = BuilderTestFixture {};
+    auto bs = make_build_graph();
+    auto vars = VarDb {};
+    auto ctx = EvalContext { .vars = &vars };
+    auto builder_state = make_builder(BuilderOptions {
+        .source_root = intern(fixture.root_str()),
+        .config_root = intern(fixture.root_str()),
+        .verbose = true,
+    });
+    auto parsed = parse_tupfile(": |> touch %o |> out src\n: |> touch %o |> out\n", fixture.tupfile_path(""));
+    REQUIRE(parsed.success());
+
+    auto result = add_tupfile(bs, parsed.tupfile, ctx, builder_state);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(builder_state.errors.size() == 2);
+    CHECK(builder_state.errors[0].msg().find("already exists as a different type (directory)") != std::string_view::npos);
+    CHECK(builder_state.errors[1].msg() == "Output producer names no command node");
+    CHECK(pup::test::commands_of(bs.graph).empty());
+}
+
+TEST_CASE("GraphBuilder input in an absent directory after a rule that failed after claiming its output is recorded", "[builder][owner]")
+{
+    auto fixture = BuilderTestFixture {};
+    auto bs = make_build_graph();
+    auto vars = VarDb {};
+    auto ctx = EvalContext { .vars = &vars };
+    auto builder_state = make_builder(BuilderOptions {
+        .source_root = intern(fixture.root_str()),
+        .config_root = intern(fixture.root_str()),
+        .verbose = true,
+    });
+    auto parsed = parse_tupfile(": |> touch %o |> o1 o1\n: nodir/z.c |> cp %f %o |> y.txt\n", fixture.tupfile_path(""));
+    REQUIRE(parsed.success());
+
+    auto result = add_tupfile(bs, parsed.tupfile, ctx, builder_state);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(builder_state.errors.size() == 1);
+    CHECK(builder_state.errors[0].msg() == "Unable to create output 'o1' because it is already owned by command:\n  touch o1 o1");
+    REQUIRE(builder_state.inputs_in_absent_dirs.size() == 1);
+    CHECK(sv(builder_state.inputs_in_absent_dirs[0].written) == "nodir/z.c");
+}
+
+TEST_CASE("GraphBuilder group rewrite keeps every part of the record but the atoms", "[builder][record]")
+{
+    auto fixture = BuilderTestFixture {};
+    auto bs = make_build_graph();
+    auto vars = VarDb {};
+    auto config = VarDb {};
+    config.set("RECORD", "y");
+    auto ctx = EvalContext { .vars = &vars, .config_vars = &config };
+    auto builder_state = make_builder(BuilderOptions {
+        .source_root = intern(fixture.root_str()),
+        .config_root = intern(fixture.root_str()),
+        .expand_globs = false,
+        .validate_inputs = false,
+    });
+    auto parsed = parse_tupfile(
+        ": |> touch %o |> gen.h <hdrs>\nexport PUP_RECORD_VAR\nifeq (@(RECORD),y)\n: a.c | order.h <hdrs> |> gcc %f %<hdrs> -o %o |> x.o\nendif\n",
+        fixture.tupfile_path("")
+    );
+    REQUIRE(parsed.success());
+    REQUIRE(add_tupfile(bs, parsed.tupfile, ctx, builder_state).has_value());
+
+    auto const& g = bs.graph;
+    auto compile = std::optional<CommandId> {};
+    for (auto id : pup::test::commands_of(g)) {
+        if (sv(get<InstructionPattern>(g, id)).starts_with("gcc")) {
+            compile = id;
+        }
+    }
+    REQUIRE(compile.has_value());
+    auto operands = [](auto const& sequence) {
+        auto pairs = std::vector<std::pair<NodeId, std::uint32_t>> {};
+        for (auto const operand : sequence) {
+            pairs.emplace_back(operand.id, operand.token);
+        }
+        return pairs;
+    };
+    auto exported_of = [&](CommandId id) {
+        auto vars_seen = std::vector<pup::StringId> {};
+        for (auto const var : view<ExportedVars>(g, id)) {
+            vars_seen.push_back(var);
+        }
+        return vars_seen;
+    };
+    auto guards_of = [&](CommandId id) {
+        auto pairs = std::vector<std::pair<NodeId, bool>> {};
+        for (auto const guard : view<Guards>(g, id)) {
+            pairs.emplace_back(guard.condition, guard.polarity);
+        }
+        return pairs;
+    };
+    auto const head_before = get<CommandHead>(g, *compile);
+    auto const exported_before = exported_of(*compile);
+    auto const guards_before = guards_of(*compile);
+    auto const inputs_before = operands(view<Inputs>(g, *compile));
+    auto const outputs_before = operands(view<Outputs>(g, *compile));
+    auto const order_only_before = operands(view<OrderOnlyInputs>(g, *compile));
+    REQUIRE(exported_before.size() == 1);
+    REQUIRE(guards_before.size() == 1);
+    REQUIRE_FALSE(order_only_before.empty());
+
+    REQUIRE(finalize_graph(bs, builder_state).has_value());
+
+    CHECK(sv(expand_instruction(g, *compile)) == "gcc a.c gen.h -o x.o");
+    auto const head_after = get<CommandHead>(g, *compile);
+    CHECK(std::memcmp(&head_before, &head_after, sizeof(CommandHead)) == 0);
+    CHECK(exported_of(*compile) == exported_before);
+    CHECK(guards_of(*compile) == guards_before);
+    CHECK(operands(view<Inputs>(g, *compile)) == inputs_before);
+    CHECK(operands(view<Outputs>(g, *compile)) == outputs_before);
+    CHECK(operands(view<OrderOnlyInputs>(g, *compile)) == order_only_before);
+}
+
+TEST_CASE("GraphBuilder command record reads back every part as the rule built it", "[builder][record]")
+{
+    auto fixture = BuilderTestFixture {};
+    auto bs = make_build_graph();
+    auto vars = VarDb {};
+    auto config = VarDb {};
+    config.set("RECORD", "y");
+    auto ctx = EvalContext { .vars = &vars, .config_vars = &config };
+    auto builder_state = make_builder(BuilderOptions {
+        .source_root = intern(fixture.root_str()),
+        .config_root = intern(fixture.root_str()),
+        .expand_globs = false,
+        .validate_inputs = false,
+    });
+    auto parsed = parse_tupfile(
+        "export PUP_RECORD_VAR\nifeq (@(RECORD),y)\n: a.c b.c | order.h |> ^ CC %f^ gcc %1f %2f %i -o %o |> x.o y.o\nendif\n",
+        fixture.tupfile_path("")
+    );
+    REQUIRE(parsed.success());
+
+    auto result = add_tupfile(bs, parsed.tupfile, ctx, builder_state);
+    REQUIRE(result.has_value());
+
+    auto const& g = bs.graph;
+    auto const commands = pup::test::commands_of(g);
+    REQUIRE(commands.size() == 1);
+    auto const command = commands[0];
+    auto node = [&](std::string_view name) {
+        auto const found = find_by_dir_name(g, source_root(g), name);
+        REQUIRE(found.has_value());
+        return *found;
+    };
+
+    auto const head = get<CommandHead>(g, command);
+    CHECK(sv(head.display) == "CC a.c b.c");
+    CHECK(head.source_dir == pup::StringId::Empty);
+    CHECK(sv(head.rule_file) == fixture.tupfile_path(""));
+    CHECK(head.rule_line == 3);
+    CHECK(head.parent_command == 0);
+    CHECK(head.input_tokens == 2);
+    CHECK(head.output_tokens == 2);
+    CHECK(head.order_only_tokens == 1);
+
+    CHECK(sv(get<InstructionPattern>(g, command)) == "gcc %1f %2f %i -o %o");
+
+    auto const exported = view<ExportedVars>(g, command);
+    REQUIRE(exported.size() == 1);
+    CHECK(sv(exported[0]) == "PUP_RECORD_VAR");
+
+    auto const guards = view<Guards>(g, command);
+    REQUIRE(guards.size() == 1);
+    CHECK(pup::node_id::is_condition(guards[0].condition));
+    CHECK(guards[0].polarity);
+
+    auto const inputs = view<Inputs>(g, command);
+    REQUIRE(inputs.size() == 2);
+    CHECK(inputs[0].id == node("a.c"));
+    CHECK(inputs[0].token == 1);
+    CHECK(inputs[1].id == node("b.c"));
+    CHECK(inputs[1].token == 2);
+
+    auto const outputs = view<Outputs>(g, command);
+    REQUIRE(outputs.size() == 2);
+    CHECK(outputs[0].id == node("x.o"));
+    CHECK(outputs[0].token == 1);
+    CHECK(outputs[1].id == node("y.o"));
+    CHECK(outputs[1].token == 2);
+
+    auto const order_only = view<OrderOnlyInputs>(g, command);
+    REQUIRE(order_only.size() == 1);
+    CHECK(order_only[0].id == node("order.h"));
+    CHECK(order_only[0].token == 1);
+
+    CHECK(sv(expand_instruction(g, command)) == "gcc a.c b.c order.h -o x.o y.o");
 }
 
 TEST_CASE("GraphBuilder missing include fails at the line of the include", "[builder][error-location]")

@@ -5,6 +5,7 @@
 // Run with: ./build/test/unit/pup_test "[.benchmark]"
 
 #include "catch_amalgamated.hpp"
+#include "command_fixture.hpp"
 #include "graph_support.hpp"
 #include "instruction_support.hpp"
 #include "pup/core/global_pool.hpp"
@@ -55,8 +56,7 @@ auto generate_order_only_graph(
     for (auto i = std::size_t { 0 }; i < n_commands; ++i) {
         char buf[64];
         snprintf(buf, sizeof(buf), "gcc_%zu", i);
-        auto cmd = add_command_node(graph, CommandNode {
-            .instruction = pup::test::instruction(buf) });
+        auto cmd = pup::test::add_command(graph, pup::test::Command { .instruction = pup::test::instruction(buf) });
         (void)add_edge(graph, header->id(), cmd->id(), LinkType::OrderOnly);
     }
     return { std::move(bs), header->id() };
@@ -77,8 +77,7 @@ auto generate_wide_graph_with_order_only(std::size_t width, std::size_t depth) -
         for (auto d = std::size_t { 0 }; d < depth; ++d) {
             char buf[64];
             snprintf(buf, sizeof(buf), "cmd_%zu_%zu", w, d);
-            auto node_result = add_command_node(graph, CommandNode {
-                .instruction = pup::test::instruction(buf) });
+            auto node_result = pup::test::add_command(graph, pup::test::Command { .instruction = pup::test::instruction(buf) });
             auto node = *node_result;
 
             // Connect to previous in chain

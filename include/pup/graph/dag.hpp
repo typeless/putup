@@ -14,14 +14,22 @@
 #include "pup/core/stable_vec.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
-#include "pup/core/token_list.hpp"
 #include "pup/core/types.hpp"
 #include "pup/core/vec.hpp"
+#include "pup/mem/bump_alloc.hpp"
+#include "pup/mem/region.hpp"
+#include "tiled/packed_store.hpp"
 
+#include <algorithm>
+#include <array>
+#include <bit>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <span>
 #include <string_view>
+#include <utility>
 
 namespace pup::graph {
 
@@ -53,32 +61,30 @@ struct FileNode {
 struct Guard {
     NodeId condition;     ///< Condition node ID
     bool polarity = true; ///< True if condition must be true, false if must be false
+    std::array<std::uint8_t, 3> reserved = {};
 
     auto operator==(Guard const& other) const -> bool = default;
 };
 
-/// Command node - represents build commands
-/// Note: Type is determined by node_id::is_command(), not a stored field.
-/// Command string is reconstructed on demand via expand_instruction() from
-/// instruction atoms + explicit operand NodeIds (inputs/order-only inputs/outputs).
-struct CommandNode {
+struct Operand {
     NodeId id = 0;
-
-    StringId display = StringId::Empty;    ///< Display text (from ^ ^ markers, interned)
-    StringId source_dir = StringId::Empty; ///< Tupfile directory (relative to root, interned)
-    SourcePosition rule_location = {};     ///< Where the rule this command came from is written; a dependency scan carries its compile's
-    Instruction instruction = {};          ///< Instruction atoms (e.g. "gcc -c %f -o %o")
-
-    TokenList<NodeId> inputs = {};            ///< Operand file NodeIds for %f, %b and %B expansion, grouped by written token
-    TokenList<NodeId> order_only_inputs = {}; ///< The rule's own order-only operands for %i expansion, grouped by written token
-    TokenList<NodeId> outputs = {};           ///< Operand file NodeIds for %o expansion, grouped by written token
-
-    SortedIdVec exported_vars = {}; ///< Env vars to export to command (interned StringIds)
-
-    std::optional<NodeId> parent_command = {}; ///< Set on a dependency scan: the command whose implicit dependencies its stdout names
-
-    Vec<Guard> guards = {};
+    std::uint32_t token = 0;
 };
+
+struct CommandHead {
+    StringId display = StringId::Empty;
+    StringId source_dir = StringId::Empty;
+    StringId rule_file = StringId::Empty;
+    std::uint32_t rule_line = 0;
+    NodeId parent_command = 0;
+    std::uint32_t input_tokens = 0;
+    std::uint32_t output_tokens = 0;
+    std::uint32_t order_only_tokens = 0;
+};
+
+using CommandStore = tiled::PackedStore<CommandHead, Atom, StringId, Guard, Operand, Operand, Operand>;
+
+inline constexpr auto COMMAND_STORE_LOG2 = static_cast<std::uint8_t>(std::countr_zero(mem::Region::DEFAULT_RESERVE));
 
 /// Condition node - represents an ifeq/ifdef/ifneq/ifndef condition
 struct ConditionNode {
@@ -96,8 +102,9 @@ struct InactiveDeclaration {
 
 /// Build graph - DAG of nodes and edges (plain data struct)
 struct Graph {
-    StableVec<FileNode> files;           ///< Files, directories, groups (non-command nodes)
-    StableVec<CommandNode> commands;     ///< Command nodes only
+    StableVec<FileNode> files; ///< Files, directories, groups (non-command nodes)
+    CommandStore commands { mem::process_pool(), COMMAND_STORE_LOG2 };
+    Vec<std::optional<tiled::RecordId>> command_slots { std::nullopt };
     StableVec<ConditionNode> conditions; ///< Condition nodes
     Vec<Edge> edges;                     ///< Central edge storage (single source of truth)
 
@@ -111,7 +118,6 @@ struct Graph {
     SortedPairVec path_to_node; ///< Resolve: PathId → NodeId; in-tree, a build-root path resolves to its source twin's node
 
     NodeId next_file_id = 2;                               ///< Next file node ID (starts at 2, BUILD_ROOT is 1)
-    NodeId next_command_id = node_id::make_command(1);     ///< Next command node ID
     NodeId next_condition_id = node_id::make_condition(1); ///< Next condition node ID
 };
 
@@ -125,9 +131,11 @@ class CommandId;
 [[nodiscard]]
 auto file_ids(Graph const& graph) -> HandleRange<FileId>;
 
+class CommandRange;
+
 /// Every live command node, in slot order
 [[nodiscard]]
-auto command_ids(Graph const& graph) -> HandleRange<CommandId>;
+auto command_ids(Graph const& graph) -> CommandRange;
 
 /// A live file node of a graph. Only the graph mints one, so an accessor taking it has no miss path.
 class FileId {
@@ -186,8 +194,8 @@ private:
 
     std::uint32_t m_index;
 
-    friend class HandleRange<CommandId>;
-    friend auto add_command_node(Graph& graph, CommandNode node) -> Result<CommandId>;
+    friend class CommandRange;
+    friend auto close_command(Graph& graph, NodeId id, CommandStore::Builder<5>&& order_only_inputs) -> CommandId;
     friend auto find_command(Graph const& graph, NodeId id) -> std::optional<CommandId>;
 };
 
@@ -250,7 +258,78 @@ private:
     std::uint32_t m_last;
 
     friend auto file_ids(Graph const& graph) -> HandleRange<FileId>;
-    friend auto command_ids(Graph const& graph) -> HandleRange<CommandId>;
+};
+
+class CommandRange {
+public:
+    using Slots = std::span<std::optional<tiled::RecordId> const>;
+
+    class Iterator {
+    public:
+        auto operator*() const -> CommandId
+        {
+            return CommandId { m_index };
+        }
+
+        auto operator++() -> Iterator&
+        {
+            m_index = first_filled(m_slots, m_index + 1);
+            return *this;
+        }
+
+        auto operator==(Iterator const& other) const -> bool
+        {
+            return m_index == other.m_index;
+        }
+
+    private:
+        Iterator(Slots slots, std::uint32_t index)
+            : m_slots(slots)
+            , m_index(index)
+        {
+        }
+
+        Slots m_slots;
+        std::uint32_t m_index;
+
+        friend class CommandRange;
+    };
+
+    [[nodiscard]]
+    auto begin() const -> Iterator
+    {
+        return Iterator { m_slots, first_filled(m_slots, 1) };
+    }
+
+    [[nodiscard]]
+    auto end() const -> Iterator
+    {
+        return Iterator { m_slots, static_cast<std::uint32_t>(std::max<std::size_t>(m_slots.size(), 1)) };
+    }
+
+    [[nodiscard]]
+    auto size() const -> std::size_t
+    {
+        return static_cast<std::size_t>(std::count_if(m_slots.begin(), m_slots.end(), [](auto const& slot) { return slot.has_value(); }));
+    }
+
+private:
+    explicit CommandRange(Slots slots)
+        : m_slots(slots)
+    {
+    }
+
+    static auto first_filled(Slots slots, std::uint32_t from) -> std::uint32_t
+    {
+        while (from < slots.size() && !slots[from]) {
+            ++from;
+        }
+        return from;
+    }
+
+    Slots m_slots;
+
+    friend auto command_ids(Graph const& graph) -> CommandRange;
 };
 
 /// Resolve an untrusted id to a live file node; nullopt for another kind, an out-of-range index, or a slot holding another id
@@ -275,9 +354,11 @@ auto add_file_node(Graph& graph, FileNode node) -> Result<FileId>;
 [[nodiscard]]
 auto ensure_file_node(Graph& graph, PathId path_id, NodeType type) -> Result<FileId>;
 
-/// Add a command node to the graph
 [[nodiscard]]
-auto add_command_node(Graph& graph, CommandNode node) -> Result<CommandId>;
+auto open_command(Graph& graph, CommandHead const& head) -> std::pair<NodeId, CommandStore::Builder<0>>;
+
+[[nodiscard]]
+auto close_command(Graph& graph, NodeId id, CommandStore::Builder<5>&& order_only_inputs) -> CommandId;
 
 /// Add an edge between nodes
 [[nodiscard]]
@@ -305,6 +386,11 @@ template<>
 struct get_storage<Hash256> {
     using type = Hash256;
     using handle = FileId;
+};
+template<>
+struct get_storage<CommandHead> {
+    using type = CommandHead;
+    using handle = CommandId;
 };
 template<>
 struct get_storage<SourcePosition> {
@@ -344,6 +430,8 @@ struct Inputs { };
 struct OrderOnlyInputs { };
 struct Outputs { };
 struct ExportedVars { };
+struct Atoms { };
+struct Guards { };
 
 /// Storage and handle type each view<Tag> maps to.
 template<typename Tag>
@@ -351,32 +439,42 @@ struct view_storage;
 
 template<>
 struct view_storage<Inputs> {
-    using type = TokenList<NodeId>;
+    using type = tiled::PackedSequence<Operand>;
     using handle = CommandId;
 };
 template<>
 struct view_storage<OrderOnlyInputs> {
-    using type = TokenList<NodeId>;
+    using type = tiled::PackedSequence<Operand>;
     using handle = CommandId;
 };
 template<>
 struct view_storage<Outputs> {
-    using type = TokenList<NodeId>;
+    using type = tiled::PackedSequence<Operand>;
     using handle = CommandId;
 };
 template<>
 struct view_storage<ExportedVars> {
-    using type = SortedIdVec;
+    using type = tiled::PackedSequence<StringId>;
+    using handle = CommandId;
+};
+template<>
+struct view_storage<Atoms> {
+    using type = tiled::PackedSequence<Atom>;
+    using handle = CommandId;
+};
+template<>
+struct view_storage<Guards> {
+    using type = tiled::PackedSequence<Guard>;
     using handle = CommandId;
 };
 
-/// Composite-property accessor returning a range-like const reference.
+/// Composite-property accessor returning a range-like value read from the command's record.
 /// Specialized per role tag out-of-line in dag.cpp. Use for collection
 /// properties (inputs, outputs, exported vars) where iteration is the
 /// natural access pattern.
 template<typename Tag>
 [[nodiscard]]
-auto view(Graph const& graph, typename view_storage<Tag>::handle id) -> typename view_storage<Tag>::type const&;
+auto view(Graph const& graph, typename view_storage<Tag>::handle id) -> typename view_storage<Tag>::type;
 
 /// Get the parent directory node of a file node
 [[nodiscard]]

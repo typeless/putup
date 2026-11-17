@@ -28,8 +28,6 @@ namespace pup::graph {
 
 auto get_file_node(Graph const& graph, NodeId id) -> FileNode const*;
 auto get_file_node(Graph& graph, NodeId id) -> FileNode*;
-auto get_command_node(Graph const& graph, NodeId id) -> CommandNode const*;
-auto get_command_node(Graph& graph, NodeId id) -> CommandNode*;
 auto get_condition_node(Graph const& graph, NodeId id) -> ConditionNode const*;
 auto get_condition_node(Graph& graph, NodeId id) -> ConditionNode*;
 
@@ -77,7 +75,7 @@ auto find_command(Graph const& graph, NodeId id) -> std::optional<CommandId>
         return std::nullopt;
     }
     auto const idx = node_id::index(id);
-    if (idx == 0 || idx >= graph.commands.size() || graph.commands[idx].id != id) {
+    if (idx == 0 || idx >= graph.command_slots.size() || !graph.command_slots[idx]) {
         return std::nullopt;
     }
     return CommandId { static_cast<std::uint32_t>(idx) };
@@ -93,9 +91,9 @@ auto file_ids(Graph const& graph) -> HandleRange<FileId>
     return HandleRange<FileId> { 1, static_cast<std::uint32_t>(graph.files.size()) };
 }
 
-auto command_ids(Graph const& graph) -> HandleRange<CommandId>
+auto command_ids(Graph const& graph) -> CommandRange
 {
-    return HandleRange<CommandId> { 1, static_cast<std::uint32_t>(std::max(graph.commands.size(), std::size_t { 1 })) };
+    return CommandRange { CommandRange::Slots { graph.command_slots.data(), graph.command_slots.size() } };
 }
 
 namespace {
@@ -105,15 +103,25 @@ auto file_at(Graph const& graph, FileId id) -> FileNode const&
     return graph.files[id.index()];
 }
 
-auto command_at(Graph const& graph, CommandId id) -> CommandNode const&
+constexpr auto ATOMS = std::size_t { 0 };
+constexpr auto EXPORTED_VARS = std::size_t { 1 };
+constexpr auto GUARDS = std::size_t { 2 };
+constexpr auto INPUTS = std::size_t { 3 };
+constexpr auto OUTPUTS = std::size_t { 4 };
+constexpr auto ORDER_ONLY_INPUTS = std::size_t { 5 };
+
+auto record_of(Graph const& graph, CommandId id) -> CommandStore::View
 {
-    return graph.commands[id.index()];
+    auto const& slot = graph.command_slots[id.index()];
+    assert(slot);
+    return graph.commands.view(*slot);
 }
 
 auto validate_node_id(Graph const& graph, NodeId id) -> bool
 {
     if (node_id::is_command(id)) {
-        return find_command(graph, id).has_value();
+        auto const idx = node_id::index(id);
+        return idx != 0 && idx < graph.command_slots.size();
     }
     if (node_id::is_condition(id)) {
         auto idx = node_id::index(id);
@@ -264,18 +272,17 @@ auto ensure_file_node(Graph& graph, PathId path_id, NodeType type) -> Result<Fil
     return added;
 }
 
-auto add_command_node(Graph& graph, CommandNode node) -> Result<CommandId>
+auto open_command(Graph& graph, CommandHead const& head) -> std::pair<NodeId, CommandStore::Builder<0>>
 {
-    auto const id = graph.next_command_id;
-    graph.next_command_id = node_id::make_command(node_id::index(graph.next_command_id) + 1);
-    node.id = id;
+    auto const id = node_id::make_command(graph.command_slots.size());
+    graph.command_slots.push_back(std::nullopt);
+    return { id, graph.commands.open(head) };
+}
 
+auto close_command(Graph& graph, NodeId id, CommandStore::Builder<5>&& order_only_inputs) -> CommandId
+{
     auto const idx = node_id::index(id);
-    if (idx >= graph.commands.size()) {
-        graph.commands.resize(idx + 1);
-    }
-    graph.commands[idx] = std::move(node);
-
+    graph.command_slots[idx] = std::move(order_only_inputs).close();
     return CommandId { static_cast<std::uint32_t>(idx) };
 }
 
@@ -317,54 +324,54 @@ auto get_file_node(Graph const& graph, NodeId id) -> FileNode const*
     return file ? &file_at(graph, *file) : nullptr;
 }
 
-auto get_command_node(Graph& graph, NodeId id) -> CommandNode*
-{
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast) - Scott Meyers const_cast pattern
-    return const_cast<CommandNode*>(get_command_node(std::as_const(graph), id));
-}
-
-auto get_command_node(Graph const& graph, NodeId id) -> CommandNode const*
-{
-    auto const command = find_command(graph, id);
-    return command ? &command_at(graph, *command) : nullptr;
-}
-
 auto get_parent_dir(Graph const& graph, FileId id) -> FileId
 {
     return FileId { static_cast<std::uint32_t>(node_id::index(file_at(graph, id).parent_dir)) };
 }
 
 template<>
-auto view<Inputs>(Graph const& graph, CommandId id) -> TokenList<NodeId> const&
+auto view<Inputs>(Graph const& graph, CommandId id) -> tiled::PackedSequence<Operand>
 {
-    return command_at(graph, id).inputs;
+    return record_of(graph, id).sequence<INPUTS>();
 }
 
 template<>
-auto view<OrderOnlyInputs>(Graph const& graph, CommandId id) -> TokenList<NodeId> const&
+auto view<OrderOnlyInputs>(Graph const& graph, CommandId id) -> tiled::PackedSequence<Operand>
 {
-    return command_at(graph, id).order_only_inputs;
+    return record_of(graph, id).sequence<ORDER_ONLY_INPUTS>();
 }
 
 template<>
-auto view<Outputs>(Graph const& graph, CommandId id) -> TokenList<NodeId> const&
+auto view<Outputs>(Graph const& graph, CommandId id) -> tiled::PackedSequence<Operand>
 {
-    return command_at(graph, id).outputs;
+    return record_of(graph, id).sequence<OUTPUTS>();
 }
 
 template<>
-auto view<ExportedVars>(Graph const& graph, CommandId id) -> SortedIdVec const&
+auto view<ExportedVars>(Graph const& graph, CommandId id) -> tiled::PackedSequence<StringId>
 {
-    return command_at(graph, id).exported_vars;
+    return record_of(graph, id).sequence<EXPORTED_VARS>();
+}
+
+template<>
+auto view<Atoms>(Graph const& graph, CommandId id) -> tiled::PackedSequence<Atom>
+{
+    return record_of(graph, id).sequence<ATOMS>();
+}
+
+template<>
+auto view<Guards>(Graph const& graph, CommandId id) -> tiled::PackedSequence<Guard>
+{
+    return record_of(graph, id).sequence<GUARDS>();
 }
 
 auto get_parent_command(Graph const& graph, CommandId id) -> std::optional<CommandId>
 {
-    auto const& parent = command_at(graph, id).parent_command;
-    if (!parent) {
+    auto const parent = record_of(graph, id).head().parent_command;
+    if (parent == 0) {
         return std::nullopt;
     }
-    auto const command = find_command(graph, *parent);
+    auto const command = find_command(graph, parent);
     assert(command);
     return command;
 }
@@ -382,9 +389,19 @@ auto get<Hash256>(Graph const& graph, FileId id) -> Hash256
 }
 
 template<>
+auto get<CommandHead>(Graph const& graph, CommandId id) -> CommandHead
+{
+    return record_of(graph, id).head();
+}
+
+template<>
 auto get<SourcePosition>(Graph const& graph, CommandId id) -> SourcePosition
 {
-    return command_at(graph, id).rule_location;
+    auto const head = record_of(graph, id).head();
+    return SourcePosition {
+        .file = head.rule_file,
+        .line = head.rule_line,
+    };
 }
 
 template<>
@@ -396,19 +413,19 @@ auto get<Name>(Graph const& graph, FileId id) -> StringId
 template<>
 auto get<Display>(Graph const& graph, CommandId id) -> StringId
 {
-    return command_at(graph, id).display;
+    return record_of(graph, id).head().display;
 }
 
 template<>
 auto get<SourceDir>(Graph const& graph, CommandId id) -> StringId
 {
-    return command_at(graph, id).source_dir;
+    return record_of(graph, id).head().source_dir;
 }
 
 template<>
 auto get<InstructionPattern>(Graph const& graph, CommandId id) -> StringId
 {
-    return render_instruction(command_at(graph, id).instruction);
+    return render_instruction(record_of(graph, id).sequence<ATOMS>());
 }
 
 auto add_condition_node(Graph& graph, ConditionNode node) -> Result<NodeId>
@@ -554,8 +571,7 @@ auto get_order_only_dependents(Graph const& graph, NodeId id) -> Vec<NodeId>
 auto node_count(Graph const& graph) -> std::size_t
 {
     auto file_count = graph.files.empty() ? std::size_t { 0 } : graph.files.size() - 1;
-    auto cmd_count = graph.commands.empty() ? std::size_t { 0 } : graph.commands.size() - 1;
-    return file_count + cmd_count;
+    return file_count + command_ids(graph).size();
 }
 
 auto edge_count(Graph const& graph) -> std::size_t
@@ -567,19 +583,16 @@ auto all_nodes(Graph const& graph) -> Vec<NodeId>
 {
     auto result = Vec<NodeId> {};
     auto file_count = graph.files.empty() ? std::size_t { 0 } : graph.files.size() - 1;
-    auto cmd_count = graph.commands.empty() ? std::size_t { 0 } : graph.commands.size() - 1;
-    result.reserve(file_count + cmd_count);
+    auto const commands = command_ids(graph);
+    result.reserve(file_count + commands.size());
 
     for (auto i = NodeId { 1 }; i < graph.files.size(); ++i) {
         if (graph.files[i].id == i) {
             result.push_back(i);
         }
     }
-    for (auto i = std::size_t { 1 }; i < graph.commands.size(); ++i) {
-        auto const id = node_id::make_command(i);
-        if (graph.commands[i].id == id) {
-            result.push_back(id);
-        }
+    for (auto command : commands) {
+        result.push_back(command.id());
     }
     return result;
 }
@@ -688,7 +701,9 @@ auto path_extension(std::string_view name) -> std::string_view
 template<typename PathResolver>
 struct ExecSite {
     Graph const& graph;
-    CommandNode const* cmd;
+    tiled::PackedSequence<Operand> inputs;
+    tiled::PackedSequence<Operand> order_only_inputs;
+    tiled::PackedSequence<Operand> outputs;
     PathCache& cache;
     std::string_view source_dir;
     PathResolver const& get_operand_path;
@@ -733,50 +748,40 @@ struct ExecSite {
 
     auto append_all_inputs(Buf& buf) const -> void
     {
-        for (std::size_t i = 0; i < cmd->inputs.size(); ++i) {
-            if (i > 0) {
-                buf += ' ';
-            }
-            buf += operand_path(cmd->inputs[i]);
-        }
+        append_all(buf, inputs, [this](NodeId id) { return operand_path(id); });
     }
 
     auto append_order_only_inputs(Buf& buf) const -> void
     {
-        append_token(buf, cmd->order_only_inputs.ids(), [this](NodeId id) { return operand_path(id); });
+        append_all(buf, order_only_inputs, [this](NodeId id) { return operand_path(id); });
     }
 
     auto append_input_base(Buf& buf) const -> void
     {
-        append_token(buf, cmd->inputs.ids(), [this](NodeId id) { return basename_of(id); });
+        append_all(buf, inputs, [this](NodeId id) { return basename_of(id); });
     }
 
     auto append_input_noext(Buf& buf) const -> void
     {
-        append_token(buf, cmd->inputs.ids(), [this](NodeId id) { return basename_without_extension_of(id); });
+        append_all(buf, inputs, [this](NodeId id) { return basename_without_extension_of(id); });
     }
 
     auto append_input_ext(Buf& buf) const -> void
     {
-        if (!cmd->inputs.empty()) {
-            buf += path_extension(operand_name(cmd->inputs[0]));
+        if (inputs.size() != 0) {
+            buf += path_extension(operand_name(inputs[0].id));
         }
     }
 
     auto append_all_outputs(Buf& buf) const -> void
     {
-        for (std::size_t i = 0; i < cmd->outputs.size(); ++i) {
-            if (i > 0) {
-                buf += ' ';
-            }
-            buf += get_operand_path(operand(cmd->outputs[i]));
-        }
+        append_all(buf, outputs, [this](NodeId id) { return get_operand_path(operand(id)); });
     }
 
     auto append_output_noext(Buf& buf) const -> void
     {
-        if (cmd->outputs.size() == 1) {
-            auto const only = get_operand_path(operand(cmd->outputs[0]));
+        if (outputs.size() == 1) {
+            auto const only = get_operand_path(operand(outputs[0].id));
             buf += only.substr(0, only.size() - pup::path::extension(only).size());
         }
     }
@@ -792,24 +797,24 @@ struct ExecSite {
 
     auto append_nth_input(Buf& buf, std::uint32_t token) const -> void
     {
-        append_token(buf, cmd->inputs.token(token), [this](NodeId id) { return operand_path(id); });
+        append_token(buf, inputs, token, [this](NodeId id) { return operand_path(id); });
     }
 
     auto append_nth_input_base(Buf& buf, std::uint32_t token) const -> void
     {
-        append_token(buf, cmd->inputs.token(token), [this](NodeId id) { return basename_of(id); });
+        append_token(buf, inputs, token, [this](NodeId id) { return basename_of(id); });
     }
 
     auto append_nth_input_noext(Buf& buf, std::uint32_t token) const -> void
     {
-        append_token(buf, cmd->inputs.token(token), [this](NodeId id) {
+        append_token(buf, inputs, token, [this](NodeId id) {
             return basename_without_extension_of(id);
         });
     }
 
     auto append_nth_order_only_input(Buf& buf, std::uint32_t token) const -> void
     {
-        append_token(buf, cmd->order_only_inputs.token(token), [this](NodeId id) { return operand_path(id); });
+        append_token(buf, order_only_inputs, token, [this](NodeId id) { return operand_path(id); });
     }
 
     auto basename_of(NodeId id) const -> std::string_view { return pup::path::filename(operand_path(id)); }
@@ -821,19 +826,35 @@ struct ExecSite {
 
     auto append_nth_output(Buf& buf, std::uint32_t token) const -> void
     {
-        append_token(buf, cmd->outputs.token(token), [this](NodeId id) {
+        append_token(buf, outputs, token, [this](NodeId id) {
             return get_operand_path(operand(id));
         });
     }
 
     template<typename Spelling>
-    static auto append_token(Buf& buf, std::span<NodeId const> operands, Spelling spell) -> void
+    static auto append_all(Buf& buf, tiled::PackedSequence<Operand> operands, Spelling spell) -> void
     {
         for (auto i = std::size_t { 0 }; i < operands.size(); ++i) {
             if (i > 0) {
                 buf += ' ';
             }
-            buf += spell(operands[i]);
+            buf += spell(operands[i].id);
+        }
+    }
+
+    template<typename Spelling>
+    static auto append_token(Buf& buf, tiled::PackedSequence<Operand> operands, std::uint32_t token, Spelling spell) -> void
+    {
+        auto first = true;
+        for (auto const operand : operands) {
+            if (operand.token != token) {
+                continue;
+            }
+            if (!first) {
+                buf += ' ';
+            }
+            first = false;
+            buf += spell(operand.id);
         }
     }
 };
@@ -846,18 +867,21 @@ auto expand_instruction_impl(
     PathResolver const& get_operand_path
 ) -> StringId
 {
-    auto const& cmd = command_at(graph, cmd_id);
-    if (cmd.instruction.empty()) {
+    auto const record = record_of(graph, cmd_id);
+    auto const atoms = record.sequence<ATOMS>();
+    if (atoms.size() == 0) {
         return StringId::Empty;
     }
 
     return fold_instruction(
-        cmd.instruction,
+        atoms,
         ExecSite<PathResolver> {
             graph,
-            &cmd,
+            record.sequence<INPUTS>(),
+            record.sequence<ORDER_ONLY_INPUTS>(),
+            record.sequence<OUTPUTS>(),
             cache,
-            global_pool().get(cmd.source_dir),
+            global_pool().get(record.head().source_dir),
             get_operand_path,
         }
     );
@@ -866,7 +890,7 @@ auto expand_instruction_impl(
 auto expand_instruction(Graph const& graph, CommandId cmd_id, PathCache& cache) -> StringId
 {
     auto& pool = global_pool();
-    auto source_dir = pool.get(command_at(graph, cmd_id).source_dir);
+    auto source_dir = pool.get(get<SourceDir>(graph, cmd_id));
     auto source_to_root = pool.get(pup::compute_source_to_root(source_dir));
 
     return expand_instruction_impl(graph, cmd_id, cache, [&](FileId id) -> std::string_view {
@@ -884,7 +908,7 @@ auto expand_instruction(
 ) -> StringId
 {
     auto& pool = global_pool();
-    auto source_dir = pool.get(command_at(graph, cmd_id).source_dir);
+    auto source_dir = pool.get(get<SourceDir>(graph, cmd_id));
     auto source_to_root = pool.get(pup::compute_source_to_root(source_dir));
     auto canonical_cwd_id = StringId::Empty;
     if (!source_root.empty()) {

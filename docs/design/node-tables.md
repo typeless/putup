@@ -2,6 +2,8 @@
 
 Status: proposed, not built. Base: e294e76 (main after #568).
 
+The command half of step 3 (`CommandTable`) is superseded: commands are packed records since the commit "graph: build each command as one packed record in place" (see `tiled-r16-decisions.md`, "First site: `CommandNode`"). The file half stands as proposed.
+
 ## Requirements
 
 - **R1 — #496 part 2.** "The id-keyed graph accessors answer an id that resolves to no node with a default that is also a legitimate answer." The invariant "callers pass live ids" is "conventional, not structural." Part 1 (#568) separated the source root from "no node". Part 2 is the accessors.

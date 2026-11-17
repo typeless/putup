@@ -579,32 +579,39 @@ struct FileNode {
 struct Guard {
     NodeId condition;                    // Condition node ID
     bool polarity = true;                // True if condition must be true
+    std::array<std::uint8_t, 3> reserved = {}; // Declared padding, so the type packs (R16 a)
 };
 
-/// Command node - build commands
-/// Type is determined by node_id::is_command(), not a stored field.
-struct CommandNode {
+/// One operand of a command: the node and the 1-based written token it came from
+struct Operand {
     NodeId id = 0;
-    StringId display = StringId::Empty;        // Display text (from ^ ^ markers)
-    StringId source_dir = StringId::Empty;     // Tupfile directory (relative to root)
-    SourcePosition rule_location = {};         // Where the rule is written; a dependency scan carries its compile's
-    Instruction instruction = {};              // Instruction atoms (e.g., "gcc -c %f -o %o")
-    TokenList<NodeId> inputs = {};             // Operand file NodeIds for %f expansion
-    TokenList<NodeId> order_only_inputs = {};  // The rule's own order-only operands for %i expansion
-    TokenList<NodeId> outputs = {};            // Operand file NodeIds for %o expansion
-    SortedIdVec exported_vars = {};            // Env vars to export (interned StringIds)
-    std::optional<NodeId> parent_command = {}; // Set on a dependency scan: the command whose implicit dependencies its stdout names
-
-    // Guards of the taken branch the rule sits in, all satisfied: a rule in an
-    // untaken branch becomes no command (see "Why Untaken Branches Become No Commands")
-    // For nested conditionals: ifeq(A,x) { ifeq(B,y) { cmd } }
-    //   → guards = [Guard{condA, true}, Guard{condB, true}]
-    // Compared against later declarations of the same output (are_guards_mutually_exclusive)
-    // Guards exist only for conditions that can flip without a Tupfile edit
-    // (config or env reads). A static ifeq/ifneq is processed textually like
-    // tup: the losing branch is skipped and no condition node is created.
-    Vec<Guard> guards = {};
+    std::uint32_t token = 0;
 };
+
+/// Command record head. Type is determined by node_id::is_command(), not a stored field.
+struct CommandHead {
+    StringId display;               // Display text (from ^ ^ markers)
+    StringId source_dir;            // Tupfile directory (relative to root)
+    StringId rule_file;             // Where the rule is written; a dependency scan carries its compile's
+    std::uint32_t rule_line;        // A command records no column
+    NodeId parent_command;          // 0, or on a dependency scan the command whose implicit dependencies its stdout names
+    std::uint32_t input_tokens;     // Tokens written per operand section, empty ones included
+    std::uint32_t output_tokens;
+    std::uint32_t order_only_tokens;
+};
+
+/// One packed record per command, built in place (docs/design/tiled-r16-decisions.md):
+/// [CommandHead][atoms][exported vars][guards][inputs][outputs][order-only inputs]
+/// Each operand sequence holds {NodeId, token} pairs, non-decreasing in token.
+/// Guards: those of the taken branch the rule sits in, all satisfied: a rule in an
+/// untaken branch becomes no command (see "Why Untaken Branches Become No Commands").
+/// For nested conditionals: ifeq(A,x) { ifeq(B,y) { cmd } }
+///   → guards = [Guard{condA, true}, Guard{condB, true}]
+/// Compared against later declarations of the same output (are_guards_mutually_exclusive).
+/// Guards exist only for conditions that can flip without a Tupfile edit
+/// (config or env reads). A static ifeq/ifneq is processed textually like
+/// tup: the losing branch is skipped and no condition node is created.
+using CommandStore = tiled::PackedStore<CommandHead, Atom, StringId, Guard, Operand, Operand, Operand>;
 
 /// Condition node - represents an ifeq/ifdef/ifneq/ifndef condition
 /// Type is determined by node_id::is_condition(), not a stored field.
@@ -651,7 +658,8 @@ namespace node_id {
 ```cpp
 struct Graph {
     StableVec<FileNode> files;            // Files, directories, groups
-    StableVec<CommandNode> commands;      // Command nodes only
+    CommandStore commands;                // One packed record per command, on its own 2^30 tile
+    Vec<std::optional<tiled::RecordId>> command_slots;  // Indexed by command index n; empty while open or after a dropped build
     StableVec<ConditionNode> conditions;  // Conditional guards
     Vec<Edge> edges;                      // Central edge storage
 
@@ -671,7 +679,6 @@ struct Graph {
 
     // ID generators (next available ID for each type)
     NodeId next_file_id = 2;                               // Starts at 2 (BUILD_ROOT is 1)
-    NodeId next_command_id = node_id::make_command(1);     // First command ID
     NodeId next_condition_id = node_id::make_condition(1); // First condition ID
 };
 
@@ -702,25 +709,27 @@ class CommandId;  // index(), id() -> NodeId, operator==
 // Creation returns a handle
 auto add_file_node(Graph&, FileNode) -> Result<FileId>;
 auto ensure_file_node(Graph&, PathId, NodeType) -> Result<FileId>; // Primary creation path
-auto add_command_node(Graph&, CommandNode) -> Result<CommandId>;
+auto open_command(Graph&, CommandHead) -> std::pair<NodeId, CommandStore::Builder<0>>; // Reserves the id
+auto close_command(Graph&, NodeId, CommandStore::Builder<5>&&) -> CommandId;           // Fills its slot
 auto add_edge(Graph&, NodeId from, NodeId to, type) -> Result<void>;
 
 // Resolving an untrusted NodeId (edge endpoint, path_to_node hit, index id) is the
 // only way from a NodeId to a handle: nullopt for another kind, an out-of-range
-// index, or a slot holding another id.
+// index, a slot holding another id, or a command slot left empty (open, or its build dropped).
+// add_edge accepts a reserved command id, filled or not.
 auto find_file(Graph const&, NodeId) -> std::optional<FileId>;
 auto find_command(Graph const&, NodeId) -> std::optional<CommandId>;
 auto source_root(Graph const&) -> FileId;
 
 // Enumeration over the dense live slots, from index 1 (the source root is skipped)
 auto file_ids(Graph const&) -> HandleRange<FileId>;
-auto command_ids(Graph const&) -> HandleRange<CommandId>;
+auto command_ids(Graph const&) -> CommandRange;  // skips empty slots
 auto all_nodes(Graph const&) -> Vec<NodeId>;  // mixed kinds: topological sort, graph export
 
 // Field accessors: file tags take FileId, command tags take CommandId
 auto get<NodeType | Hash256 | Name>(Graph const&, FileId);
-auto get<SourcePosition | Display | SourceDir | InstructionPattern>(Graph const&, CommandId);
-auto view<Inputs | OrderOnlyInputs | Outputs | ExportedVars>(Graph const&, CommandId);
+auto get<CommandHead | SourcePosition | Display | SourceDir | InstructionPattern>(Graph const&, CommandId);
+auto view<Inputs | OrderOnlyInputs | Outputs | ExportedVars | Atoms | Guards>(Graph const&, CommandId); // PackedSequence values
 auto get_parent_dir(Graph const&, FileId) -> FileId;
 auto get_full_path(Graph const&, FileId, PathCache&) -> std::string_view;
 auto get_full_path(Graph const&, FileId) -> StringId;
@@ -740,7 +749,6 @@ auto edges_where(Graph const&, NodeId, EdgeDirection, LinkTypeMask) -> Vec<NodeI
 
 // Internal, declared locally by builder.cpp and white-box tests
 auto get_file_node(Graph&, NodeId) -> FileNode*;           // nullptr unless find_file resolves
-auto get_command_node(Graph&, NodeId) -> CommandNode*;     // nullptr unless find_command resolves
 auto get_condition_node(Graph&, NodeId) -> ConditionNode*; // nullptr for non-condition IDs
 auto add_condition_node(Graph&, ConditionNode) -> Result<NodeId>;
 
@@ -1018,7 +1026,7 @@ it will do, for deciding whether to re-run).
 
 **Instruction deduplication**: Bang macros like `!cc = |> $(CC) -c %f -o %o |>` produce the same instruction for all source files. With 1000 C files, instead of storing 1000 nearly-identical command strings, the record stores 1 instruction + 1000 operand records.
 
-**Lazy reconstruction**: Full command strings are computed on demand via `expand_instruction()`, which substitutes operand paths into the instruction pattern. CommandNode stores `instruction` (the pattern, as atoms) plus explicit `inputs`/`order_only_inputs`/`outputs` operand vectors. This keeps index loading fast and avoids storing redundant expanded strings.
+**Lazy reconstruction**: Full command strings are computed on demand via `expand_instruction()`, which substitutes operand paths into the instruction pattern. A command's record stores its instruction (the pattern, as atoms) plus explicit inputs, outputs and order-only inputs as `{NodeId, token}` sequences. This keeps index loading fast and avoids storing redundant expanded strings.
 
 Design principles:
 - Fixed-size entries for O(1) random access
@@ -1654,7 +1662,7 @@ The same characters mean different things in different positions. Context-aware 
 Files and commands have different fields and lifecycles. Splitting them:
 
 - **Memory efficiency** - No wasted fields (commands don't need content_hash, files don't need exported_vars)
-- **Type safety** - `get_file_node()` vs `get_command_node()` prevents type confusion
+- **Type safety** - `FileId` vs `CommandId` handles prevent type confusion
 - **O(1) type detection** - The kind tag in the top 2 bits of the ID determines type without field access
 - **Uniform edges** - Both types participate in the same edge graph
 - **Single traversal** - Topological sort works identically for both
@@ -1795,7 +1803,7 @@ A rule in an untaken branch is still expanded, so that whether a Tupfile is acce
 on the configuration: its command text is expanded, its inputs are resolved (an input inside a
 directory nothing provides is refused, REQ-GLOB-ABSENT-DIR-REFUSED), its outputs are validated
 (REQ-OUTPUT-NOT-A-DIRECTORY, REQ-OUTPUT-INSIDE-HIERARCHY) and checked for an earlier owner. But it
-becomes no command: no `CommandNode`, no edge of any kind, no dep-scan child. Each output it declares
+becomes no command: no command record, no edge of any kind, no dep-scan child. Each output it declares
 is ensured as a `Ghost` node and recorded as one row of `Graph::inactive_declarations`:
 
 ```cpp
