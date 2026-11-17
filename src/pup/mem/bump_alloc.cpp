@@ -113,7 +113,7 @@ auto record_site(void* ra, std::size_t size) -> void
 
 namespace {
 
-constexpr auto SPILL_BYTES = std::size_t { 1 } << 16;
+constexpr auto SPILL_BYTES = std::size_t { 1 } << 14;
 constexpr auto HEAP_END = memory_layout.base + (std::uint64_t { 1 } << memory_layout.heap_log2);
 constexpr auto POOL_END = memory_layout.base + (std::uint64_t { 1 } << memory_layout.pool_log2);
 
