@@ -47,11 +47,30 @@ Ruling on R16 (a): "packed" forbids bytes the store inserts. A field that an ele
 
 ## First site: `CommandNode`
 
-Not settled. The different-model review found three open decisions: what a command id names between its creation and its record's `close`, which `add_edge` and the owner check read (`src/pup/graph/dag.cpp:282-288`, `builder.cpp:2514-2515`; a rule that names one output twice already prints `already owned by command: cp  `, reproduced at d4d9a1d4); where the record opens relative to `process_generated_rules`, which reads the parent's position at `builder.cpp:2105`; and the record's content (six lists, `SourcePosition` in the head fails the padding check, token starts exist before the record opens). The framework is built first; the site is settled after.
+Settled 2026-11-17 by the maintainer after design-attorney rounds 1-2 on this site. Facts read at 0efb213a.
 
-Constraints found by both reviews, to be met at `src/pup/graph/builder.cpp`:
-- The record opens after `process_generated_rules` (`:2412`), which creates other commands.
-- Sequence order follows production order: inputs (`:2420`), outputs (`:2437`), order-only inputs (`:2567`).
-- An operand and its token number are produced together, so each operand list is one sequence of pairs.
-- `cmd_id` is empty in an inactive context (`:2386-2388`), and the loops still run, so the site splits that path.
-- `parent_command` is `std::optional<NodeId>` and fails the padding check, so the head encodes "none" as a value.
+Order of construction (supersedes the earlier constraint "the record opens after `process_generated_rules`", which left the instruction built in a local list and copied in, against R16 b′): `tiled-data-stacks.md`'s freeze-point note governs, so the generated commands come after the parent's record is complete.
+
+- The rule's display is expanded before its command (`builder.cpp:2364-2371` moves above `:2340`), so every head field is known when the record opens: display, source directory, rule position, parent (0 for a rule command), and the token counts of the three operand sections (`expand_rule`'s `token_count`, `outputs->token_count`, `rule_order_only->token_count`). Observable changes: when both the display and the command fail, the display's error is reported; the empty-command message (`:2346-2358`) also lists config variables the display used.
+- The record opens before the command expansion. `parser::expand_pattern_atoms` (`src/pup/parser/eval.cpp:466`) and `atoms_from_generated_text` (`builder.cpp:926`) emit each atom to a sink instead of returning an `Instruction`; the sink pushes the atom and folds it into the command text (`fold_instruction` folds one atom at a time, `include/pup/core/instruction.hpp:111-114`; `InstructionBuilder` interns a literal when it flushes, so an emitted atom is final). `expand_pattern` (`eval.cpp:680`) folds through the same sink without a record.
+- Then the exported variables, the guards, and the three operand loops push in place (inputs, outputs, order-only inputs), and the record closes. The work `create_command_node` does after making the node today (`builder.cpp:581-640`: sticky, tool and variable edges, which read the command's own instruction and the variables the expansion used) runs after `close`, from the closed record. Then `process_generated_rules` builds the scan commands, each opened and closed in turn; a scan command reads its parent's position from the parent's closed record.
+- An error between `open` and `close` returns with the builder dropped, which rewinds the stack (E6).
+
+Identity:
+- A command id stays `make_command(n)`. The side index is a list of optional `RecordId`s indexed by n: `open` appends an empty slot, which reserves the id, and `close` fills it. Edges may name a reserved id (`add_edge`); a read finds the record only through a filled slot, and a slot left empty by a dropped builder reads as "no command node", which the existing error paths report (`builder.cpp:2510-2512`). This matters because a verbose parse continues after a rule's error (`builder.cpp:2971-2980`). No comparison is added at `close`: E6 already refuses a close after another record opened on the store.
+- The owner check treats a producer equal to the command under construction as that rule: it reports the rule's command text and uses `ctx.condition_stack` as its guards. The message prefix is unchanged.
+
+Content:
+- Head: display, source directory, rule file, line, column plus one (0 = none), parent command (0 = none), and the three token counts. Sequences, in production order: instruction atoms, exported variables, guards, inputs, outputs, order-only inputs. Each operand sequence holds `{NodeId, token}` pairs, non-decreasing in token; a reader finds token n by a scan.
+- `Atom` and `Guard` declare their padding as zero-initialized fields (padding ruling above); no packed twins.
+- A scan command's input token count is the number of inputs its generated rule names, known before its loop; an input that fails to resolve leaves its token empty. Scan instructions carry only literal and group atoms (`builder.cpp:926-945`), so no operand expansion reads these tokens. Rejected: resolving the inputs into a local list first (fails R16 b′); a head flag meaning "one token per operand" (a flag whose validity depends on other fields); a builder call that rewrites the head before `close`, which adds an operation to the framework that no other site needs, while the count known before the loop meets the same requirement.
+- `finalize_graph`'s group rewrite (`builder.cpp:3271`) constructs a new record with the rewritten atoms and the other parts copied from the old one, and moves the slot (R16 d). The old bytes stay unused and are counted by the gate.
+
+Inactive context (supersedes "the site splits that path"): the inactive path still expands the command, whose text feeds `InactiveDeclaration` (`builder.cpp:2534-2539`), and runs the same loops. It holds no record: each builder state is an empty optional, and the sink folds without pushing. One path, with the record optional, instead of two copies of the loops.
+
+Recorded observable changes, besides those above:
+- In a verbose parse, a rule that fails after adding an output edge (`builder.cpp:2546`) leaves an empty slot as that output's producer, so a later rule naming the same output reports "Output producer names no command node" (`builder.cpp:2510-2512`) instead of "already owned by command". The parse has already failed; only the second message differs.
+- The sticky, tool and variable edges enter the graph after the operand edges. The test suite decides whether any reader depends on that order.
+- Listing the live commands (`command_ids`, "in slot order") skips empty slots.
+
+Tests: `CommandNode` leaves `src/` and `include/`. Tests add commands through a helper in `test/unit` that opens, pushes and closes a record from a test-local value, an ordinary copy of existing data (R16 b′).
