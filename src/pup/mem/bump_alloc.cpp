@@ -189,6 +189,9 @@ auto bump_try_extend(void* p, std::size_t old_size, std::size_t new_size) -> boo
     if (on_tile(p)) {
         return extend_tile(p, old_size, new_size);
     }
+    if (new_size >= SPILL_BYTES) {
+        return false;
+    }
     return heap().extend_top(p, old_size, new_size);
 }
 

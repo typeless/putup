@@ -123,3 +123,13 @@ TEST_CASE("destroying a spilled Vec returns its tile to the pool", "[bump]")
     w.resize(bytes);
     REQUIRE(w.data() == first);
 }
+
+TEST_CASE("a Vec on top of the heap moves to its own tile before it reaches the spill size", "[bump]")
+{
+    auto v = pup::Vec<std::uint64_t> {};
+    while (v.size() < (std::size_t { 1 } << 12)) {
+        v.push_back(v.size());
+    }
+
+    REQUIRE(in_pool_tile(v.data()));
+}
