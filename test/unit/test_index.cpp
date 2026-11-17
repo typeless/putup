@@ -2496,3 +2496,25 @@ TEST_CASE("An edge added after building the indices extends a bulk-built list", 
     REQUIRE(index.edges_to(10).size() == 2);
     REQUIRE(index.edges_to(13).size() == 2);
 }
+
+TEST_CASE("Serializing graph edges relocates no index edge list", "[index]")
+{
+    auto bs = pup::graph::make_build_graph();
+    auto& g = bs.graph;
+    auto cmd = pup::graph::add_command_node(g, pup::graph::CommandNode { .instruction = pup::test::instruction("cc") });
+    REQUIRE(cmd.has_value());
+    for (auto i = 0; i < 40; ++i) {
+        auto src = pup::graph::add_file_node(g, pup::graph::FileNode { .type = NodeType::File, .name = intern("s" + std::to_string(i) + ".c") });
+        REQUIRE(src.has_value());
+        REQUIRE(pup::graph::add_edge(g, src->id(), cmd->id()).has_value());
+    }
+    auto [index, path_to_id] = pup::cli::serialize_graph_nodes(bs, ".", ".", ".");
+    auto cmd_remap = pup::cli::serialize_command_nodes(bs, index, path_to_id);
+    auto const before = pup::mem::copied_bytes();
+
+    pup::cli::serialize_edges(bs, index, cmd_remap);
+
+    REQUIRE(pup::mem::copied_bytes() == before);
+    auto const cmd_id = pup::node_id::make_command(cmd_remap.get(cmd->id()));
+    REQUIRE(index.edges_to(cmd_id).size() == 40);
+}
