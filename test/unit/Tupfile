@@ -74,6 +74,7 @@ test-srcs-y += test_string_pool.cpp
 test-srcs-y += test_string_utils.cpp
 test-srcs-y += test_sys.cpp
 test-srcs-y += test_target.cpp
+test-srcs-y += test_tiled_packed_store.cpp
 test-srcs-y += test_tiled_pool.cpp
 test-srcs-y += test_tiled_space.cpp
 test-srcs-y += test_tiled_stack.cpp
