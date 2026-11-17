@@ -6,6 +6,7 @@
 
 #include "pup/core/buf.hpp"
 #include "pup/core/expected.hpp"
+#include "pup/core/function.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/instruction.hpp"
 #include "pup/core/platform.hpp"
@@ -466,10 +467,17 @@ auto section_names_outputs(PatternSection section) -> bool
 auto expand_pattern_atoms(
     EvalContext& ctx,
     std::string_view text,
-    PatternFlags const& flags
-) -> Result<Instruction>
+    PatternFlags const& flags,
+    Function<void(Atom)> const& emit
+) -> Result<StringId>
 {
-    auto builder = InstructionBuilder {};
+    auto folded = Buf {};
+    auto const site = ParseSite { ctx, flags };
+    auto const fold_and_emit = Function<void(Atom)> { [&folded, &site, &emit](Atom atom) {
+        fold_atom(folded, atom, site);
+        emit(atom);
+    } };
+    auto builder = InstructionBuilder { fold_and_emit };
     auto pos = std::size_t { 0 };
 
     while (pos < text.size()) {
@@ -483,7 +491,7 @@ auto expand_pattern_atoms(
         builder.literal(text.substr(pos, percent - pos));
 
         if (percent + 1 >= text.size()) {
-            return make_error<Instruction>(ErrorCode::ParseError, "Unknown %-flag: '' (a '%' ends the text; '%%' spells a literal '%')");
+            return make_error<StringId>(ErrorCode::ParseError, "Unknown %-flag: '' (a '%' ends the text; '%%' spells a literal '%')");
         }
 
         auto flag = text[percent + 1];
@@ -508,12 +516,12 @@ auto expand_pattern_atoms(
             if (num <= 0 || num >= 99) {
                 auto msg = Buf {};
                 msg.fmt("Expected number from 1-99 (base 10) for %-flag, but got {}", num);
-                return make_error<Instruction>(ErrorCode::ParseError, msg.view());
+                return make_error<StringId>(ErrorCode::ParseError, msg.view());
             }
             if (end >= text.size()) {
                 auto msg = Buf {};
                 msg.fmt("Unfinished %{}-flag at the end of the string '{}'", num, text);
-                return make_error<Instruction>(ErrorCode::ParseError, msg.view());
+                return make_error<StringId>(ErrorCode::ParseError, msg.view());
             }
 
             auto const letter = text[end];
@@ -526,7 +534,7 @@ auto expand_pattern_atoms(
                 if (letter == 'i' && flags.section != PatternSection::Command && flags.section != PatternSection::Display) {
                     auto msg = Buf {};
                     msg.fmt("%{}i is only valid in a command string", num);
-                    return make_error<Instruction>(ErrorCode::ParseError, msg.view());
+                    return make_error<StringId>(ErrorCode::ParseError, msg.view());
                 }
                 auto const kind = letter == 'f' ? AtomKind::NthInput
                     : letter == 'b'             ? AtomKind::NthInputBase
@@ -540,7 +548,7 @@ auto expand_pattern_atoms(
 
             auto msg = Buf {};
             msg.fmt("Expected 'f', 'b', 'B', 'o', or 'i' after number in %{}-flag, but got '{}'", num, letter);
-            return make_error<Instruction>(ErrorCode::ParseError, msg.view());
+            return make_error<StringId>(ErrorCode::ParseError, msg.view());
         }
 
         if (flag == '<' && flags.section != PatternSection::Command) {
@@ -551,14 +559,14 @@ auto expand_pattern_atoms(
         if (flag == '<') {
             auto end = text.find('>', pos);
             if (end == std::string_view::npos) {
-                return make_error<Instruction>(ErrorCode::ParseError, "Unable to find end-group marker '>' for %<group> flag");
+                return make_error<StringId>(ErrorCode::ParseError, "Unable to find end-group marker '>' for %<group> flag");
             }
             auto const group_name = text.substr(pos, end - pos);
             pos = end + 1;
             if (!ctx.resolve_order_only_group || ctx.resolve_order_only_group(group_name).empty()) {
                 auto msg = Buf {};
                 msg.fmt("Unable to find group '<{}>' as an input. Make sure it is listed as an input to the command", group_name);
-                return make_error<Instruction>(ErrorCode::ParseError, msg.view());
+                return make_error<StringId>(ErrorCode::ParseError, msg.view());
             }
             builder.group_ref(group_name);
             continue;
@@ -571,7 +579,7 @@ auto expand_pattern_atoms(
             if (flags.all_inputs.empty()) {
                 auto msg = Buf {};
                 msg.fmt("%{} used in rule pattern and no input files were specified", flag);
-                return make_error<Instruction>(ErrorCode::ParseError, msg.view());
+                return make_error<StringId>(ErrorCode::ParseError, msg.view());
             }
             builder.flag(
                 flag == 'f'       ? AtomKind::AllInputs
@@ -581,10 +589,10 @@ auto expand_pattern_atoms(
             break;
         case 'i':
             if (flags.section != PatternSection::Command && flags.section != PatternSection::Display) {
-                return make_error<Instruction>(ErrorCode::ParseError, "%i is only valid in a command string");
+                return make_error<StringId>(ErrorCode::ParseError, "%i is only valid in a command string");
             }
             if (flags.order_only_inputs.empty()) {
-                return make_error<Instruction>(
+                return make_error<StringId>(
                     ErrorCode::ParseError,
                     "%i used in rule pattern and no order-only input files were specified"
                 );
@@ -599,19 +607,19 @@ auto expand_pattern_atoms(
                 } else {
                     msg.fmt("%e is only valid with a foreach rule for files that have extensions\n -- This does not appear to be a foreach rule");
                 }
-                return make_error<Instruction>(ErrorCode::ParseError, msg.view());
+                return make_error<StringId>(ErrorCode::ParseError, msg.view());
             }
             builder.flag(AtomKind::InputExt);
             break;
         case 'o':
             if (!section_names_outputs(flags.section)) {
-                return make_error<Instruction>(
+                return make_error<StringId>(
                     ErrorCode::ParseError,
                     "%o can only be used in a command string or extra outputs section"
                 );
             }
             if (flags.all_outputs.empty()) {
-                return make_error<Instruction>(
+                return make_error<StringId>(
                     ErrorCode::ParseError,
                     "%o used in rule pattern and no output files were specified"
                 );
@@ -620,13 +628,13 @@ auto expand_pattern_atoms(
             break;
         case 'O':
             if (!section_names_outputs(flags.section)) {
-                return make_error<Instruction>(
+                return make_error<StringId>(
                     ErrorCode::ParseError,
                     "%O can only be used in the extra outputs section"
                 );
             }
             if (flags.all_outputs.size() != 1) {
-                return make_error<Instruction>(
+                return make_error<StringId>(
                     ErrorCode::ParseError,
                     "%O can only be used if there is exactly one output specified"
                 );
@@ -638,16 +646,16 @@ auto expand_pattern_atoms(
             break;
         case 'g':
             if (flags.all_inputs.empty()) {
-                return make_error<Instruction>(
+                return make_error<StringId>(
                     ErrorCode::ParseError,
                     "%g used in rule pattern and no input files were specified"
                 );
             }
             if (flags.all_inputs.size() > 1) {
-                return make_error<Instruction>(ErrorCode::ParseError, "%g is only valid with one file");
+                return make_error<StringId>(ErrorCode::ParseError, "%g is only valid with one file");
             }
             if (!flags.glob_match) {
-                return make_error<Instruction>(ErrorCode::ParseError, "%g flag found no globs");
+                return make_error<StringId>(ErrorCode::ParseError, "%g flag found no globs");
             }
             builder.literal(*flags.glob_match);
             break;
@@ -655,26 +663,18 @@ auto expand_pattern_atoms(
         case '"': {
             auto msg = Buf {};
             msg.fmt("The quoted %-flag form %{} is not supported", flag);
-            return make_error<Instruction>(ErrorCode::ParseError, msg.view());
+            return make_error<StringId>(ErrorCode::ParseError, msg.view());
         }
         default: {
             auto msg = Buf {};
             msg.fmt("Unknown %-flag: '{}'", flag);
-            return make_error<Instruction>(ErrorCode::ParseError, msg.view());
+            return make_error<StringId>(ErrorCode::ParseError, msg.view());
         }
         }
     }
 
-    return builder.take();
-}
-
-auto fold_pattern_atoms(
-    EvalContext& ctx,
-    Instruction const& atoms,
-    PatternFlags const& flags
-) -> StringId
-{
-    return fold_instruction(atoms, ParseSite { ctx, flags });
+    builder.finish();
+    return folded.intern(global_pool());
 }
 
 auto expand_pattern(
@@ -683,11 +683,7 @@ auto expand_pattern(
     PatternFlags const& flags
 ) -> Result<StringId>
 {
-    auto atoms = expand_pattern_atoms(ctx, text, flags);
-    if (!atoms) {
-        return pup::unexpected<Error> { atoms.error() };
-    }
-    return fold_pattern_atoms(ctx, *atoms, flags);
+    return expand_pattern_atoms(ctx, text, flags, Function<void(Atom)> { [](Atom) {} });
 }
 
 auto expand_path(

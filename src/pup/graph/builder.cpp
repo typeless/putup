@@ -44,7 +44,6 @@
 namespace pup::graph {
 
 auto get_file_node(Graph& graph, NodeId id) -> FileNode*;
-auto get_command_node(Graph& graph, NodeId id) -> CommandNode*;
 auto add_condition_node(Graph& graph, ConditionNode node) -> Result<NodeId>;
 auto get_condition_node(Graph const& graph, NodeId id) -> ConditionNode const*;
 auto invalidate_path_cache(PathCache& cache, NodeId id) -> void;
@@ -551,32 +550,43 @@ auto ensure_internal_var_node(BuilderContext& ctx, Builder& state, std::string_v
     -> std::optional<NodeId>;
 auto append_tool_stat(Buf& out, std::string_view name, std::string_view source_root) -> std::optional<StringId>;
 
-auto create_command_node(
+template<std::size_t I>
+auto next_part(std::optional<CommandStore::Builder<I>>& part) -> std::optional<CommandStore::Builder<I + 1>>
+{
+    if (!part) {
+        return std::nullopt;
+    }
+    return std::move(*part).next();
+}
+
+template<std::size_t I, typename Element>
+auto push_part(std::optional<CommandStore::Builder<I>>& part, Element const& element) -> void
+{
+    if (part) {
+        part->push(element);
+    }
+}
+
+auto push_exported_vars_and_guards(BuilderContext const& ctx, std::optional<CommandStore::Builder<0>>& atoms)
+    -> std::optional<CommandStore::Builder<3>>
+{
+    auto exported = next_part(atoms);
+    for (auto var : ctx.exported_vars) {
+        push_part(exported, make_string_id(var));
+    }
+    auto guards = next_part(exported);
+    for (auto const& guard : ctx.condition_stack) {
+        push_part(guards, guard);
+    }
+    return next_part(guards);
+}
+
+auto add_sticky_edges(
     BuilderContext& ctx,
     Builder& state,
-    SourcePosition rule_location,
-    Instruction instruction,
-    std::string_view display
-) -> Result<NodeId>
+    CommandId command
+) -> void
 {
-    auto exported = SortedIdVec {};
-    exported.merge_from(ctx.exported_vars);
-
-    auto node = CommandNode {
-        .display = intern(display),
-        .source_dir = ctx.current_dir,
-        .rule_location = rule_location,
-        .instruction = std::move(instruction),
-        .exported_vars = std::move(exported),
-        .guards = ctx.condition_stack,
-    };
-
-    auto cmd_id_result = add_command_node(ctx.state->graph, std::move(node));
-    if (!cmd_id_result) {
-        return pup::unexpected<Error>(cmd_id_result.error());
-    }
-
-    auto const command = *cmd_id_result;
     auto const cmd_id = command.id();
 
     for (auto src_id : ctx.sticky_sources) {
@@ -647,8 +657,6 @@ auto create_command_node(
             (void)add_edge(ctx.state->graph, *node_id, cmd_id, LinkType::Sticky);
         }
     }
-
-    return cmd_id;
 }
 
 /// Check if all guards in the condition stack are satisfied (current context is active)
@@ -686,21 +694,22 @@ auto should_process_in_inactive_context(parser::Statement const& stmt) -> bool
 /// - [(C1, true)] vs [(C1, false), (C2, true)]: Position 0 differs, complementary -> exclusive
 /// - [(C1, false), (C2, true)] vs [(C1, false), (C2, false)]: Position 1 differs, complementary -> exclusive
 /// - [(C1, true)] vs [(C1, true), (C2, true)]: All shared guards identical -> NOT exclusive
+template<typename Guards>
 auto are_guards_mutually_exclusive(
-    Vec<Guard> const& guards_a,
+    Guards const& guards_a,
     Vec<Guard> const& guards_b
 ) -> bool
 {
-    if (guards_a.empty() || guards_b.empty()) {
+    if (guards_a.size() == 0 || guards_b.empty()) {
         return false;
     }
 
     auto min_len = std::min(guards_a.size(), guards_b.size());
 
     for (std::size_t i = 0; i < min_len; ++i) {
-        if (guards_a[i] != guards_b[i]) {
-            auto const& a = guards_a[i];
-            auto const& b = guards_b[i];
+        auto const a = guards_a[i];
+        auto const& b = guards_b[i];
+        if (a != b) {
             return a.condition == b.condition && a.polarity != b.polarity;
         }
     }
@@ -742,7 +751,9 @@ auto producer_dir(
             continue;
         }
         auto const command = find_command(graph, id);
-        assert(command);
+        if (!command) {
+            continue;
+        }
         return get<SourceDir>(graph, *command);
     }
     return std::nullopt;
@@ -923,9 +934,9 @@ auto apply_exclusion(
 
 /// Generated command text is not a Tupfile template: every byte is literal except a
 /// %<group> marker, which pass 2 still has to resolve.
-auto atoms_from_generated_text(std::string_view text) -> Instruction
+auto atoms_from_generated_text(std::string_view text, Function<void(Atom)> const& emit) -> void
 {
-    auto builder = InstructionBuilder {};
+    auto builder = InstructionBuilder { emit };
     auto pos = std::size_t { 0 };
     while (pos < text.size()) {
         auto const marker = text.find("%<", pos);
@@ -942,7 +953,7 @@ auto atoms_from_generated_text(std::string_view text) -> Instruction
         builder.group_ref(text.substr(marker + 2, close - marker - 2));
         pos = close + 1;
     }
-    return builder.take();
+    builder.finish();
 }
 
 /// One output section's expansion: the interned paths, and the text each was declared as. %O in a
@@ -962,7 +973,7 @@ auto expand_command(
     parser::PatternFlags flags,
     ExpandedOutputs const& outputs,
     parser::PatternSection section,
-    Instruction* out_instruction = nullptr
+    Function<void(Atom)> const& emit
 ) -> Result<StringId>
 {
     auto& pool = global_pool();
@@ -994,15 +1005,7 @@ auto expand_command(
     );
     flags.section = section;
 
-    auto atoms = parser::expand_pattern_atoms(*ctx.eval, pool.get(*expanded), flags);
-    if (!atoms) {
-        return pup::unexpected<Error>(atoms.error());
-    }
-    auto text = parser::fold_pattern_atoms(*ctx.eval, *atoms, flags);
-    if (out_instruction) {
-        *out_instruction = std::move(*atoms);
-    }
-    return text;
+    return parser::expand_pattern_atoms(*ctx.eval, pool.get(*expanded), flags, emit);
 }
 
 /// The macro defined under `name`, spelled without its '!', or nullptr when none is.
@@ -1537,7 +1540,7 @@ auto apply_pending_weak_assignments(BuilderContext& ctx, Builder& state) -> void
 /// has not been initialized yet. Used by `process_import` and the `on_env_var_used`
 /// callback so that any env var the build depends on — whether explicitly imported
 /// or auto-resolved like TUP_PLATFORM/TUP_ARCH — gets the same tracking node, and
-/// the existing sticky-edge machinery in create_command_node folds it into command
+/// the existing sticky-edge machinery in add_sticky_edges folds it into command
 /// identity.
 auto ensure_env_var_node(
     BuilderContext& ctx,
@@ -2091,49 +2094,52 @@ auto process_generated_rules(
     BuilderContext& ctx,
     Builder& state,
     Vec<GeneratedRule> const& generated_rules,
-    NodeId parent_cmd_id,
+    CommandId parent,
     Vec<NodeId> const& deferred_groups
 ) -> void
 {
     auto& pool = global_pool();
+    auto const parent_position = get<SourcePosition>(ctx.state->graph, parent);
     for (auto const& gen_rule : generated_rules) {
-        auto const parent_command = find_command(ctx.state->graph, parent_cmd_id);
-        assert(parent_command);
-        auto gen_cmd_id = create_command_node(
-            ctx,
-            state,
-            get<SourcePosition>(ctx.state->graph, *parent_command),
-            atoms_from_generated_text(pool.get(gen_rule.command)),
-            pool.get(gen_rule.display)
-        );
-        if (!gen_cmd_id) {
-            continue;
-        }
+        auto const head = CommandHead {
+            .display = gen_rule.display,
+            .source_dir = ctx.current_dir,
+            .rule_file = parent_position.file,
+            .rule_line = parent_position.line,
+            .parent_command = parent.id(),
+            .input_tokens = static_cast<std::uint32_t>(gen_rule.inputs.size()),
+        };
+        auto [gen_cmd_id, first_part] = open_command(ctx.state->graph, head);
+        auto atoms = std::optional { std::move(first_part) };
+        auto const push_atom = Function<void(Atom)> { [&atoms](Atom atom) { push_part(atoms, atom); } };
+        atoms_from_generated_text(pool.get(gen_rule.command), push_atom);
 
-        auto gen_input_ids = Vec<NodeId> {};
+        auto inputs = push_exported_vars_and_guards(ctx, atoms);
+        auto token = std::uint32_t { 0 };
         for (auto input_id_val : gen_rule.inputs) {
+            ++token;
             auto input_id = resolve_input_node(ctx, pool.get(input_id_val));
             if (input_id) {
-                (void)add_edge(ctx.state->graph, *input_id, *gen_cmd_id);
-                gen_input_ids.push_back(*input_id);
+                (void)add_edge(ctx.state->graph, *input_id, gen_cmd_id);
+                push_part(inputs, Operand { .id = *input_id, .token = token });
             }
         }
 
         for (auto oi_id : gen_rule.order_only_inputs) {
             auto oi_node = resolve_input_node(ctx, pool.get(oi_id));
             if (oi_node) {
-                (void)add_edge(ctx.state->graph, *oi_node, *gen_cmd_id, LinkType::OrderOnly);
+                (void)add_edge(ctx.state->graph, *oi_node, gen_cmd_id, LinkType::OrderOnly);
             }
         }
 
-        add_deferred_group_edges(state, deferred_groups, *gen_cmd_id);
+        auto outputs = next_part(inputs);
+        auto order_only_inputs = next_part(outputs);
+        auto const command = close_command(ctx.state->graph, gen_cmd_id, std::move(*order_only_inputs));
+        add_sticky_edges(ctx, state, command);
 
-        (void)add_edge(ctx.state->graph, *gen_cmd_id, parent_cmd_id);
+        add_deferred_group_edges(state, deferred_groups, gen_cmd_id);
 
-        if (auto* node = get_command_node(ctx.state->graph, *gen_cmd_id)) {
-            node->parent_command = parent_cmd_id;
-            node->inputs = std::move(gen_input_ids);
-        }
+        (void)add_edge(ctx.state->graph, gen_cmd_id, parent.id());
     }
 }
 
@@ -2311,10 +2317,6 @@ auto expand_rule(
         return {};
     };
 
-    auto cmd_text = StringId::Empty;
-    auto display = StringId::Empty;
-    auto instruction_pattern = Instruction {};
-
     auto outputs = expand_outputs(ctx, eff_outputs, flags, nullptr);
     if (!outputs) {
         return pup::unexpected<Error>(outputs.error());
@@ -2337,13 +2339,41 @@ auto expand_rule(
         }
     }
 
-    auto cmd_result = expand_command(ctx, eff_command, flags, *outputs, parser::PatternSection::Command, &instruction_pattern);
+    auto display = StringId::Empty;
+    if (eff_display) {
+        auto disp_result = expand_command(ctx, *eff_display, flags, *outputs, parser::PatternSection::Display, Function<void(Atom)> { [](Atom) {} });
+        if (!disp_result) {
+            return pup::unexpected<Error>(disp_result.error());
+        }
+        display = *disp_result;
+    }
+
+    auto const active = is_context_active(ctx);
+    auto cmd_id = std::optional<NodeId> {};
+    auto atoms = std::optional<CommandStore::Builder<0>> {};
+    if (active) {
+        auto const head = CommandHead {
+            .display = display,
+            .source_dir = ctx.current_dir,
+            .rule_file = ctx.current_file,
+            .rule_line = rule.location.line,
+            .input_tokens = token_count,
+            .output_tokens = outputs->token_count,
+            .order_only_tokens = rule_order_only->token_count,
+        };
+        auto [id, first_part] = open_command(ctx.state->graph, head);
+        cmd_id = id;
+        atoms.emplace(std::move(first_part));
+    }
+
+    auto const push_atom = Function<void(Atom)> { [&atoms](Atom atom) { push_part(atoms, atom); } };
+    auto cmd_result = expand_command(ctx, eff_command, flags, *outputs, parser::PatternSection::Command, push_atom);
     if (!cmd_result) {
         return pup::unexpected<Error>(cmd_result.error());
     }
-    cmd_text = *cmd_result;
+    auto const cmd_text = *cmd_result;
 
-    if (ctx.options.reject_empty_commands && is_context_active(ctx)
+    if (ctx.options.reject_empty_commands && active
         && str(cmd_text).find_first_not_of(" \t") == std::string_view::npos) {
         auto msg = Buf {};
         msg += "command expands to empty string";
@@ -2362,13 +2392,7 @@ auto expand_rule(
         return make_error<void>(ErrorCode::ParseError, msg.view());
     }
 
-    if (eff_display) {
-        auto disp_result = expand_command(ctx, *eff_display, flags, *outputs, parser::PatternSection::Display);
-        if (!disp_result) {
-            return pup::unexpected<Error>(disp_result.error());
-        }
-        display = *disp_result;
-    }
+    auto inputs_part = push_exported_vars_and_guards(ctx, atoms);
 
     auto order_only_paths = Vec<StringId> {};
     auto macro_order_only_paths = Vec<StringId> {};
@@ -2383,43 +2407,13 @@ auto expand_rule(
     collect_order_only_paths(macro_order_only_paths, macro_order_only);
     order_only_paths.insert(order_only_paths.end(), macro_order_only_paths.begin(), macro_order_only_paths.end());
 
-    auto const active = is_context_active(ctx);
-    auto cmd_id = std::optional<NodeId> {};
-    if (active) {
-        auto rule_location = SourcePosition { .file = ctx.current_file, .line = rule.location.line };
-        auto created = create_command_node(ctx, state, rule_location, std::move(instruction_pattern), str(display));
-        if (!created) {
-            return pup::unexpected<Error>(created.error());
-        }
-        cmd_id = *created;
-
-        auto cmd_info = CommandInfo {
-            .node_id = *cmd_id,
-            .command = cmd_text,
-            .display = display,
-            .inputs = file_inputs,
-            .order_only_inputs = order_only_paths,
-            .outputs = outputs->ids,
-            .working_dir = intern(str(ctx.current_dir)),
-        };
-
-        auto generated_rules = Vec<GeneratedRule> {};
-        if (ctx.options.scanner_registry && !ctx.options.scanner_registry->empty()) {
-            auto tokens = tokenize_command(cmd_text);
-            generated_rules = ctx.options.scanner_registry->match_and_generate(cmd_info, tokens);
-        }
-
-        process_generated_rules(ctx, state, generated_rules, *cmd_id, deferred_group_vec);
-    }
-
-    auto input_ids = Vec<NodeId> {};
     for (auto const& inp : operands) {
         if (inp.kind == RuleInput::Kind::GroupRef) {
             auto group_id = resolve_group_operand_node(ctx, state, str(inp.value));
             if (!group_id) {
                 return pup::unexpected<Error>(group_id.error());
             }
-            input_ids.push_back(*group_id);
+            push_part(inputs_part, Operand { .id = *group_id, .token = inp.token });
             continue;
         }
         auto input_id = resolve_input_node(ctx, str(inp.value));
@@ -2432,11 +2426,10 @@ auto expand_rule(
                 return pup::unexpected<Error>(edge_result.error());
             }
         }
-        input_ids.push_back(*input_id);
+        push_part(inputs_part, Operand { .id = *input_id, .token = inp.token });
     }
 
-    auto output_ids = Vec<NodeId> {};
-    auto output_operand_tokens = Vec<std::uint32_t> {};
+    auto outputs_part = next_part(inputs_part);
     auto all_declared = Vec<PathId> {};
     all_declared.reserve(outputs->ids.size() + extra_outputs->ids.size());
     for (auto p : outputs->ids) {
@@ -2507,11 +2500,15 @@ auto expand_rule(
             if (!node_id::is_command(existing_id)) {
                 continue;
             }
+            if (existing_id == cmd_id) {
+                existing_text = cmd_text;
+                break;
+            }
             auto const existing = find_command(ctx.state->graph, existing_id);
             if (!existing) {
                 return make_error<void>(ErrorCode::InvalidNodeId, "Output producer names no command node");
             }
-            if (!are_guards_mutually_exclusive(get_command_node(ctx.state->graph, existing_id)->guards, ctx.condition_stack)) {
+            if (!are_guards_mutually_exclusive(view<Guards>(ctx.state->graph, *existing), ctx.condition_stack)) {
                 existing_text = expand_instruction(ctx.state->graph, *existing, ctx.state->path_cache);
                 break;
             }
@@ -2548,8 +2545,7 @@ auto expand_rule(
             return pup::unexpected<Error>(edge_result.error());
         }
         if (!is_extra) {
-            output_ids.push_back(output_id->id());
-            output_operand_tokens.push_back(outputs->tokens[i]);
+            push_part(outputs_part, Operand { .id = output_id->id(), .token = outputs->tokens[i] });
         }
 
         if (eff_output_group && !is_extra) {
@@ -2571,15 +2567,14 @@ auto expand_rule(
         }
     }
 
-    auto order_only_ids = Vec<NodeId> {};
-    order_only_ids.reserve(order_only_operands.size());
+    auto order_only_part = next_part(outputs_part);
     for (auto const& inp : order_only_operands) {
         if (inp.kind == RuleInput::Kind::GroupRef) {
             auto group_id = resolve_group_operand_node(ctx, state, str(inp.value));
             if (!group_id) {
                 return pup::unexpected<Error>(group_id.error());
             }
-            order_only_ids.push_back(*group_id);
+            push_part(order_only_part, Operand { .id = *group_id, .token = inp.token });
             continue;
         }
         auto file_id = resolve_input_node(ctx, str(inp.value));
@@ -2589,7 +2584,7 @@ auto expand_rule(
         if (cmd_id) {
             (void)add_edge(ctx.state->graph, *file_id, *cmd_id, LinkType::OrderOnly);
         }
-        order_only_ids.push_back(*file_id);
+        push_part(order_only_part, Operand { .id = *file_id, .token = inp.token });
     }
 
     for (auto oi : macro_order_only_paths) {
@@ -2602,19 +2597,30 @@ auto expand_rule(
         }
     }
 
-    if (!cmd_id) {
+    if (!cmd_id || !order_only_part) {
         return {};
     }
 
-    if (auto* cmd = get_command_node(ctx.state->graph, *cmd_id)) {
-        cmd->inputs = TokenList<NodeId>::grouped(std::move(input_ids), operand_tokens, token_count);
-        cmd->order_only_inputs = TokenList<NodeId>::grouped(
-            std::move(order_only_ids), order_only_tokens, rule_order_only->token_count
-        );
-        cmd->outputs = TokenList<NodeId>::grouped(
-            std::move(output_ids), output_operand_tokens, outputs->token_count
-        );
+    auto const command = close_command(ctx.state->graph, *cmd_id, std::move(*order_only_part));
+    add_sticky_edges(ctx, state, command);
+
+    auto cmd_info = CommandInfo {
+        .node_id = *cmd_id,
+        .command = cmd_text,
+        .display = display,
+        .inputs = file_inputs,
+        .order_only_inputs = order_only_paths,
+        .outputs = outputs->ids,
+        .working_dir = intern(str(ctx.current_dir)),
+    };
+
+    auto generated_rules = Vec<GeneratedRule> {};
+    if (ctx.options.scanner_registry && !ctx.options.scanner_registry->empty()) {
+        auto tokens = tokenize_command(cmd_text);
+        generated_rules = ctx.options.scanner_registry->match_and_generate(cmd_info, tokens);
     }
+
+    process_generated_rules(ctx, state, generated_rules, command, deferred_group_vec);
 
     add_deferred_group_edges(state, deferred_group_vec, *cmd_id);
 
@@ -3209,12 +3215,12 @@ auto finalize_graph(
         auto command_id = static_cast<NodeId>(key >> 32);
         auto name_id = static_cast<StringId>(key & 0xFFFFFFFF);
 
-        auto* cmd_node = get_command_node(g, command_id);
-        if (!cmd_node) {
+        auto const command = find_command(g, command_id);
+        if (!command) {
             continue;
         }
         auto has_group_atom = false;
-        for (auto const& atom : cmd_node->instruction) {
+        for (auto const atom : view<Atoms>(g, *command)) {
             if (atom.kind() == AtomKind::GroupRef && atom.text() == name_id) {
                 has_group_atom = true;
                 break;
@@ -3224,7 +3230,8 @@ auto finalize_graph(
             continue;
         }
 
-        auto source_dir_sv = str(cmd_node->source_dir);
+        auto const head = get<CommandHead>(g, *command);
+        auto source_dir_sv = str(head.source_dir);
         auto canonical_cwd = StringId::Empty;
         if (!is_empty(state.options.source_root) && !is_empty(state.options.output_root)
             && str(state.options.source_root) != str(state.options.output_root)) {
@@ -3258,19 +3265,32 @@ auto finalize_graph(
             }
         }
 
-        {
-            auto const replacement_id = intern(replacement.view());
-            auto rewritten = Instruction {};
-            rewritten.reserve(cmd_node->instruction.size());
-            for (auto const& atom : cmd_node->instruction) {
-                if (atom.kind() == AtomKind::GroupRef && atom.text() == name_id) {
-                    rewritten.push_back(Atom::literal(replacement_id));
-                } else {
-                    rewritten.push_back(atom);
-                }
-            }
-            cmd_node->instruction = std::move(rewritten);
+        auto const replacement_id = intern(replacement.view());
+        auto atoms = g.commands.open(head);
+        for (auto const atom : view<Atoms>(g, *command)) {
+            atoms.push(atom.kind() == AtomKind::GroupRef && atom.text() == name_id ? Atom::literal(replacement_id) : atom);
         }
+        auto exported = std::move(atoms).next();
+        for (auto const var : view<ExportedVars>(g, *command)) {
+            exported.push(var);
+        }
+        auto guards = std::move(exported).next();
+        for (auto const guard : view<Guards>(g, *command)) {
+            guards.push(guard);
+        }
+        auto inputs = std::move(guards).next();
+        for (auto const operand : view<Inputs>(g, *command)) {
+            inputs.push(operand);
+        }
+        auto outputs = std::move(inputs).next();
+        for (auto const operand : view<Outputs>(g, *command)) {
+            outputs.push(operand);
+        }
+        auto order_only_inputs = std::move(outputs).next();
+        for (auto const operand : view<OrderOnlyInputs>(g, *command)) {
+            order_only_inputs.push(operand);
+        }
+        g.command_slots[command->index()] = std::move(order_only_inputs).close();
     }
 
     state.deferred_edges.clear();

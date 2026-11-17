@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "pup/core/function.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/instruction.hpp"
 #include "pup/core/string_pool.hpp"
@@ -105,9 +106,11 @@ SCENARIO("Text appended as a literal never expands", "[instruction]")
 {
     GIVEN("an instruction that is one literal carrying every flag spelling")
     {
-        auto builder = InstructionBuilder {};
+        auto atoms = Instruction {};
+        auto const collect = Function<void(Atom)> { [&atoms](Atom atom) { atoms.push_back(atom); } };
+        auto builder = InstructionBuilder { collect };
         builder.literal("%1f %g %<gen> %0f %% %f");
-        auto const atoms = builder.take();
+        builder.finish();
 
         WHEN("it is folded at a site that expands flags")
         {
@@ -130,7 +133,8 @@ SCENARIO("An operand outside the range the funnel accepts builds no atom", "[ins
     {
         WHEN("a numbered flag is built at each boundary")
         {
-            auto builder = InstructionBuilder {};
+            auto const ignore = Function<void(Atom)> { [](Atom) {} };
+            auto builder = InstructionBuilder { ignore };
 
             THEN("1 and 98 are accepted and 0 and 99 are refused")
             {
@@ -172,7 +176,9 @@ SCENARIO("A rendered instruction re-parses to the same atoms", "[instruction][pr
             auto first_failure = std::string {};
 
             for (auto trial = 0; trial < 512; ++trial) {
-                auto builder = InstructionBuilder {};
+                auto atoms = Instruction {};
+                auto const collect = Function<void(Atom)> { [&atoms](Atom atom) { atoms.push_back(atom); } };
+                auto builder = InstructionBuilder { collect };
                 auto const parts = 1U + rng.next(6);
                 for (auto p = 0U; p < parts; ++p) {
                     switch (rng.next(4)) {
@@ -193,7 +199,7 @@ SCENARIO("A rendered instruction re-parses to the same atoms", "[instruction][pr
                         break;
                     }
                 }
-                auto const atoms = builder.take();
+                builder.finish();
                 auto const rendered = render_instruction(atoms);
                 auto reparsed = pup::parse_instruction(global_pool().get(rendered));
 

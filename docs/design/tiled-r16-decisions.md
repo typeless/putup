@@ -61,9 +61,9 @@ Identity:
 - The owner check treats a producer equal to the command under construction as that rule: it reports the rule's command text and uses `ctx.condition_stack` as its guards. The message prefix is unchanged.
 
 Content:
-- Head: display, source directory, rule file, line, column plus one (0 = none), parent command (0 = none), and the three token counts. Sequences, in production order: instruction atoms, exported variables, guards, inputs, outputs, order-only inputs. Each operand sequence holds `{NodeId, token}` pairs, non-decreasing in token; a reader finds token n by a scan.
+- Head: display, source directory, rule file, line, parent command (0 = none), and the three token counts. No producer sets a column on a command (a rule's position is its file and line), so the head records none and `get<SourcePosition>` returns no column (review 2026-11-17). Sequences, in production order: instruction atoms, exported variables, guards, inputs, outputs, order-only inputs. Each operand sequence holds `{NodeId, token}` pairs, non-decreasing in token; a reader finds token n by a scan.
 - `Atom` and `Guard` declare their padding as zero-initialized fields (padding ruling above); no packed twins.
-- A scan command's input token count is the number of inputs its generated rule names, known before its loop; an input that fails to resolve leaves its token empty. Scan instructions carry only literal and group atoms (`builder.cpp:926-945`), so no operand expansion reads these tokens. Rejected: resolving the inputs into a local list first (fails R16 b′); a head flag meaning "one token per operand" (a flag whose validity depends on other fields); a builder call that rewrites the head before `close`, which adds an operation to the framework that no other site needs, while the count known before the loop meets the same requirement.
+- A scan command's input token count is the number of inputs its generated rule names, known before its loop. A scan command's inputs are its parent's file inputs (`dep_scanner.cpp:101`), which the parent already resolved (`builder.cpp:2420-2423`), so an input that fails to resolve cannot reach a scan today; if one did, it would leave its token empty. Scan instructions carry only literal and group atoms (`builder.cpp:926-945`), so no operand expansion reads these tokens. Rejected: resolving the inputs into a local list first (fails R16 b′); a head flag meaning "one token per operand" (a flag whose validity depends on other fields); a builder call that rewrites the head before `close`, which adds an operation to the framework that no other site needs, while the count known before the loop meets the same requirement.
 - `finalize_graph`'s group rewrite (`builder.cpp:3271`) constructs a new record with the rewritten atoms and the other parts copied from the old one, and moves the slot (R16 d). The old bytes stay unused and are counted by the gate.
 
 Inactive context (supersedes "the site splits that path"): the inactive path still expands the command, whose text feeds `InactiveDeclaration` (`builder.cpp:2534-2539`), and runs the same loops. It holds no record: each builder state is an empty optional, and the sink folds without pushing. One path, with the record optional, instead of two copies of the loops.
@@ -72,5 +72,16 @@ Recorded observable changes, besides those above:
 - In a verbose parse, a rule that fails after adding an output edge (`builder.cpp:2546`) leaves an empty slot as that output's producer, so a later rule naming the same output reports "Output producer names no command node" (`builder.cpp:2510-2512`) instead of "already owned by command". The parse has already failed; only the second message differs.
 - The sticky, tool and variable edges enter the graph after the operand edges. The test suite decides whether any reader depends on that order.
 - Listing the live commands (`command_ids`, "in slot order") skips empty slots.
+
+Gate (R16 f), measured 2026-11-17 against 98e8006e on the self-host tree, one fresh source copy per binary, `PUP_BUMP_STATS=1`; allocations are `bump_alloc` calls:
+
+| workload | gross bump bytes | copied bytes | allocations |
+|---|---|---|---|
+| `putup parse` | 770264 → 748756 | 97456 → 99152 | 14290 → 12273 |
+| clean build | 6609690 → 6588602 | 455076 → 456756 | 29226 → 27470 |
+| null build | 975633 → 954125 | 166988 → 168684 | 16456 → 14439 |
+| header-edit rebuild | 12301003 → 12279795 | 474724 → 476452 | 518657 → 516902 |
+
+The gross bytes exclude the command store's tile, which holds 16024 bytes after `putup parse`, all of them in live records. With the tile counted, `putup parse` still uses fewer bytes than before. The copied bytes lose by about 1.7 KB on each workload, all of it in the side index (`Vec<std::optional<RecordId>>`, 8 bytes per command) moving as it grows (per-site accounting on `putup parse`: +1696 bytes in its `grow_to`). Accepted: the loss is under 0.6% of each workload's copies, and it comes from the side index that R16 (e) requires; the command lists it replaces made more allocations and more gross bytes. Median wall time of `putup parse` is unchanged (0.227 s → 0.226 s, 9 interleaved runs).
 
 Tests: `CommandNode` leaves `src/` and `include/`. Tests add commands through a helper in `test/unit` that opens, pushes and closes a record from a test-local value, an ordinary copy of existing data (R16 b′).

@@ -34,6 +34,7 @@
 #include "pup/parser/ignore.hpp"
 #include "pup/platform/file_io.hpp"
 #include "pup/platform/stream.hpp"
+#include "tiled/packed_store.hpp"
 
 #include <algorithm>
 #include <cassert>
@@ -788,14 +789,25 @@ auto serialize_command_nodes(
 {
     auto const& g = state.graph;
     auto remap = pup::NodeIdMap32 {};
+    auto token_list = [](tiled::PackedSequence<pup::graph::Operand> operands, std::uint32_t token_count) {
+        auto ids = pup::Vec<pup::NodeId> {};
+        auto tokens = pup::Vec<std::uint32_t> {};
+        ids.reserve(operands.size());
+        tokens.reserve(operands.size());
+        for (auto const operand : operands) {
+            ids.push_back(operand.id);
+            tokens.push_back(operand.token);
+        }
+        return pup::TokenList<pup::NodeId>::grouped(std::move(ids), tokens, token_count);
+    };
     for (auto id : pup::graph::command_ids(g)) {
-
-        auto inputs = pup::graph::view<pup::graph::Inputs>(g, id);
-        auto order_only_inputs = pup::graph::view<pup::graph::OrderOnlyInputs>(g, id);
-        auto outputs = pup::graph::view<pup::graph::Outputs>(g, id);
+        auto const head = pup::graph::get<pup::graph::CommandHead>(g, id);
+        auto inputs = token_list(pup::graph::view<pup::graph::Inputs>(g, id), head.input_tokens);
+        auto order_only_inputs = token_list(pup::graph::view<pup::graph::OrderOnlyInputs>(g, id), head.order_only_tokens);
+        auto outputs = token_list(pup::graph::view<pup::graph::Outputs>(g, id), head.output_tokens);
         auto& pool = pup::global_pool();
 
-        auto source_dir = pup::graph::get<pup::graph::SourceDir>(g, id);
+        auto source_dir = head.source_dir;
         auto dir_id = pup::NodeId { 0 };
         if (!pool.get(source_dir).empty()) {
             if (auto found = path_to_id.find(source_dir)) {

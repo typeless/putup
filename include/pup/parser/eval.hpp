@@ -231,16 +231,9 @@ auto expand(EvalContext& ctx, std::string_view text) -> Result<StringId>;
 auto expand_pattern_atoms(
     EvalContext& ctx,
     std::string_view text,
-    PatternFlags const& flags
-) -> Result<Instruction>;
-
-/// Resolve an atom sequence against the flags that produced it.
-[[nodiscard]]
-auto fold_pattern_atoms(
-    EvalContext& ctx,
-    Instruction const& atoms,
-    PatternFlags const& flags
-) -> StringId;
+    PatternFlags const& flags,
+    Function<void(Atom)> const& emit
+) -> Result<StringId>;
 
 /// Expand pattern flags (%f, %o, %B, etc.) in a string
 [[nodiscard]]

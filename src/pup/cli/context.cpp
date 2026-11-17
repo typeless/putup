@@ -1095,7 +1095,8 @@ auto build_context(
         }
 
         auto build_root_name = pool.intern(graph::get_build_root_name(ctx.impl_->graph.graph));
-        ctx.impl_->graph = graph::make_build_graph();
+        std::destroy_at(&ctx.impl_->graph);
+        std::construct_at(&ctx.impl_->graph, graph::make_build_graph());
         if (auto named = graph::set_build_root_name(ctx.impl_->graph, pool.get(build_root_name)); !named) {
             return unexpected<Error>(named.error());
         }

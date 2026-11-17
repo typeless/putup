@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "command_fixture.hpp"
 #include "e2e_fixture.hpp"
 #include "instruction_support.hpp"
 #include "temp_root.hpp"
@@ -1374,7 +1375,7 @@ TEST_CASE("graph-to-index roundtrip keeps every node and edge endpoint", "[index
     auto group = pup::graph::add_file_node(g, pup::graph::FileNode { .type = NodeType::Group, .name = intern("objs") });
     auto ghost = pup::graph::add_file_node(g, pup::graph::FileNode { .type = NodeType::Ghost, .name = intern("missing.h") });
     auto out = pup::graph::add_file_node(g, pup::graph::FileNode { .type = NodeType::Generated, .name = intern("a.o") });
-    auto cmd = pup::graph::add_command_node(g, pup::graph::CommandNode { .instruction = pup::test::instruction("cc a.c") });
+    auto cmd = pup::test::add_command(g, pup::test::Command { .instruction = pup::test::instruction("cc a.c") });
 
     REQUIRE(root.has_value());
     REQUIRE(nameless.has_value());
@@ -1432,7 +1433,7 @@ TEST_CASE("graph-to-index roundtrip holds for randomized graphs", "[index]")
         auto cmd_ids = std::vector<pup::NodeId> {};
         auto cmd_count = std::size_t { 1 + rng() % 4 };
         for (auto i = std::size_t { 0 }; i < cmd_count; ++i) {
-            auto id = pup::graph::add_command_node(g, pup::graph::CommandNode { .instruction = pup::test::instruction("cmd" + std::to_string(i)) });
+            auto id = pup::test::add_command(g, pup::test::Command { .instruction = pup::test::instruction("cmd" + std::to_string(i)) });
             REQUIRE(id.has_value());
             cmd_ids.push_back(id->id());
         }
@@ -2415,7 +2416,7 @@ SCENARIO("A recorded command and a graph command expand a template the same way"
 
             for (auto const& operands : cases) {
                 for (auto const& tmpl : templates) {
-                    auto node = graph::CommandNode {
+                    auto node = pup::test::Command {
                         .source_dir = operands.source_dir,
                         .instruction = pup::test::instruction(tmpl),
                     };
@@ -2428,7 +2429,7 @@ SCENARIO("A recorded command and a graph command expand a template the same way"
                     node.order_only_inputs = grouped(
                         operands.graph_order_only, operands.order_only_tokens, operands.order_only_token_count
                     );
-                    auto cmd_id = graph::add_command_node(g, std::move(node));
+                    auto cmd_id = pup::test::add_command(g, node);
                     REQUIRE(cmd_id.has_value());
 
                     auto record = index::CommandEntry {
@@ -2510,7 +2511,7 @@ TEST_CASE("Serializing graph edges relocates no index edge list", "[index]")
 {
     auto bs = pup::graph::make_build_graph();
     auto& g = bs.graph;
-    auto cmd = pup::graph::add_command_node(g, pup::graph::CommandNode { .instruction = pup::test::instruction("cc") });
+    auto cmd = pup::test::add_command(g, pup::test::Command { .instruction = pup::test::instruction("cc") });
     REQUIRE(cmd.has_value());
     for (auto i = 0; i < 40; ++i) {
         auto src = pup::graph::add_file_node(g, pup::graph::FileNode { .type = NodeType::File, .name = intern("s" + std::to_string(i) + ".c") });
