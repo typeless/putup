@@ -104,8 +104,10 @@ inline constexpr auto INDEX_LAYOUT_FLOOR = std::uint32_t { 9 };
 
 static_assert(INDEX_LAYOUT_FLOOR <= INDEX_VERSION, "the readable window runs backwards from the current version");
 
+#pragma pack(push, 1)
+
 /// Index file header (56 bytes) - v9
-struct alignas(8) RawHeader {
+struct RawHeader {
     std::array<char, 4> magic = INDEX_MAGIC; ///< "PUPI"
     std::uint32_t version = INDEX_VERSION;   ///< Format version
     std::uint32_t file_count = 0;            ///< Number of file entries
@@ -126,7 +128,7 @@ static_assert(sizeof(RawHeader) == 56, "RawHeader must be 56 bytes");
 /// Raw file entry (64 bytes) - v9
 /// Represents source files, generated files, directories, groups, etc.
 /// Node ID is computed from array position: id = array_index (files start at 1)
-struct alignas(8) RawFileEntry {
+struct RawFileEntry {
     std::uint32_t parent_id = 0;    ///< Parent directory node ID
     std::uint32_t src_id = 0;       ///< For generated files: source command ID
     std::uint32_t name_offset = 0;  ///< Offset into string table (length-prefixed)
@@ -152,7 +154,7 @@ static_assert(
 /// Represents build commands. In v8, cmd_offset points to template string (with %f/%o patterns)
 /// rather than fully-expanded command. Operands stored in separate operand section.
 /// Node ID is computed from array position: id = array_index | COMMAND_ID_FLAG
-struct alignas(8) RawCommandEntry {
+struct RawCommandEntry {
     std::uint32_t dir_id = 0;         ///< Directory where command runs
     std::uint32_t cmd_offset = 0;     ///< Offset to template string with %f/%o patterns (v8)
     std::uint32_t display_offset = 0; ///< Display text offset (length-prefixed)
@@ -265,7 +267,7 @@ static_assert(
 
 /// Raw edge entry (16 bytes)
 /// Represents dependencies between nodes
-struct alignas(8) RawEdge {
+struct RawEdge {
     std::uint32_t from_id = 0;                 ///< Source node ID
     std::uint32_t to_id = 0;                   ///< Destination node ID
     std::uint8_t type = 0;                     ///< LinkType
@@ -276,11 +278,13 @@ static_assert(sizeof(RawEdge) == 16, "RawEdge must be 16 bytes");
 
 /// Index file footer (32 bytes)
 /// Contains checksum of entire file (excluding footer)
-struct alignas(8) RawFooter {
+struct RawFooter {
     Hash256 checksum = {}; ///< SHA-256 of file content before footer
 };
 
 static_assert(sizeof(RawFooter) == 32, "RawFooter must be 32 bytes");
+
+#pragma pack(pop)
 
 /// The one place a new NodeFlags bit must be answered for: -Wswitch makes an unlisted enumerator a
 /// build error, and the reader's validity mask is derived from this switch, so a bit cannot reach

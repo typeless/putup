@@ -250,7 +250,13 @@ auto serialize_index(Index const& index) -> Result<Vec<std::byte>>
     }
 
     std::sort(edge_entries.begin(), edge_entries.end(), [](RawEdge const& a, RawEdge const& b) {
-        return std::tie(a.from_id, a.to_id, a.type) < std::tie(b.from_id, b.to_id, b.type);
+        if (a.from_id != b.from_id) {
+            return a.from_id < b.from_id;
+        }
+        if (a.to_id != b.to_id) {
+            return a.to_id < b.to_id;
+        }
+        return a.type < b.type;
     });
 
     auto const file_size_64 = file_entries.size() * sizeof(RawFileEntry);

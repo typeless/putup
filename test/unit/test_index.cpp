@@ -39,13 +39,6 @@ using namespace pup::index;
 
 namespace {
 
-auto header_of(Vec<std::byte> const& bytes) -> RawHeader
-{
-    auto header = RawHeader {};
-    std::memcpy(&header, bytes.data(), sizeof(header));
-    return header;
-}
-
 auto intern(std::string_view s) -> StringId
 {
     return global_pool().intern(s);
@@ -104,6 +97,15 @@ TEST_CASE("Index format struct sizes", "[index]")
     {
         REQUIRE(sizeof(RawFooter) == 32);
     }
+}
+
+TEST_CASE("Index record types can be read in place at any byte offset", "[index]")
+{
+    REQUIRE(alignof(RawHeader) == 1);
+    REQUIRE(alignof(RawFileEntry) == 1);
+    REQUIRE(alignof(RawCommandEntry) == 1);
+    REQUIRE(alignof(RawEdge) == 1);
+    REQUIRE(alignof(RawFooter) == 1);
 }
 
 TEST_CASE("RawFileEntry helpers", "[index]")
@@ -638,9 +640,8 @@ TEST_CASE("A record whose declared layout does not fit the file is refused", "[e
 
     auto const write_mutated = [&](auto&& mutate) {
         auto corrupted = *data;
-        auto header = header_of(corrupted);
-        mutate(header);
-        std::memcpy(corrupted.data(), &header, sizeof(header));
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        mutate(*reinterpret_cast<RawHeader*>(corrupted.data()));
         auto out = std::ofstream { path, std::ios::binary | std::ios::trunc };
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         out.write(reinterpret_cast<char const*>(corrupted.data()), static_cast<std::streamsize>(corrupted.size()));
@@ -897,8 +898,8 @@ TEST_CASE("StringTable deduplication", "[index]")
                 auto data = serialize_index(index);
         REQUIRE(data.has_value());
 
-        auto const hdr = header_of(*data);
-        REQUIRE(hdr.string_table_size == 12);
+        auto const* hdr = reinterpret_cast<RawHeader const*>(data->data());
+        REQUIRE(hdr->string_table_size == 12);
     }
 
     SECTION("system header paths are deduplicated")
@@ -911,8 +912,8 @@ TEST_CASE("StringTable deduplication", "[index]")
                 auto data = serialize_index(index);
         REQUIRE(data.has_value());
 
-        auto const hdr = header_of(*data);
-        REQUIRE(hdr.string_table_size == 24);
+        auto const* hdr = reinterpret_cast<RawHeader const*>(data->data());
+        REQUIRE(hdr->string_table_size == 24);
     }
 
     SECTION("empty strings return offset 0")
@@ -925,8 +926,8 @@ TEST_CASE("StringTable deduplication", "[index]")
                 auto data = serialize_index(index);
         REQUIRE(data.has_value());
 
-        auto const hdr = header_of(*data);
-        REQUIRE(hdr.string_table_size == 7);
+        auto const* hdr = reinterpret_cast<RawHeader const*>(data->data());
+        REQUIRE(hdr->string_table_size == 7);
     }
 }
 
@@ -1458,9 +1459,9 @@ namespace {
 /// identically, so these bytes are what one of those really produced.
 auto stamp_version(Vec<std::byte>& bytes, std::uint32_t version) -> void
 {
-    auto hdr = header_of(bytes);
-    hdr.version = version;
-    std::memcpy(bytes.data(), &hdr, sizeof(hdr));
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto* hdr = reinterpret_cast<RawHeader*>(bytes.data());
+    hdr->version = version;
 
     auto const content_size = bytes.size() - sizeof(RawFooter);
     auto const checksum = pup::sha256(std::span<std::byte const> { bytes.data(), content_size });
@@ -1604,9 +1605,10 @@ TEST_CASE("An operand count larger than the record makes it unreadable", "[index
     REQUIRE(data.has_value());
 
     auto bytes = *data;
-    auto const hdr = header_of(bytes);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto const* hdr = reinterpret_cast<RawHeader const*>(bytes.data());
     for (auto i = std::size_t { 0 }; i < 2 * sizeof(std::uint32_t); ++i) {
-        bytes[hdr.operand_data_offset + i] = std::byte { 0xFF };
+        bytes[hdr->operand_data_offset + i] = std::byte { 0xFF };
     }
     stamp_version(bytes, INDEX_VERSION);
 
@@ -1631,10 +1633,11 @@ TEST_CASE("An operand boundary that does not span its operands makes the record 
     REQUIRE(data.has_value());
 
     auto bytes = *data;
-    auto const hdr = header_of(bytes);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto const* hdr = reinterpret_cast<RawHeader const*>(bytes.data());
     auto constexpr OPERAND_IDS = std::size_t { 2 };
     auto constexpr BOUNDARY_OFFSETS_BEFORE_THE_CLOSING_ONE = std::size_t { 2 };
-    auto const input_boundary_closing_offset = std::size_t { hdr.operand_data_offset }
+    auto const input_boundary_closing_offset = std::size_t { hdr->operand_data_offset }
         + (OPERAND_RECORD_HEAD_WORDS + OPERAND_IDS + BOUNDARY_OFFSETS_BEFORE_THE_CLOSING_ONE)
             * sizeof(std::uint32_t);
     bytes[input_boundary_closing_offset] = std::byte { 0x01 };
@@ -1665,13 +1668,14 @@ TEST_CASE("An operand offset that wraps makes the record unreadable", "[index]")
     REQUIRE(data.has_value());
 
     auto bytes = *data;
-    auto const hdr = header_of(bytes);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto const* hdr = reinterpret_cast<RawHeader const*>(bytes.data());
     auto constexpr COUNT_FIELDS_POS = std::uint32_t { offsetof(RawHeader, file_count) };
-    REQUIRE(COUNT_FIELDS_POS < hdr.operand_data_offset);
-    REQUIRE(hdr.file_count > 0);
-    auto const wrapping = static_cast<std::uint32_t>(COUNT_FIELDS_POS - hdr.operand_data_offset);
-    REQUIRE(static_cast<std::uint32_t>(hdr.operand_data_offset + wrapping) == COUNT_FIELDS_POS);
-    std::memcpy(bytes.data() + hdr.operand_table_offset, &wrapping, sizeof(wrapping));
+    REQUIRE(COUNT_FIELDS_POS < hdr->operand_data_offset);
+    REQUIRE(hdr->file_count > 0);
+    auto const wrapping = static_cast<std::uint32_t>(COUNT_FIELDS_POS - hdr->operand_data_offset);
+    REQUIRE(static_cast<std::uint32_t>(hdr->operand_data_offset + wrapping) == COUNT_FIELDS_POS);
+    std::memcpy(bytes.data() + hdr->operand_table_offset, &wrapping, sizeof(wrapping));
     stamp_version(bytes, INDEX_VERSION);
 
     auto const path = temp_index_path("pup_operand_offset_wrap");
@@ -1693,19 +1697,20 @@ TEST_CASE("A name offset that wraps makes the record unreadable", "[index]")
     REQUIRE(data.has_value());
 
     auto bytes = *data;
-    auto const hdr = header_of(bytes);
-    REQUIRE(hdr.file_count > 0);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto const* hdr = reinterpret_cast<RawHeader const*>(bytes.data());
+    REQUIRE(hdr->file_count > 0);
 
-    auto const planted = hdr.file_offset + offsetof(RawFileEntry, size);
-    REQUIRE(planted < hdr.string_offset);
+    auto const planted = hdr->file_offset + offsetof(RawFileEntry, size);
+    REQUIRE(planted < hdr->string_offset);
     auto constexpr PLANTED_NAME = std::string_view { "ghost!" };
     auto const planted_length = static_cast<std::uint16_t>(PLANTED_NAME.size());
     std::memcpy(bytes.data() + planted, &planted_length, sizeof(planted_length));
     std::memcpy(bytes.data() + planted + sizeof(planted_length), PLANTED_NAME.data(), PLANTED_NAME.size());
 
-    auto const wrapping = static_cast<std::uint32_t>(planted - hdr.string_offset);
-    REQUIRE(static_cast<std::uint32_t>(hdr.string_offset + wrapping) == planted);
-    auto const name_offset_pos = hdr.file_offset + offsetof(RawFileEntry, name_offset);
+    auto const wrapping = static_cast<std::uint32_t>(planted - hdr->string_offset);
+    REQUIRE(static_cast<std::uint32_t>(hdr->string_offset + wrapping) == planted);
+    auto const name_offset_pos = hdr->file_offset + offsetof(RawFileEntry, name_offset);
     std::memcpy(bytes.data() + name_offset_pos, &wrapping, sizeof(wrapping));
     stamp_version(bytes, INDEX_VERSION);
 
@@ -1731,10 +1736,11 @@ TEST_CASE("A record whose entry carries a type this putup cannot name is unreada
     REQUIRE(data.has_value());
 
     auto bytes = *data;
-    auto const hdr = header_of(bytes);
-    REQUIRE(hdr.file_count > 0);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto const* hdr = reinterpret_cast<RawHeader const*>(bytes.data());
+    REQUIRE(hdr->file_count > 0);
     auto constexpr UNNAMEABLE_TYPE = static_cast<std::uint8_t>(static_cast<std::uint8_t>(NodeType::Condition) + 1);
-    bytes[hdr.file_offset + offsetof(RawFileEntry, type)] = std::byte { UNNAMEABLE_TYPE };
+    bytes[hdr->file_offset + offsetof(RawFileEntry, type)] = std::byte { UNNAMEABLE_TYPE };
     stamp_version(bytes, INDEX_VERSION);
 
     auto const path = temp_index_path("pup_unnameable_node_type");
@@ -1767,9 +1773,10 @@ TEST_CASE("A record whose entry carries a node type no record ever held is unrea
     REQUIRE(data.has_value());
 
     auto bytes = *data;
-    auto const hdr = header_of(bytes);
-    REQUIRE(hdr.file_count > 0);
-    bytes[hdr.file_offset + offsetof(RawFileEntry, type)] = std::byte { never_recorded };
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto const* hdr = reinterpret_cast<RawHeader const*>(bytes.data());
+    REQUIRE(hdr->file_count > 0);
+    bytes[hdr->file_offset + offsetof(RawFileEntry, type)] = std::byte { never_recorded };
     stamp_version(bytes, INDEX_VERSION);
 
     auto const path = temp_index_path("pup_never_recorded_node_type_" + std::to_string(never_recorded));
@@ -1796,10 +1803,11 @@ TEST_CASE("A record whose edge carries a link type this putup cannot name is unr
     REQUIRE(data.has_value());
 
     auto bytes = *data;
-    auto const hdr = header_of(bytes);
-    REQUIRE(hdr.edge_count > 0);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto const* hdr = reinterpret_cast<RawHeader const*>(bytes.data());
+    REQUIRE(hdr->edge_count > 0);
     auto constexpr UNNAMEABLE_LINK = static_cast<std::uint8_t>(static_cast<std::uint8_t>(LinkType::OrderOnly) + 1);
-    bytes[hdr.edge_offset + offsetof(RawEdge, type)] = std::byte { UNNAMEABLE_LINK };
+    bytes[hdr->edge_offset + offsetof(RawEdge, type)] = std::byte { UNNAMEABLE_LINK };
     stamp_version(bytes, INDEX_VERSION);
 
     auto const path = temp_index_path("pup_unnameable_link_type");
@@ -1826,9 +1834,10 @@ TEST_CASE("A record whose edge carries link type zero is unreadable", "[index]")
     REQUIRE(data.has_value());
 
     auto bytes = *data;
-    auto const hdr = header_of(bytes);
-    REQUIRE(hdr.edge_count > 0);
-    bytes[hdr.edge_offset + offsetof(RawEdge, type)] = std::byte { 0 };
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto const* hdr = reinterpret_cast<RawHeader const*>(bytes.data());
+    REQUIRE(hdr->edge_count > 0);
+    bytes[hdr->edge_offset + offsetof(RawEdge, type)] = std::byte { 0 };
     stamp_version(bytes, INDEX_VERSION);
 
     auto const path = temp_index_path("pup_zero_link_type");
@@ -1850,9 +1859,10 @@ TEST_CASE("A record whose entry carries a flag bit this putup cannot name is unr
     REQUIRE(data.has_value());
 
     auto bytes = *data;
-    auto const hdr = header_of(bytes);
-    REQUIRE(hdr.file_count > 0);
-    bytes[hdr.file_offset + offsetof(RawFileEntry, flags_high)] = std::byte { 0x80 };
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto const* hdr = reinterpret_cast<RawHeader const*>(bytes.data());
+    REQUIRE(hdr->file_count > 0);
+    bytes[hdr->file_offset + offsetof(RawFileEntry, flags_high)] = std::byte { 0x80 };
     stamp_version(bytes, INDEX_VERSION);
 
     auto const path = temp_index_path("pup_unnameable_node_flag");
@@ -1876,9 +1886,10 @@ TEST_CASE("A record carrying a flag bit retired since it was written stays reada
     REQUIRE(data.has_value());
 
     auto bytes = *data;
-    auto const hdr = header_of(bytes);
-    REQUIRE(hdr.file_count > 0);
-    bytes[hdr.file_offset + offsetof(RawFileEntry, flags_low)] = std::byte { 1 << 5 };
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto const* hdr = reinterpret_cast<RawHeader const*>(bytes.data());
+    REQUIRE(hdr->file_count > 0);
+    bytes[hdr->file_offset + offsetof(RawFileEntry, flags_low)] = std::byte { 1 << 5 };
     stamp_version(bytes, 13);
 
     auto const path = temp_index_path("pup_retired_node_flag");
@@ -1899,9 +1910,10 @@ TEST_CASE("A record whose command carries a flag bit this putup cannot name is u
     REQUIRE(data.has_value());
 
     auto bytes = *data;
-    auto const hdr = header_of(bytes);
-    REQUIRE(hdr.command_count > 0);
-    bytes[hdr.command_offset + offsetof(RawCommandEntry, flags) + 3] = std::byte { 0x80 };
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto const* hdr = reinterpret_cast<RawHeader const*>(bytes.data());
+    REQUIRE(hdr->command_count > 0);
+    bytes[hdr->command_offset + offsetof(RawCommandEntry, flags) + 3] = std::byte { 0x80 };
     stamp_version(bytes, INDEX_VERSION);
 
     auto const path = temp_index_path("pup_unnameable_command_flag");
@@ -1927,9 +1939,10 @@ TEST_CASE("A corrupt operand record still leaves the recorded paths readable", "
     REQUIRE(data.has_value());
 
     auto bytes = *data;
-    auto const hdr = header_of(bytes);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto const* hdr = reinterpret_cast<RawHeader const*>(bytes.data());
     for (auto i = std::size_t { 0 }; i < 2 * sizeof(std::uint32_t); ++i) {
-        bytes[hdr.operand_data_offset + i] = std::byte { 0xFF };
+        bytes[hdr->operand_data_offset + i] = std::byte { 0xFF };
     }
     stamp_version(bytes, INDEX_VERSION);
 
