@@ -68,6 +68,17 @@ COVERAGE_COLUMNS = [
 
 STAT_COLUMNS = ["metric", "value"]
 
+MEMORY_COLUMNS = [
+    "workload",
+    "allocations",
+    "gross_bytes",
+    "net_bytes",
+    "copied_bytes",
+]
+
+BUMP_TOTALS = re.compile(r"^bumptotal gross (\d+) net (\d+) allocations (\d+)$", re.MULTILINE)
+COPY_TOTAL = re.compile(r"^copytotal (\d+)$", re.MULTILINE)
+
 # (tsv key, regex over `putup -n --stat` output, display label)
 STAT_FIELDS = [
     ("tupfiles_parsed", r"Tupfiles parsed:\s+([\d,]+)", "Tupfiles parsed"),
@@ -92,6 +103,12 @@ STAT_NOTE = (
     " hash computations, or stat calls is a real behavior change, not noise."
     " Timings are the minimum over repeated runs, compared only against a"
     " baseline from the same CPU model; the counters are the regression signal."
+)
+
+MEMORY_NOTE = (
+    "Totals that `PUP_BUMP_STATS=1` prints at exit: allocations and gross bytes"
+    " served by the bump allocator, net bytes left on its heap stack, and the bytes"
+    " copied because a value could not grow in place (`copytotal`)."
 )
 
 PERF_NOTE = (
@@ -205,16 +222,19 @@ def fmt(value, spec):
     return "n/a" if value is None else format(value, spec)
 
 
-def cmd_bench(args):
-    workloads = [
+def bench_workloads(args):
+    return [
         ("parse", [args.putup, "parse", "-C", args.config_dir,
                    "-S", args.source_dir, "-B", args.build_dir]),
         ("dry-run", [args.putup, "-n", "-C", args.config_dir,
                      "-S", args.source_dir, "-B", args.build_dir,
                      f"-j{os.cpu_count()}"]),
     ]
+
+
+def cmd_bench(args):
     print("\t".join(PERF_COLUMNS))
-    for name, cmd in workloads:
+    for name, cmd in bench_workloads(args):
         row = measure(cmd)
         print("\t".join([
             name,
@@ -226,6 +246,27 @@ def cmd_bench(args):
             fmt(row["wall_s"], ".3f"),
             fmt(row["rss_mb"], ".1f"),
         ]))
+    return 0
+
+
+def cmd_memory(args):
+    env = {**os.environ, "PUP_BUMP_STATS": "1"}
+    rows = []
+    for name, cmd in bench_workloads(args):
+        run = subprocess.run(
+            cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+            text=True, check=False,
+        )
+        totals = BUMP_TOTALS.search(run.stderr)
+        copied = COPY_TOTAL.search(run.stderr)
+        if run.returncode != 0 or totals is None or copied is None:
+            sys.stderr.write(f"{name}: exit {run.returncode}\n{run.stderr}")
+            return 1
+        gross, net, allocations = totals.groups()
+        rows.append([name, allocations, gross, net, copied.group(1)])
+    print("\t".join(MEMORY_COLUMNS))
+    for row in rows:
+        print("\t".join(row))
     return 0
 
 
@@ -529,6 +570,25 @@ def perf_section(cur_rows, base_rows):
     return lines
 
 
+def memory_section(cur_rows, base_rows):
+    base_by_name = {r.get("workload"): r for r in base_rows}
+    lines = [
+        "### Memory (gcc example, Linux)",
+        "",
+        "| Workload | Allocations | Gross bytes | Net bytes | Copied bytes |",
+        "|---|---|---|---|---|",
+    ]
+    for row in cur_rows:
+        base = base_by_name.get(row["workload"], {})
+        cells = [row["workload"]] + [
+            annotate(num(row[key]), num(base.get(key)), "pct_change")
+            for key in MEMORY_COLUMNS[1:]
+        ]
+        lines.append("| " + " | ".join(cells) + " |")
+    lines += ["", MEMORY_NOTE]
+    return lines
+
+
 def stat_section(cur_rows, base_rows):
     cur_by_key = {r.get("metric"): r.get("value") for r in cur_rows}
     base_by_key = {r.get("metric"): r.get("value") for r in base_rows}
@@ -654,6 +714,12 @@ def cmd_render(args):
         baseline_used |= bool(base)
         sections.append(perf_section(perf, base))
 
+    memory = read_tsv(args.memory)
+    if memory:
+        base = read_tsv(args.baseline_memory)
+        baseline_used |= bool(base)
+        sections.append(memory_section(memory, base))
+
     stat = read_tsv(args.stat)
     if stat:
         base = read_tsv(args.baseline_stat)
@@ -703,6 +769,13 @@ def main() -> int:
     bench.add_argument("build_dir")
     bench.set_defaults(func=cmd_bench)
 
+    memory = sub.add_parser("memory")
+    memory.add_argument("putup")
+    memory.add_argument("config_dir")
+    memory.add_argument("source_dir")
+    memory.add_argument("build_dir")
+    memory.set_defaults(func=cmd_memory)
+
     stat = sub.add_parser("stat")
     stat.add_argument("putup")
     stat.add_argument("config_dir")
@@ -726,11 +799,13 @@ def main() -> int:
 
     render = sub.add_parser("render")
     render.add_argument("--perf")
+    render.add_argument("--memory")
     render.add_argument("--stat")
     render.add_argument("--size")
     render.add_argument("--coverage")
     render.add_argument("--churn")
     render.add_argument("--baseline-perf")
+    render.add_argument("--baseline-memory")
     render.add_argument("--baseline-stat")
     render.add_argument("--baseline-size")
     render.add_argument("--baseline-coverage")
