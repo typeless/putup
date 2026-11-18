@@ -5,6 +5,8 @@
 #include "pup/core/bump_alloc.hpp"
 #include "pup/core/vec.hpp"
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 
 TEST_CASE("growing a Vec that is not on top of the heap counts its old bytes as copied", "[bump]")
@@ -20,6 +22,18 @@ TEST_CASE("growing a Vec that is not on top of the heap counts its old bytes as 
     v.reserve(64);
 
     REQUIRE(pup::copied_bytes() - before == 4 * sizeof(std::uint32_t));
+}
+
+TEST_CASE("relocate copies the bytes and adds them to the copied count", "[bump]")
+{
+    auto const source = std::array<std::uint8_t, 5> { 1, 2, 3, 4, 5 };
+    auto target = std::array<std::uint8_t, 5> {};
+    auto const before = pup::copied_bytes();
+
+    pup::relocate(target.data(), source.data(), source.size());
+
+    REQUIRE(target == source);
+    REQUIRE(pup::copied_bytes() - before == source.size());
 }
 
 TEST_CASE("growing a Vec on top of the heap copies nothing", "[bump]")

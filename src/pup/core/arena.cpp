@@ -5,7 +5,6 @@
 #include "pup/core/bump_alloc.hpp"
 
 #include <cstdint>
-#include <cstring>
 #include <utility>
 
 namespace pup {
@@ -56,8 +55,7 @@ auto Arena32::append_extend(ArenaSlice old, std::uint32_t new_value) -> ArenaSli
     grow(size_ + block);
     auto const new_offset = static_cast<std::uint32_t>(size_);
     if (old.length > 0) {
-        std::memcpy(data() + new_offset, data() + old.offset, old.length * sizeof(std::uint32_t));
-        record_copy(old.length * sizeof(std::uint32_t));
+        relocate(data() + new_offset, data() + old.offset, old.length * sizeof(std::uint32_t));
     }
     data()[new_offset + old.length] = new_value;
     size_ += block;

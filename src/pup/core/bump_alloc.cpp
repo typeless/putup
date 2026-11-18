@@ -8,6 +8,7 @@
 
 #include <charconv>
 #include <cstdlib>
+#include <cstring>
 
 namespace pup {
 
@@ -163,6 +164,12 @@ auto bump_try_pop(void* p, std::size_t size) -> void
 auto bump_allocated_bytes() -> std::size_t
 {
     return used;
+}
+
+auto relocate(void* target, void const* source, std::size_t bytes) -> void
+{
+    std::memcpy(target, source, bytes);
+    copied += bytes;
 }
 
 auto record_copy(std::size_t bytes) -> void
