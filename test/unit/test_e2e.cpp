@@ -19580,3 +19580,31 @@ SCENARIO("An order-only input list expands the rule's input %-flags", "[e2e][par
         }
     }
 }
+
+SCENARIO("PUP_BUMP_STATS reports the bump totals at exit", "[e2e][bump]")
+{
+    GIVEN("a project built with PUP_BUMP_STATS set")
+    {
+        auto env = EnvGuard { "PUP_BUMP_STATS", "1" };
+        auto f = E2EFixture { "simple_c" };
+        REQUIRE(f.init().success());
+
+        WHEN("putup parses it")
+        {
+            auto const result = f.pup({ "parse" });
+
+            THEN("stderr ends with the gross and net bytes, the allocation count and the copied bytes")
+            {
+                REQUIRE(result.success());
+                auto const& err = result.stderr_output;
+                auto const totals = err.find("bumptotal gross ");
+                REQUIRE(totals != std::string::npos);
+                auto const line_end = err.find('\n', totals);
+                auto const line = std::string_view { err }.substr(totals, line_end - totals);
+                CHECK(line.find(" net ") != std::string_view::npos);
+                CHECK(line.find(" allocations ") != std::string_view::npos);
+                CHECK(err.find("copytotal ", line_end) != std::string::npos);
+            }
+        }
+    }
+}
