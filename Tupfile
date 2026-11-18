@@ -4,82 +4,82 @@ include_rules
 c-srcs-y  = third_party/sha256/sha256.c
 
 # Core
-srcs-y  = src/core/arena.cpp
-srcs-y += src/core/hash.cpp
-srcs-y += src/core/id_array.cpp
-srcs-y += src/core/id_bitset.cpp
-srcs-y += src/core/instruction.cpp
-srcs-y += src/core/layout.cpp
-srcs-y += src/core/metrics.cpp
-srcs-y += src/core/path.cpp
-srcs-y += src/core/path_pool.cpp
-srcs-y += src/core/result.cpp
-srcs-y += src/core/global_pool.cpp
-srcs-y += src/core/buf.cpp
-srcs-y += src/core/print.cpp
-srcs-y += src/core/path_utils.cpp
-srcs-y += src/core/bump_alloc.cpp
-srcs-y += src/core/region.cpp
-srcs-y += src/core/robin_hood_index.cpp
-srcs-y += src/core/sorted_id_vec.cpp
-srcs-y += src/core/string_pool.cpp
-srcs-y += src/core/string_utils.cpp
-srcs-y += src/core/terminal.cpp
+srcs-y  = src/pup/core/arena.cpp
+srcs-y += src/pup/core/hash.cpp
+srcs-y += src/pup/core/id_array.cpp
+srcs-y += src/pup/core/id_bitset.cpp
+srcs-y += src/pup/core/instruction.cpp
+srcs-y += src/pup/core/layout.cpp
+srcs-y += src/pup/core/metrics.cpp
+srcs-y += src/pup/core/path.cpp
+srcs-y += src/pup/core/path_pool.cpp
+srcs-y += src/pup/core/result.cpp
+srcs-y += src/pup/core/global_pool.cpp
+srcs-y += src/pup/core/buf.cpp
+srcs-y += src/pup/core/print.cpp
+srcs-y += src/pup/core/path_utils.cpp
+srcs-y += src/pup/core/bump_alloc.cpp
+srcs-y += src/pup/core/region.cpp
+srcs-y += src/pup/core/robin_hood_index.cpp
+srcs-y += src/pup/core/sorted_id_vec.cpp
+srcs-y += src/pup/core/string_pool.cpp
+srcs-y += src/pup/core/string_utils.cpp
+srcs-y += src/pup/core/terminal.cpp
 
 # Parser
-srcs-y += src/parser/ast.cpp
-srcs-y += src/parser/config.cpp
-srcs-y += src/parser/depfile.cpp
-srcs-y += src/parser/eval.cpp
-srcs-y += src/parser/glob.cpp
-srcs-y += src/parser/ignore.cpp
-srcs-y += src/parser/lexer.cpp
-srcs-y += src/parser/parser.cpp
-srcs-y += src/parser/regex.cpp
-srcs-y += src/parser/var_tracking.cpp
+srcs-y += src/pup/parser/ast.cpp
+srcs-y += src/pup/parser/config.cpp
+srcs-y += src/pup/parser/depfile.cpp
+srcs-y += src/pup/parser/eval.cpp
+srcs-y += src/pup/parser/glob.cpp
+srcs-y += src/pup/parser/ignore.cpp
+srcs-y += src/pup/parser/lexer.cpp
+srcs-y += src/pup/parser/parser.cpp
+srcs-y += src/pup/parser/regex.cpp
+srcs-y += src/pup/parser/var_tracking.cpp
 
 # Graph
-srcs-y += src/graph/builder.cpp
-srcs-y += src/graph/dag.cpp
-srcs-y += src/graph/dep_scanner.cpp
-srcs-y += src/graph/scanners/clang_cl.cpp
-srcs-y += src/graph/scanners/dep_words.cpp
-srcs-y += src/graph/scanners/gcc.cpp
-srcs-y += src/graph/topo.cpp
+srcs-y += src/pup/graph/builder.cpp
+srcs-y += src/pup/graph/dag.cpp
+srcs-y += src/pup/graph/dep_scanner.cpp
+srcs-y += src/pup/graph/scanners/clang_cl.cpp
+srcs-y += src/pup/graph/scanners/dep_words.cpp
+srcs-y += src/pup/graph/scanners/gcc.cpp
+srcs-y += src/pup/graph/topo.cpp
 
 # Index
-srcs-y += src/index/entry.cpp
-srcs-y += src/index/reader.cpp
-srcs-y += src/index/writer.cpp
+srcs-y += src/pup/index/entry.cpp
+srcs-y += src/pup/index/reader.cpp
+srcs-y += src/pup/index/writer.cpp
 
 # Exec
-srcs-y += src/exec/progress_display.cpp
-srcs-y += src/exec/runner.cpp
-srcs-y += src/exec/scheduler.cpp
+srcs-y += src/pup/exec/progress_display.cpp
+srcs-y += src/pup/exec/runner.cpp
+srcs-y += src/pup/exec/scheduler.cpp
 
 # CLI
-srcs-y += src/cli/cmd_build.cpp
-srcs-y += src/cli/cmd_clean.cpp
-srcs-y += src/cli/cmd_configure.cpp
-srcs-y += src/cli/cmd_show.cpp
-srcs-y += src/cli/cmd_parse.cpp
-srcs-y += src/cli/config_commands.cpp
-srcs-y += src/cli/context.cpp
-srcs-y += src/cli/multi_variant.cpp
-srcs-y += src/cli/options.cpp
-srcs-y += src/cli/output.cpp
-srcs-y += src/cli/strict_checks.cpp
-srcs-y += src/cli/target.cpp
+srcs-y += src/pup/cli/cmd_build.cpp
+srcs-y += src/pup/cli/cmd_clean.cpp
+srcs-y += src/pup/cli/cmd_configure.cpp
+srcs-y += src/pup/cli/cmd_show.cpp
+srcs-y += src/pup/cli/cmd_parse.cpp
+srcs-y += src/pup/cli/config_commands.cpp
+srcs-y += src/pup/cli/context.cpp
+srcs-y += src/pup/cli/multi_variant.cpp
+srcs-y += src/pup/cli/options.cpp
+srcs-y += src/pup/cli/output.cpp
+srcs-y += src/pup/cli/strict_checks.cpp
+srcs-y += src/pup/cli/target.cpp
 
 # Platform
 ifeq ($(_os_api),posix)
-srcs-y += src/platform/sys-$(_sys_backend).cpp
-srcs-y += src/platform/sys-common.cpp
+srcs-y += src/pup/platform/sys-$(_sys_backend).cpp
+srcs-y += src/pup/platform/sys-common.cpp
 endif
-srcs-y += src/platform/process-$(_os_api).cpp
-srcs-y += src/platform/file_io-$(_os_api).cpp
-srcs-y += src/platform/env-$(_os_api).cpp
-srcs-y += src/platform/vm-$(_os_api).cpp
+srcs-y += src/pup/platform/process-$(_os_api).cpp
+srcs-y += src/pup/platform/file_io-$(_os_api).cpp
+srcs-y += src/pup/platform/env-$(_os_api).cpp
+srcs-y += src/pup/platform/vm-$(_os_api).cpp
 
 # Compile (third-party C without -Werror)
 : foreach $(c-srcs-y) |> !cc_thirdparty |> {lib_objs}
@@ -90,7 +90,7 @@ srcs-y += src/platform/vm-$(_os_api).cpp
 
 # Main executable (throw_stubs linked directly, not in library — avoids
 # duplicate symbols when test binary links both libputup.a and libstdc++)
-: src/main.cpp |> !cxx |> main.$(_obj)
+: src/pup/main.cpp |> !cxx |> main.$(_obj)
 
 # A dedicated MSVC-style linker (@(LINKER) = link/lld-link, set only by the MSVC
 # and clang-cl+xwin configs) links the real MSVC CRT, which already provides
@@ -98,14 +98,14 @@ srcs-y += src/platform/vm-$(_os_api).cpp
 # GCC/Clang-driver builds (@(LINKER) empty, -nostdlib++) have no libstdc++, so
 # they need throw_stubs to supply those symbols.
 ifeq (@(LINKER),)
-: src/core/throw_stubs.cpp |> !cxx |> throw_stubs.$(_obj)
+: src/pup/core/throw_stubs.cpp |> !cxx |> throw_stubs.$(_obj)
 ifeq (@(FREESTANDING),y)
-: src/platform/crt0-linux.cpp |> ^ CXX %f^ @(CXX_CRT0_CMD) |> crt0-linux.$(_obj)
+: src/pup/platform/crt0-linux.cpp |> ^ CXX %f^ @(CXX_CRT0_CMD) |> crt0-linux.$(_obj)
 : {lib_objs} main.$(_obj) throw_stubs.$(_obj) crt0-linux.$(_obj) |> ^ LINK %o^ @(FREESTANDING_LINK_CMD) |> putup$(_exe)
 else
 : {lib_objs} main.$(_obj) throw_stubs.$(_obj) |> !link |> putup$(_exe)
 endif
 else
-: src/core/new_delete.cpp |> !cxx |> new_delete.$(_obj)
+: src/pup/core/new_delete.cpp |> !cxx |> new_delete.$(_obj)
 : {lib_objs} main.$(_obj) new_delete.$(_obj) |> !link |> putup$(_exe)
 endif
