@@ -213,7 +213,7 @@ arm's job: enumeration selects the wording of a particular announcement, or excu
 proven benign, but it is never the condition for being announced at all. The announced set grows
 every time the enum does while the benign set stays closed, so a rejection added later announces
 unless it is deliberately excused, instead of falling silent by omission. `load_old_index`
-(`src/cli/context.cpp`) is the standing example — `IndexVersionMismatch` is the one excused code,
+(`src/pup/cli/context.cpp`) is the standing example — `IndexVersionMismatch` is the one excused code,
 and the two damage codes appear as arms only to word their warnings — and REQ-READ-ANNOUNCE-DAMAGE
 (`spec/requirements/record-read.ears.md`) pins the observable half. The law ranges over
 announcement filters as a class, meaning those whose default outcome would otherwise be silence;
@@ -402,7 +402,7 @@ struct BangMacro {
 ### Parser
 
 Recursive descent parser with one entry point; `parse_rule`, `parse_expression` and the other
-productions are file-local functions in `src/parser/parser.cpp`:
+productions are file-local functions in `src/pup/parser/parser.cpp`:
 
 ```cpp
 struct ParseResult {
@@ -779,7 +779,7 @@ Ghost nodes are placeholder nodes for files that don't exist yet during parsing.
 
 **Why edges are preserved**: Unlike Tup (which deletes edges and re-parses dependent Tupfiles after upgrade), pup parses all Tupfiles fresh each build. The dependency edges created when the ghost was first referenced are already correct—they just point to a placeholder that becomes real.
 
-**Validation**: before build execution, `reject_unresolved_ghosts` (`src/cli/cmd_build.cpp`) fails the build for a ghost that something consumes and that nothing put on disk. A ghost nothing consumes is harmless and is left alone; a consumed one backed by a file on disk is a foreign input, not an error.
+**Validation**: before build execution, `reject_unresolved_ghosts` (`src/pup/cli/cmd_build.cpp`) fails the build for a ghost that something consumes and that nothing put on disk. A ghost nothing consumes is harmless and is left alone; a consumed one backed by a file on disk is a foreign input, not an error.
 
 **Index serialization**: every live ghost node gets a record entry, because ids stay dense (id == position + 1). Three kinds carry meaning there. A consumed ghost backed by a file no rule produces is a foreign input — the variant's `tup.config` is the standing example — recorded with its content so change detection can see it change. And a path this build has no authority over, an output whose producing directory a scoped build never parsed, arrives here as a ghost too: a ghost is the graph's own encoding of "referenced, awaiting its producer", which is what such a path is from this build's point of view. The record then re-asserts its previous owner rather than downgrading it to a source (#369) — the entry is written back as `Generated` from the previous record's output set, and `merge_out_of_scope_commands` carries its producing command forward and re-attaches the output edge (#125). The third kind is a path declared only by rules in an untaken branch: `Generated` means produced by a rule this configuration runs, so an inactive branch's declared output rests as a ghost rather than reclassifying whatever is at that path (#386). Such a rule becomes no command, so the ghost has no producer edge; the declaration lives in `Graph::inactive_declarations`, and `collect_inactive_outputs` names the ghosts it alone declares. Turning the branch back off after a build that ran it routes through the same #369 re-assertion, which is what keeps the build's ownership of a file it genuinely made.
 
@@ -1363,7 +1363,7 @@ auto stats = scheduler.build(state, filter.ptr(), injected_ordering);
 Header dependencies reach the graph two ways. A generated dependency scan prints them on stdout
 ([Rule Generation Module](#rule-generation-module)). A command that writes its own depfile (`-MD`)
 gets no scan; after it succeeds the scheduler reads the `.d` file beside each object output
-(`discover_d_file_deps` in `src/exec/scheduler.cpp`). Either way the headers become
+(`discover_d_file_deps` in `src/pup/exec/scheduler.cpp`). Either way the headers become
 `LinkType::Implicit` edges on the compile command and are written to the index, so a changed header
 marks the commands that read it. All headers are tracked, system headers included.
 
@@ -1417,7 +1417,7 @@ struct TupfileParseState {
 ```
 
 The full definition, with the error bookkeeping and the parsed `tup.config` tables, is in
-`src/cli/context.cpp`.
+`src/pup/cli/context.cpp`.
 
 The `parsing` set detects circular dependencies - if a directory appears while still being parsed, it's a cycle.
 
@@ -1461,8 +1461,8 @@ SortedPairVec group_nodes;
 ### TUP_CWD Computation
 
 `TUP_CWD` is the relative path from the Tupfile's directory to the directory of the file being
-parsed. `src/cli/context.cpp` seeds it with `.` for the Tupfile; `include_single_file`
-(`src/graph/builder.cpp`) sets it for the duration of every included file, `Tuprules.tup` or
+parsed. `src/pup/cli/context.cpp` seeds it with `.` for the Tupfile; `include_single_file`
+(`src/pup/graph/builder.cpp`) sets it for the duration of every included file, `Tuprules.tup` or
 plain `include`, and restores it on return. The same value is the base an `include` path
 resolves against and the directory `include_rules` walks up from, so both are relative to the
 file that holds the statement. `find_tuprules_files` returns nothing for a directory outside the include root.
@@ -1508,7 +1508,7 @@ This naturally unifies input and output path resolution because both traverse to
 same node when paths are equivalent (e.g., `$(B)/include/header.h` from an input and
 the variant-mapped output both resolve to the same node).
 
-`PathTransformContext` in `src/graph/builder.cpp` carries the transformation parameters for command
+`PathTransformContext` in `src/pup/graph/builder.cpp` carries the transformation parameters for command
 expansion.
 
 **Dual-root architecture:**
@@ -1618,7 +1618,7 @@ In three-tree builds:
 
 `TUP_SRCDIR` is always `.`, since commands run from the source directory. `TUP_OUTDIR` is the
 relative path from the source directory to the matching output directory. Both are set when the
-evaluation context is built (`src/cli/context.cpp`).
+evaluation context is built (`src/pup/cli/context.cpp`).
 
 ---
 

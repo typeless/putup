@@ -16,7 +16,7 @@ endif
 else
 _cxxlib =
 _libm =
-: $(ROOT)/src/core/new_delete.cpp |> !cxx |> new_delete.$(_obj) {test_support}
+: $(ROOT)/src/pup/core/new_delete.cpp |> !cxx |> new_delete.$(_obj) {test_support}
 endif
 
 # Catch2 amalgamated. Its main() is suppressed so test_main.cpp can provide one
