@@ -272,7 +272,8 @@ and halves until the OS accepts). It has obstack semantics: `bump_try_extend` gr
 is a no-op — there is no free list. `Vec<T>` and the other growable primitives lean on the
 extend/pop fast paths; churn that is not top-of-stack stays resident until process exit,
 which is acceptable for a batch tool (build, use, exit). `PUP_BUMP_STATS=1` prints per-site
-gross/net allocation attribution.
+byte attribution and, at exit, the gross and net bytes, the allocation count, and the bytes
+copied because a value could not grow in place (`copytotal`).
 
 On Windows every CRT `new`/`delete` variant must be overridden (static CRT, `lld-link`
 without `/FORCE`) — a single CRT `delete` on a bump pointer would corrupt the heap. Plain

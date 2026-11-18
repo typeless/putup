@@ -81,8 +81,10 @@ auto record_site(void* ra, std::size_t size) -> void
         dump_registered = true;
         std::atexit([] {
             auto gross = std::size_t { 0 };
+            auto allocations = std::size_t { 0 };
             for (auto const& s : site_stats) {
                 gross += s.bytes;
+                allocations += s.calls;
                 if (s.bytes > 1U << 20) {
                     write_to(Stream::Err, "bumpsite ");
                     write_ptr(s.ra);
@@ -97,6 +99,8 @@ auto record_site(void* ra, std::size_t size) -> void
             write_uint(gross);
             write_to(Stream::Err, " net ");
             write_uint(used);
+            write_to(Stream::Err, " allocations ");
+            write_uint(allocations);
             write_to(Stream::Err, "\n");
             write_to(Stream::Err, "copytotal ");
             write_uint(copied_bytes());
