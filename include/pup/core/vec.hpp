@@ -363,10 +363,10 @@ private:
             return;
         }
         auto* new_data = alloc(new_cap);
-        record_copy(size_ * sizeof(T));
         if constexpr (std::is_trivially_copyable_v<T>) {
-            std::memcpy(new_data, data_, size_ * sizeof(T));
+            relocate(new_data, data_, size_ * sizeof(T));
         } else {
+            record_copy(size_ * sizeof(T));
             for (std::size_t i = 0; i < size_; ++i) {
                 new (new_data + i) T(std::move(data_[i]));
                 data_[i].~T();

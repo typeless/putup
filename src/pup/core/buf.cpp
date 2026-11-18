@@ -27,13 +27,11 @@ auto Buf::grow(std::size_t needed) -> void
     if (!is_spilled()) {
         region_ = Region { new_cap > SPILL_RESERVE ? new_cap : SPILL_RESERVE };
         region_.ensure(new_cap);
-        std::memcpy(region_.data(), buf_, size_);
-        record_copy(size_);
+        relocate(region_.data(), buf_, size_);
     } else if (new_cap > region_.reserved()) {
         auto bigger = Region { new_cap * 2 };
         bigger.ensure(new_cap);
-        std::memcpy(bigger.data(), data_, size_);
-        record_copy(size_);
+        relocate(bigger.data(), data_, size_);
         region_ = std::move(bigger);
     } else {
         region_.ensure(new_cap);
