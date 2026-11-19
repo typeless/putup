@@ -69,7 +69,8 @@ pup/
 Dependencies flow `cli → exec → graph → parser → core → mem`, except that the evaluator reads
 `graph::VarDepTracker`. `mem` (namespace `pup::mem`) includes only its own headers and the
 platform headers `vm`, `env` and `stream`, which include no other putup header; only `mem` and
-the vm backends include `platform/vm.hpp`.
+the vm backends include `platform/vm.hpp`. `make layers` (`.github/scripts/layers`) checks these
+rules in CI.
 `platform` is the OS-abstraction layer; its file and process backends use the core string and
 buffer types. The `platform/` module isolates OS specifics behind a
 uniform API: POSIX backends (`*-posix.cpp`) use `fork`/`waitpid`/`poll`; Win32 backends

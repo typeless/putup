@@ -13,6 +13,8 @@ jobs:
       - uses: actions/checkout@v7
       - name: Check formatting
         run: make format-check
+      - name: Check layer includes
+        run: make layers
 
   build-linux:
     needs: format-check

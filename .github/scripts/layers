@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+import re
+import subprocess
+import sys
+
+LOW_PLATFORM = ("pup/platform/vm.hpp", "pup/platform/env.hpp", "pup/platform/stream.hpp")
+
+RULES = [
+    (
+        "mem includes only mem and the platform headers vm, env and stream",
+        re.compile(r"^(include|src)/pup/mem/"),
+        lambda header: header.startswith("pup/mem/") or header in LOW_PLATFORM,
+    ),
+    (
+        "platform/vm.hpp is included only by mem, the vm backends and tests",
+        re.compile(r"^(?!src/pup/mem/|src/pup/platform/vm-|include/pup/platform/vm\.hpp$|test/)"),
+        lambda header: header != "pup/platform/vm.hpp",
+    ),
+    (
+        "the platform headers vm, env and stream include no other putup header",
+        re.compile(r"^include/(" + "|".join(re.escape(h) for h in LOW_PLATFORM) + r")$"),
+        lambda header: header in LOW_PLATFORM,
+    ),
+]
+
+INCLUDE = re.compile(r'^\s*#\s*include\s+"(pup/[^"]+)"')
+
+
+def tracked_sources():
+    out = subprocess.run(
+        ["git", "ls-files", "include", "src", "test"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    return [path for path in out.splitlines() if path.endswith((".hpp", ".cpp"))]
+
+
+def violations(paths):
+    for path in paths:
+        applicable = [(name, allowed) for name, scope, allowed in RULES if scope.search(path)]
+        if not applicable:
+            continue
+        with open(path, encoding="utf-8") as source:
+            for number, line in enumerate(source, 1):
+                match = INCLUDE.match(line)
+                if not match:
+                    continue
+                for name, allowed in applicable:
+                    if not allowed(match.group(1)):
+                        yield f"{path}:{number}: {match.group(1)}: {name}"
+
+
+def main():
+    found = list(violations(tracked_sources()))
+    for line in found:
+        print(line)
+    if found:
+        print(f"layers: {len(found)} include(s) cross a layer boundary", file=sys.stderr)
+        return 1
+    print("layers: ok")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
