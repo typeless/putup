@@ -25,16 +25,28 @@ public:
     auto decommit_above(std::size_t keep) -> void;
 
     [[nodiscard]]
-    auto base() const -> void*;
+    auto base() const -> void*
+    {
+        return tile_.base();
+    }
 
     [[nodiscard]]
-    auto top() const -> std::size_t;
+    auto top() const -> std::size_t
+    {
+        return cursor_.top();
+    }
 
     [[nodiscard]]
-    auto committed() const -> std::size_t;
+    auto committed() const -> std::size_t
+    {
+        return cursor_.committed();
+    }
 
     [[nodiscard]]
-    auto reserved() const -> std::size_t;
+    auto reserved() const -> std::size_t
+    {
+        return std::size_t { 1 } << tile_.size_log2();
+    }
 
 private:
     Tile tile_;

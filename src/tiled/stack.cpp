@@ -79,24 +79,4 @@ auto Stack::decommit_above(std::size_t keep) -> void
     }
 }
 
-auto Stack::base() const -> void*
-{
-    return tile_.base();
-}
-
-auto Stack::top() const -> std::size_t
-{
-    return cursor_.top();
-}
-
-auto Stack::committed() const -> std::size_t
-{
-    return cursor_.committed();
-}
-
-auto Stack::reserved() const -> std::size_t
-{
-    return std::size_t { 1 } << tile_.size_log2();
-}
-
 } // namespace tiled

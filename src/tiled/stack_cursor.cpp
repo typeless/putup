@@ -86,14 +86,4 @@ auto StackCursor::raise_commit_to(std::uint64_t end) -> void
     }
 }
 
-auto StackCursor::top() const -> std::uint64_t
-{
-    return top_;
-}
-
-auto StackCursor::committed() const -> std::uint64_t
-{
-    return committed_;
-}
-
 } // namespace tiled
