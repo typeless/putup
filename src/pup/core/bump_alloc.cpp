@@ -2,8 +2,8 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/core/bump_alloc.hpp"
-#include "pup/core/print.hpp"
 #include "pup/platform/env.hpp"
+#include "pup/platform/stream.hpp"
 #include "pup/platform/vm.hpp"
 
 #include <charconv>
@@ -38,7 +38,7 @@ auto reserve_backing() -> void
             return;
         }
     }
-    write_to(Stream::Err, "fatal: cannot reserve bump region\n");
+    platform::write_to(platform::Stream::Err, "fatal: cannot reserve bump region\n");
     std::abort();
 }
 
@@ -58,14 +58,14 @@ auto write_uint(std::size_t n) -> void
 {
     char buf[20];
     auto [end, ec] = std::to_chars(buf, buf + sizeof(buf), n);
-    write_to(Stream::Err, { buf, static_cast<std::size_t>(end - buf) });
+    platform::write_to(platform::Stream::Err, { buf, static_cast<std::size_t>(end - buf) });
 }
 
 auto write_ptr(void const* p) -> void
 {
     char buf[18] = { '0', 'x' };
     auto [end, ec] = std::to_chars(buf + 2, buf + sizeof(buf), reinterpret_cast<std::uintptr_t>(p), 16);
-    write_to(Stream::Err, { buf, static_cast<std::size_t>(end - buf) });
+    platform::write_to(platform::Stream::Err, { buf, static_cast<std::size_t>(end - buf) });
 }
 
 auto record_site(void* ra, std::size_t size) -> void
@@ -86,25 +86,25 @@ auto record_site(void* ra, std::size_t size) -> void
                 gross += s.bytes;
                 allocations += s.calls;
                 if (s.bytes > 1U << 20) {
-                    write_to(Stream::Err, "bumpsite ");
+                    platform::write_to(platform::Stream::Err, "bumpsite ");
                     write_ptr(s.ra);
-                    write_to(Stream::Err, " ");
+                    platform::write_to(platform::Stream::Err, " ");
                     write_uint(s.bytes);
-                    write_to(Stream::Err, " bytes ");
+                    platform::write_to(platform::Stream::Err, " bytes ");
                     write_uint(s.calls);
-                    write_to(Stream::Err, " calls\n");
+                    platform::write_to(platform::Stream::Err, " calls\n");
                 }
             }
-            write_to(Stream::Err, "bumptotal gross ");
+            platform::write_to(platform::Stream::Err, "bumptotal gross ");
             write_uint(gross);
-            write_to(Stream::Err, " net ");
+            platform::write_to(platform::Stream::Err, " net ");
             write_uint(used);
-            write_to(Stream::Err, " allocations ");
+            platform::write_to(platform::Stream::Err, " allocations ");
             write_uint(allocations);
-            write_to(Stream::Err, "\n");
-            write_to(Stream::Err, "copytotal ");
+            platform::write_to(platform::Stream::Err, "\n");
+            platform::write_to(platform::Stream::Err, "copytotal ");
             write_uint(copied_bytes());
-            write_to(Stream::Err, "\n");
+            platform::write_to(platform::Stream::Err, "\n");
         });
     }
 }
@@ -125,7 +125,7 @@ auto bump_alloc(std::size_t size, std::size_t align) -> void*
     auto const offset = (used + align - 1) & ~(align - 1);
     auto const end = offset + size;
     if (end > reserved) {
-        write_to(Stream::Err, "fatal: bump region exhausted\n");
+        platform::write_to(platform::Stream::Err, "fatal: bump region exhausted\n");
         std::abort();
     }
     if (end > committed) {
