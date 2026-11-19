@@ -7,6 +7,11 @@ LOW_PLATFORM = ("pup/platform/vm.hpp", "pup/platform/env.hpp", "pup/platform/str
 
 RULES = [
     (
+        "tiled includes no putup header",
+        re.compile(r"^(include|src)/tiled/"),
+        lambda header: False,
+    ),
+    (
         "mem includes only mem and the platform headers vm, env and stream",
         re.compile(r"^(include|src)/pup/mem/"),
         lambda header: header.startswith("pup/mem/") or header in LOW_PLATFORM,
