@@ -35,10 +35,17 @@ std::size_t copied = 0;
 
 static_assert(std::is_trivially_destructible_v<tiled::SpaceStorage<memory_layout>>);
 
+[[gnu::noinline]]
+auto place_heap() -> tiled::Stack&
+{
+    heap_stack = new (heap_storage) tiled::Stack { tiled::Tile::acquire(space.pool(), memory_layout.heap_log2) };
+    return *heap_stack;
+}
+
 auto heap() -> tiled::Stack&
 {
     if (!heap_stack) {
-        heap_stack = new (heap_storage) tiled::Stack { tiled::Tile::acquire(space.pool(), memory_layout.heap_log2) };
+        return place_heap();
     }
     return *heap_stack;
 }
@@ -135,6 +142,7 @@ auto round_up_to_page(std::size_t bytes) -> std::size_t
     return (bytes + page - 1) & ~(page - 1);
 }
 
+[[gnu::noinline]]
 auto acquire_tile(std::size_t size) -> void*
 {
     auto const offset = process_pool().acquire(tile_log2_for(size));
@@ -147,6 +155,7 @@ auto acquire_tile(std::size_t size) -> void*
     return base;
 }
 
+[[gnu::noinline]]
 auto extend_tile(void* p, std::size_t old_size, std::size_t new_size) -> bool
 {
     if (new_size > std::size_t { 1 } << tile_log2_for(old_size)) {
@@ -160,6 +169,7 @@ auto extend_tile(void* p, std::size_t old_size, std::size_t new_size) -> bool
     return true;
 }
 
+[[gnu::noinline]]
 auto release_tile(void* p, std::size_t size) -> void
 {
     auto const log2 = tile_log2_for(size);
