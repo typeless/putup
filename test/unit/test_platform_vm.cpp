@@ -3,7 +3,7 @@
 
 #include "catch_amalgamated.hpp"
 #include "pup/mem/bump_alloc.hpp"
-#include "pup/core/memory_layout.hpp"
+#include "pup/mem/memory_layout.hpp"
 #include "tiled/platform.hpp"
 #include "tiled/tile.hpp"
 
@@ -55,7 +55,7 @@ TEST_CASE("reserve_at reserves exactly the requested address or refuses", "[plat
 TEST_CASE("vm commit", "[platform][vm]")
 {
     auto const page = tiled::page_size();
-    auto const tile = tiled::Tile::acquire(pup::mem::process_pool(), pup::memory_layout.min_tile_log2);
+    auto const tile = tiled::Tile::acquire(pup::mem::process_pool(), pup::mem::memory_layout.min_tile_log2);
     auto* base = static_cast<void*>(tile.base());
 
     SECTION("committed pages are readable, writable, and zero-filled")
@@ -95,7 +95,7 @@ TEST_CASE("vm commit", "[platform][vm]")
 TEST_CASE("vm decommit", "[platform][vm]")
 {
     auto const page = tiled::page_size();
-    auto const tile = tiled::Tile::acquire(pup::mem::process_pool(), pup::memory_layout.min_tile_log2);
+    auto const tile = tiled::Tile::acquire(pup::mem::process_pool(), pup::mem::memory_layout.min_tile_log2);
     auto* base = static_cast<void*>(tile.base());
 
     SECTION("recommitted pages read as zero again")

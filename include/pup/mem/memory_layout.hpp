@@ -7,7 +7,7 @@
 
 #include <cstdint>
 
-namespace pup {
+namespace pup::mem {
 
 #if defined(_WIN32)
 inline constexpr auto memory_layout = tiled::Layout {
@@ -38,4 +38,4 @@ inline constexpr auto memory_layout = tiled::Layout {
 };
 #endif
 
-} // namespace pup
+} // namespace pup::mem
