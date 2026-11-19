@@ -5,6 +5,7 @@
 #include "tiled/platform.hpp"
 
 #include <charconv>
+#include <cstdint>
 #include <cstring>
 #include <utility>
 
@@ -27,14 +28,14 @@ auto fail(char const* what, std::uint8_t size_log2) -> void
 
 Tile::Tile(Pool* pool, std::uint64_t offset, std::uint8_t size_log2)
     : pool_(pool)
-    , offset_(offset)
+    , base_(reinterpret_cast<std::byte*>(pool->base_ + offset))
     , size_log2_(size_log2)
 {
 }
 
 Tile::Tile(Tile&& other) noexcept
     : pool_(std::exchange(other.pool_, nullptr))
-    , offset_(other.offset_)
+    , base_(other.base_)
     , size_log2_(other.size_log2_)
 {
 }
@@ -44,8 +45,8 @@ Tile::~Tile()
     if (pool_ == nullptr) {
         return;
     }
-    decommit(base(), std::size_t { 1 } << size_log2_);
-    if (!pool_->release(offset_, size_log2_)) {
+    decommit(base_, std::size_t { 1 } << size_log2_);
+    if (!pool_->release(reinterpret_cast<std::uintptr_t>(base_) - pool_->base_, size_log2_)) {
         fail("tiled: the pool refused the release of a tile of 2^", size_log2_);
     }
 }
@@ -57,16 +58,6 @@ auto Tile::acquire(Pool& pool, std::uint8_t size_log2) -> Tile
         fail("tiled: the pool has no free tile of 2^", size_log2);
     }
     return Tile { &pool, *offset, size_log2 };
-}
-
-auto Tile::base() const -> std::byte*
-{
-    return reinterpret_cast<std::byte*>(pool_->base_ + offset_);
-}
-
-auto Tile::size_log2() const -> std::uint8_t
-{
-    return size_log2_;
 }
 
 } // namespace tiled

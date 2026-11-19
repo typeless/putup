@@ -99,19 +99,4 @@ auto Region::shrink(std::size_t keep_bytes) -> void
     stack_->decommit_above(keep_bytes);
 }
 
-auto Region::data() const -> void*
-{
-    return stack_ ? stack_->base() : nullptr;
-}
-
-auto Region::committed() const -> std::size_t
-{
-    return stack_ ? stack_->committed() : 0;
-}
-
-auto Region::reserved() const -> std::size_t
-{
-    return stack_ ? stack_->reserved() : 0;
-}
-
 } // namespace pup::mem

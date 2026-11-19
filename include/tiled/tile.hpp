@@ -22,16 +22,22 @@ public:
     ~Tile();
 
     [[nodiscard]]
-    auto base() const -> std::byte*;
+    auto base() const -> std::byte*
+    {
+        return base_;
+    }
 
     [[nodiscard]]
-    auto size_log2() const -> std::uint8_t;
+    auto size_log2() const -> std::uint8_t
+    {
+        return size_log2_;
+    }
 
 private:
     Tile(Pool* pool, std::uint64_t offset, std::uint8_t size_log2);
 
     Pool* pool_;
-    std::uint64_t offset_;
+    std::byte* base_;
     std::uint8_t size_log2_;
 };
 

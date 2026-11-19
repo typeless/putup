@@ -30,13 +30,22 @@ public:
     auto shrink(std::size_t keep_bytes) -> void;
 
     [[nodiscard]]
-    auto data() const -> void*;
+    auto data() const -> void*
+    {
+        return stack_ ? stack_->base() : nullptr;
+    }
 
     [[nodiscard]]
-    auto committed() const -> std::size_t;
+    auto committed() const -> std::size_t
+    {
+        return stack_ ? stack_->committed() : 0;
+    }
 
     [[nodiscard]]
-    auto reserved() const -> std::size_t;
+    auto reserved() const -> std::size_t
+    {
+        return stack_ ? stack_->reserved() : 0;
+    }
 
 private:
     std::optional<tiled::Stack> stack_;

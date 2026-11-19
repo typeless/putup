@@ -24,10 +24,16 @@ public:
     auto decommit_above(std::uint64_t keep) -> void;
 
     [[nodiscard]]
-    auto top() const -> std::uint64_t;
+    auto top() const -> std::uint64_t
+    {
+        return top_;
+    }
 
     [[nodiscard]]
-    auto committed() const -> std::uint64_t;
+    auto committed() const -> std::uint64_t
+    {
+        return committed_;
+    }
 
 private:
     StackCursor(std::uint64_t reserved, std::uint64_t page);
