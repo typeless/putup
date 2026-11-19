@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2024 Putup authors
 
-#include "pup/core/memory_layout.hpp"
 #include "pup/mem/bump_alloc.hpp"
+#include "pup/mem/memory_layout.hpp"
 #include "pup/platform/env.hpp"
 #include "pup/platform/stream.hpp"
 #include "tiled/platform.hpp"

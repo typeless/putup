@@ -2,8 +2,8 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/mem/region.hpp"
-#include "pup/core/memory_layout.hpp"
 #include "pup/mem/bump_alloc.hpp"
+#include "pup/mem/memory_layout.hpp"
 #include "pup/platform/stream.hpp"
 #include "tiled/tile.hpp"
 

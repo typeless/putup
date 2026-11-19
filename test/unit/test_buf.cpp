@@ -3,9 +3,9 @@
 
 #include "catch_amalgamated.hpp"
 #include "pup/core/buf.hpp"
-#include "pup/core/memory_layout.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/mem/bump_alloc.hpp"
+#include "pup/mem/memory_layout.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -181,7 +181,7 @@ TEST_CASE("Buf spills into a pool tile outside the heap tile", "[buf]")
         buf += 'x';
     }
     auto const address = reinterpret_cast<std::uintptr_t>(buf.data());
-    auto const base = pup::memory_layout.base;
-    REQUIRE(address >= base + (std::uint64_t { 1 } << pup::memory_layout.heap_log2));
-    REQUIRE(address - base < (std::uint64_t { 1 } << pup::memory_layout.pool_log2));
+    auto const base = pup::mem::memory_layout.base;
+    REQUIRE(address >= base + (std::uint64_t { 1 } << pup::mem::memory_layout.heap_log2));
+    REQUIRE(address - base < (std::uint64_t { 1 } << pup::mem::memory_layout.pool_log2));
 }

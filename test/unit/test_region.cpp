@@ -2,7 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
-#include "pup/core/memory_layout.hpp"
+#include "pup/mem/memory_layout.hpp"
 #include "pup/mem/region.hpp"
 #include "tiled/platform.hpp"
 
@@ -156,7 +156,7 @@ TEST_CASE("Region custom reservation size", "[region]")
     REQUIRE(r.reserved() == 0);
     r.ensure(16 * page);
     REQUIRE(r.committed() == 16 * page);
-    REQUIRE(r.reserved() == std::size_t { 1 } << pup::memory_layout.min_tile_log2);
+    REQUIRE(r.reserved() == std::size_t { 1 } << pup::mem::memory_layout.min_tile_log2);
 }
 
 TEST_CASE("Region memory lies in the pool node outside the heap tile", "[region]")
@@ -164,7 +164,7 @@ TEST_CASE("Region memory lies in the pool node outside the heap tile", "[region]
     auto r = Region {};
     r.ensure(1);
     auto const address = reinterpret_cast<std::uintptr_t>(r.data());
-    auto const base = pup::memory_layout.base;
-    REQUIRE(address >= base + (std::uint64_t { 1 } << pup::memory_layout.heap_log2));
-    REQUIRE(address - base < (std::uint64_t { 1 } << pup::memory_layout.pool_log2));
+    auto const base = pup::mem::memory_layout.base;
+    REQUIRE(address >= base + (std::uint64_t { 1 } << pup::mem::memory_layout.heap_log2));
+    REQUIRE(address - base < (std::uint64_t { 1 } << pup::mem::memory_layout.pool_log2));
 }

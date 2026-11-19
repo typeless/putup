@@ -2,9 +2,9 @@
 // Copyright (c) 2026 Putup authors
 
 #include "catch_amalgamated.hpp"
-#include "pup/core/memory_layout.hpp"
 #include "pup/core/vec.hpp"
 #include "pup/mem/bump_alloc.hpp"
+#include "pup/mem/memory_layout.hpp"
 
 #include <array>
 #include <cstddef>
@@ -15,16 +15,16 @@ namespace {
 auto in_pool_tile(void const* p) -> bool
 {
     auto const address = reinterpret_cast<std::uintptr_t>(p);
-    auto const base = pup::memory_layout.base;
-    return address >= base + (std::uint64_t { 1 } << pup::memory_layout.heap_log2)
-        && address - base < (std::uint64_t { 1 } << pup::memory_layout.pool_log2);
+    auto const base = pup::mem::memory_layout.base;
+    return address >= base + (std::uint64_t { 1 } << pup::mem::memory_layout.heap_log2)
+        && address - base < (std::uint64_t { 1 } << pup::mem::memory_layout.pool_log2);
 }
 
 auto in_heap_node(void const* p) -> bool
 {
     auto const address = reinterpret_cast<std::uintptr_t>(p);
-    auto const base = pup::memory_layout.base;
-    return address >= base && address - base < (std::uint64_t { 1 } << pup::memory_layout.heap_log2);
+    auto const base = pup::mem::memory_layout.base;
+    return address >= base && address - base < (std::uint64_t { 1 } << pup::mem::memory_layout.heap_log2);
 }
 
 } // namespace
@@ -38,7 +38,7 @@ TEST_CASE("bump_alloc returns memory inside the declared heap node", "[bump]")
 TEST_CASE("bump_allocated_bytes is the offset of the heap's top", "[bump]")
 {
     auto* const p = static_cast<std::byte*>(pup::mem::bump_alloc(24, 8));
-    auto const base = reinterpret_cast<std::byte*>(pup::memory_layout.base);
+    auto const base = reinterpret_cast<std::byte*>(pup::mem::memory_layout.base);
     REQUIRE(pup::mem::bump_allocated_bytes() == static_cast<std::size_t>(p + 24 - base));
 }
 
