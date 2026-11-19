@@ -2,11 +2,11 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/core/buf.hpp"
-#include "pup/core/bump_alloc.hpp"
 #include "pup/core/format_to.hpp"
-#include "pup/core/region.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
+#include "pup/mem/bump_alloc.hpp"
+#include "pup/mem/region.hpp"
 
 #include <cstdint>
 #include <cstring>
@@ -25,13 +25,13 @@ auto Buf::grow(std::size_t needed) -> void
         new_cap = needed;
     }
     if (!is_spilled()) {
-        region_ = Region { new_cap > SPILL_RESERVE ? new_cap : SPILL_RESERVE };
+        region_ = mem::Region { new_cap > SPILL_RESERVE ? new_cap : SPILL_RESERVE };
         region_.ensure(new_cap);
-        relocate(region_.data(), buf_, size_);
+        mem::relocate(region_.data(), buf_, size_);
     } else if (new_cap > region_.reserved()) {
-        auto bigger = Region { new_cap * 2 };
+        auto bigger = mem::Region { new_cap * 2 };
         bigger.ensure(new_cap);
-        relocate(bigger.data(), data_, size_);
+        mem::relocate(bigger.data(), data_, size_);
         region_ = std::move(bigger);
     } else {
         region_.ensure(new_cap);

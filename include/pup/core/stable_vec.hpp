@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "pup/core/region.hpp"
+#include "pup/mem/region.hpp"
 
 #include <cstddef>
 #include <utility>
@@ -118,7 +118,7 @@ public:
     auto end() const -> T const* { return data() + size_; }
 
 private:
-    Region region_;
+    mem::Region region_;
     std::size_t size_ = 0;
 
     [[nodiscard]]

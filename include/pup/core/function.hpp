@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "pup/core/bump_alloc.hpp"
+#include "pup/mem/bump_alloc.hpp"
 
 #include <cstddef>
 #include <cstdlib>
@@ -33,7 +33,7 @@ public:
             new (buf_.data) Fn(std::forward<F>(f));
             heap_ = false;
         } else {
-            buf_.ptr = bump_alloc(sizeof(Fn), alignof(Fn));
+            buf_.ptr = mem::bump_alloc(sizeof(Fn), alignof(Fn));
             new (buf_.ptr) Fn(std::forward<F>(f));
             heap_ = true;
         }

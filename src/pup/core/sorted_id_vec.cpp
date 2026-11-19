@@ -2,7 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/core/sorted_id_vec.hpp"
-#include "pup/core/bump_alloc.hpp"
+#include "pup/mem/bump_alloc.hpp"
 
 #include <cstdint>
 #include <cstring>
@@ -14,7 +14,7 @@ namespace pup {
 
 SortedIdVec::~SortedIdVec()
 {
-    bump_try_pop(data_, capacity_ * sizeof(std::uint32_t));
+    mem::bump_try_pop(data_, capacity_ * sizeof(std::uint32_t));
 }
 
 SortedIdVec::SortedIdVec(SortedIdVec&& other) noexcept
@@ -37,9 +37,9 @@ auto SortedIdVec::operator=(SortedIdVec&& other) noexcept -> SortedIdVec&
 auto SortedIdVec::grow() -> void
 {
     auto const new_cap = capacity_ == 0 ? std::size_t { 8 } : capacity_ * 2;
-    if (!data_ || !bump_try_extend(data_, capacity_ * sizeof(std::uint32_t), new_cap * sizeof(std::uint32_t))) {
-        auto* p = static_cast<std::uint32_t*>(bump_alloc(new_cap * sizeof(std::uint32_t), alignof(std::uint32_t)));
-        relocate(p, data_, size_ * sizeof(std::uint32_t));
+    if (!data_ || !mem::bump_try_extend(data_, capacity_ * sizeof(std::uint32_t), new_cap * sizeof(std::uint32_t))) {
+        auto* p = static_cast<std::uint32_t*>(mem::bump_alloc(new_cap * sizeof(std::uint32_t), alignof(std::uint32_t)));
+        mem::relocate(p, data_, size_ * sizeof(std::uint32_t));
         data_ = p;
     }
     capacity_ = new_cap;
@@ -130,7 +130,7 @@ auto SortedIdVec::for_each(void (*fn)(std::uint32_t id, void* ctx), void* ctx) c
 
 SortedPairVec::~SortedPairVec()
 {
-    bump_try_pop(data_, capacity_ * sizeof(Pair));
+    mem::bump_try_pop(data_, capacity_ * sizeof(Pair));
 }
 
 SortedPairVec::SortedPairVec(SortedPairVec&& other) noexcept
@@ -153,9 +153,9 @@ auto SortedPairVec::operator=(SortedPairVec&& other) noexcept -> SortedPairVec&
 auto SortedPairVec::grow() -> void
 {
     auto const new_cap = capacity_ == 0 ? std::size_t { 8 } : capacity_ * 2;
-    if (!data_ || !bump_try_extend(data_, capacity_ * sizeof(Pair), new_cap * sizeof(Pair))) {
-        auto* p = static_cast<Pair*>(bump_alloc(new_cap * sizeof(Pair), alignof(Pair)));
-        relocate(p, data_, size_ * sizeof(Pair));
+    if (!data_ || !mem::bump_try_extend(data_, capacity_ * sizeof(Pair), new_cap * sizeof(Pair))) {
+        auto* p = static_cast<Pair*>(mem::bump_alloc(new_cap * sizeof(Pair), alignof(Pair)));
+        mem::relocate(p, data_, size_ * sizeof(Pair));
         data_ = p;
     }
     capacity_ = new_cap;

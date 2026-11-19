@@ -53,7 +53,7 @@ auto RobinHoodIndex::rebuild(std::size_t new_cap) -> void
     auto const* old_meta = static_cast<Meta const*>(old_slots.data());
     auto const* old_values = reinterpret_cast<std::uint32_t const*>(old_meta + old_cap);
 
-    slots_ = Region {};
+    slots_ = mem::Region {};
     slots_.ensure(new_cap * (sizeof(Meta) + sizeof(std::uint32_t)));
     capacity_ = new_cap;
 
@@ -87,7 +87,7 @@ auto RobinHoodIndex::reserve(std::size_t count) -> void
 
 auto RobinHoodIndex::clear() -> void
 {
-    slots_ = Region {};
+    slots_ = mem::Region {};
     capacity_ = 0;
     count_ = 0;
 }

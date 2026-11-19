@@ -3,10 +3,10 @@
 
 #pragma once
 
-#include "pup/core/region.hpp"
 #include "pup/core/robin_hood_index.hpp"
 #include "pup/core/stable_vec.hpp"
 #include "pup/core/string_id.hpp"
+#include "pup/mem/region.hpp"
 
 #include <cstdint>
 #include <string_view>
@@ -68,7 +68,7 @@ private:
 
     // All interned bytes live in one region, each string NUL-terminated
     // so pool strings stay usable as C strings (env callers rely on it).
-    Region bytes_;
+    mem::Region bytes_;
     std::size_t bytes_size_ = 0;
     StableVec<Entry> entries_;
     RobinHoodIndex index_;

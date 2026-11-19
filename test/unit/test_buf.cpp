@@ -3,8 +3,8 @@
 
 #include "catch_amalgamated.hpp"
 #include "pup/core/buf.hpp"
-#include "pup/core/bump_alloc.hpp"
 #include "pup/core/string_pool.hpp"
+#include "pup/mem/bump_alloc.hpp"
 
 #include <cstddef>
 #include <string_view>
@@ -119,11 +119,11 @@ TEST_CASE("Buf intern", "[buf]")
 TEST_CASE("Buf spill stays off the bump region", "[buf]")
 {
     auto buf = Buf {};
-    auto const before = pup::bump_allocated_bytes();
+    auto const before = pup::mem::bump_allocated_bytes();
     for (int i = 0; i < 8000; ++i) {
         buf += 'x';
     }
-    auto const after = pup::bump_allocated_bytes();
+    auto const after = pup::mem::bump_allocated_bytes();
     REQUIRE(buf.size() == 8000);
     REQUIRE(after == before);
 }
@@ -135,7 +135,7 @@ TEST_CASE("Buf spill pointer is stable while the bump top is taken", "[buf]")
         buf += 'a';
     }
     auto const* spilled = buf.data();
-    (void)pup::bump_alloc(64, 8);
+    (void)pup::mem::bump_alloc(64, 8);
     for (int i = 0; i < 20000; ++i) {
         buf += 'b';
     }
@@ -149,11 +149,11 @@ TEST_CASE("Buf grows past the spill reservation off the bump", "[buf]")
     auto buf = Buf {};
     auto const chunk = std::string_view { "0123456789abcdef" };
     auto const target = std::size_t { 20 } << 20;
-    auto const before = pup::bump_allocated_bytes();
+    auto const before = pup::mem::bump_allocated_bytes();
     while (buf.size() < target) {
         buf += chunk;
     }
-    auto const after = pup::bump_allocated_bytes();
+    auto const after = pup::mem::bump_allocated_bytes();
     REQUIRE(after == before);
     REQUIRE(buf.view().substr(0, chunk.size()) == chunk);
     REQUIRE(buf.view().substr(buf.size() - chunk.size()) == chunk);

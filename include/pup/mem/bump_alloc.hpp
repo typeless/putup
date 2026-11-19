@@ -5,7 +5,7 @@
 
 #include <cstddef>
 
-namespace pup {
+namespace pup::mem {
 
 // Process-wide bump allocator backing the global operator new and the
 // growable containers. There is no free list — the region dies with the
@@ -30,4 +30,4 @@ auto record_copy(std::size_t bytes) -> void;
 
 auto copied_bytes() -> std::size_t;
 
-} // namespace pup
+} // namespace pup::mem

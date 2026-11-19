@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2024 Putup authors
 
-#include "pup/core/region.hpp"
+#include "pup/mem/region.hpp"
 #include "pup/platform/stream.hpp"
 #include "pup/platform/vm.hpp"
 
@@ -9,7 +9,7 @@
 #include <cstdlib>
 #include <utility>
 
-namespace pup {
+namespace pup::mem {
 
 namespace vm = platform::vm;
 
@@ -126,4 +126,4 @@ auto Region::reserved() const -> std::size_t
     return reserved_;
 }
 
-} // namespace pup
+} // namespace pup::mem

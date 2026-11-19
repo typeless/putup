@@ -4,8 +4,8 @@
 #pragma once
 
 #include "pup/core/format_to.hpp"
-#include "pup/core/region.hpp"
 #include "pup/core/string_id.hpp"
+#include "pup/mem/region.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -80,7 +80,7 @@ private:
     char* data_ = buf_;
     std::uint32_t size_ = 0;
     std::uint32_t capacity_ = INLINE_CAP;
-    Region region_;
+    mem::Region region_;
 
     auto is_spilled() const -> bool { return data_ != buf_; }
     auto grow(std::size_t needed) -> void;
