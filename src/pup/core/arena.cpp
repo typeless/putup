@@ -2,7 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/core/arena.hpp"
-#include "pup/core/bump_alloc.hpp"
+#include "pup/mem/bump_alloc.hpp"
 
 #include <cstdint>
 #include <utility>
@@ -55,7 +55,7 @@ auto Arena32::append_extend(ArenaSlice old, std::uint32_t new_value) -> ArenaSli
     grow(size_ + block);
     auto const new_offset = static_cast<std::uint32_t>(size_);
     if (old.length > 0) {
-        relocate(data() + new_offset, data() + old.offset, old.length * sizeof(std::uint32_t));
+        mem::relocate(data() + new_offset, data() + old.offset, old.length * sizeof(std::uint32_t));
     }
     data()[new_offset + old.length] = new_value;
     size_ += block;

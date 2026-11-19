@@ -10,7 +10,7 @@
 // The C++ ABI symbols (__cxa_guard_*, operator new/delete) normally
 // come from libstdc++/libc++. We provide minimal implementations.
 
-#include "pup/core/bump_alloc.hpp"
+#include "pup/mem/bump_alloc.hpp"
 #include "pup/platform/sys.hpp"
 
 #include <cstddef>
@@ -49,12 +49,12 @@ void __cxa_guard_abort(long long*) { } // NOLINT
 // dies with the process, so delete has nothing to do).
 void* operator new(std::size_t n) // NOLINT
 {
-    return pup::bump_alloc(n, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
+    return pup::mem::bump_alloc(n, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
 }
 
 void* operator new[](std::size_t n) // NOLINT
 {
-    return pup::bump_alloc(n, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
+    return pup::mem::bump_alloc(n, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
 }
 void operator delete(void*) noexcept { }                // NOLINT
 void operator delete[](void*) noexcept { }              // NOLINT

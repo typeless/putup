@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "pup/core/region.hpp"
+#include "pup/mem/region.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -112,7 +112,7 @@ private:
     auto probe_insert(std::uint32_t h, std::uint32_t value) -> void;
     auto rebuild(std::size_t new_cap) -> void;
 
-    Region slots_;
+    mem::Region slots_;
     std::size_t capacity_ = 0;
     std::size_t count_ = 0;
 };

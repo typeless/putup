@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2024 Putup authors
 
-#include "pup/core/bump_alloc.hpp"
+#include "pup/mem/bump_alloc.hpp"
 #include "pup/platform/env.hpp"
 #include "pup/platform/stream.hpp"
 #include "pup/platform/vm.hpp"
@@ -10,7 +10,7 @@
 #include <cstdlib>
 #include <cstring>
 
-namespace pup {
+namespace pup::mem {
 
 // Zero-initialized POD state rather than a Region member: operator new
 // runs during static initialization and after static destruction, so the
@@ -186,4 +186,4 @@ auto copied_bytes() -> std::size_t
     return copied;
 }
 
-} // namespace pup
+} // namespace pup::mem

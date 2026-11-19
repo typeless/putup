@@ -117,7 +117,7 @@ auto StringPool::bytes() const -> std::size_t
 auto StringPool::clear() -> void
 {
     entries_.clear();
-    bytes_ = Region {};
+    bytes_ = mem::Region {};
     bytes_size_ = 0;
     index_.clear();
 }

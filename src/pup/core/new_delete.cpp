@@ -13,7 +13,7 @@
 // (clang-tidy) would otherwise try to compile this MSVC-only TU.
 #ifdef _WIN32
 
-#    include "pup/core/bump_alloc.hpp"
+#    include "pup/mem/bump_alloc.hpp"
 
 #    include <cstddef>
 #    include <new>
@@ -29,49 +29,49 @@ unsigned pup_ov_delete_aligned = 0;
 auto operator new(std::size_t n) -> void*
 {
     ++pup_ov_new;
-    return pup::bump_alloc(n, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
+    return pup::mem::bump_alloc(n, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
 }
 
 auto operator new[](std::size_t n) -> void*
 {
     ++pup_ov_new;
-    return pup::bump_alloc(n, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
+    return pup::mem::bump_alloc(n, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
 }
 
 auto operator new(std::size_t n, std::nothrow_t const&) noexcept -> void*
 {
     ++pup_ov_new_nothrow;
-    return pup::bump_alloc(n, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
+    return pup::mem::bump_alloc(n, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
 }
 
 auto operator new[](std::size_t n, std::nothrow_t const&) noexcept -> void*
 {
     ++pup_ov_new_nothrow;
-    return pup::bump_alloc(n, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
+    return pup::mem::bump_alloc(n, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
 }
 
 auto operator new(std::size_t n, std::align_val_t align) -> void*
 {
     ++pup_ov_new_aligned;
-    return pup::bump_alloc(n, static_cast<std::size_t>(align));
+    return pup::mem::bump_alloc(n, static_cast<std::size_t>(align));
 }
 
 auto operator new[](std::size_t n, std::align_val_t align) -> void*
 {
     ++pup_ov_new_aligned;
-    return pup::bump_alloc(n, static_cast<std::size_t>(align));
+    return pup::mem::bump_alloc(n, static_cast<std::size_t>(align));
 }
 
 auto operator new(std::size_t n, std::align_val_t align, std::nothrow_t const&) noexcept -> void*
 {
     ++pup_ov_new_aligned;
-    return pup::bump_alloc(n, static_cast<std::size_t>(align));
+    return pup::mem::bump_alloc(n, static_cast<std::size_t>(align));
 }
 
 auto operator new[](std::size_t n, std::align_val_t align, std::nothrow_t const&) noexcept -> void*
 {
     ++pup_ov_new_aligned;
-    return pup::bump_alloc(n, static_cast<std::size_t>(align));
+    return pup::mem::bump_alloc(n, static_cast<std::size_t>(align));
 }
 
 auto operator delete(void*) noexcept -> void

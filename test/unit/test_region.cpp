@@ -2,13 +2,13 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
-#include "pup/core/region.hpp"
+#include "pup/mem/region.hpp"
 #include "pup/platform/vm.hpp"
 
 #include <cstring>
 #include <utility>
 
-using pup::Region;
+using pup::mem::Region;
 
 TEST_CASE("Region empty state", "[region]")
 {

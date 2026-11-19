@@ -5,7 +5,7 @@
 
 #include <cstddef>
 
-namespace pup {
+namespace pup::mem {
 
 // Contiguous growable memory on a reserved virtual range: the base address
 // never moves, growth commits zero-filled pages, shrink returns pages to
@@ -43,4 +43,4 @@ private:
     std::size_t reserve_bytes_ = DEFAULT_RESERVE;
 };
 
-} // namespace pup
+} // namespace pup::mem

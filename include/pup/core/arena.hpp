@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "pup/core/region.hpp"
+#include "pup/mem/region.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -55,7 +55,7 @@ public:
     auto clear() -> void;
 
 private:
-    Region region_;
+    mem::Region region_;
     std::size_t size_ = 0;
 
     [[nodiscard]]

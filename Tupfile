@@ -18,13 +18,15 @@ srcs-y += src/pup/core/global_pool.cpp
 srcs-y += src/pup/core/buf.cpp
 srcs-y += src/pup/core/print.cpp
 srcs-y += src/pup/core/path_utils.cpp
-srcs-y += src/pup/core/bump_alloc.cpp
-srcs-y += src/pup/core/region.cpp
 srcs-y += src/pup/core/robin_hood_index.cpp
 srcs-y += src/pup/core/sorted_id_vec.cpp
 srcs-y += src/pup/core/string_pool.cpp
 srcs-y += src/pup/core/string_utils.cpp
 srcs-y += src/pup/core/terminal.cpp
+
+# Memory
+srcs-y += src/pup/mem/bump_alloc.cpp
+srcs-y += src/pup/mem/region.cpp
 
 # Parser
 srcs-y += src/pup/parser/ast.cpp

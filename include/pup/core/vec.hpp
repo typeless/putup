@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "pup/core/bump_alloc.hpp"
+#include "pup/mem/bump_alloc.hpp"
 
 #include <cstddef>
 #include <cstring>
@@ -34,7 +34,7 @@ public:
     ~Vec()
     {
         destroy_range(data_, size_);
-        bump_try_pop(data_, capacity_ * sizeof(T));
+        mem::bump_try_pop(data_, capacity_ * sizeof(T));
     }
 
     Vec(Vec const& other)
@@ -73,7 +73,7 @@ public:
     {
         if (this != &other) {
             destroy_range(data_, size_);
-            bump_try_pop(data_, capacity_ * sizeof(T));
+            mem::bump_try_pop(data_, capacity_ * sizeof(T));
             data_ = other.data_;
             size_ = other.size_;
             capacity_ = other.capacity_;
@@ -341,7 +341,7 @@ private:
         if (n == 0) {
             return nullptr;
         }
-        return static_cast<T*>(bump_alloc(n * sizeof(T), alignof(T)));
+        return static_cast<T*>(mem::bump_alloc(n * sizeof(T), alignof(T)));
     }
 
     auto ensure_capacity(std::size_t needed) -> void
@@ -358,15 +358,15 @@ private:
 
     auto grow_to(std::size_t new_cap) -> void
     {
-        if (data_ && bump_try_extend(data_, capacity_ * sizeof(T), new_cap * sizeof(T))) {
+        if (data_ && mem::bump_try_extend(data_, capacity_ * sizeof(T), new_cap * sizeof(T))) {
             capacity_ = new_cap;
             return;
         }
         auto* new_data = alloc(new_cap);
         if constexpr (std::is_trivially_copyable_v<T>) {
-            relocate(new_data, data_, size_ * sizeof(T));
+            mem::relocate(new_data, data_, size_ * sizeof(T));
         } else {
-            record_copy(size_ * sizeof(T));
+            mem::record_copy(size_ * sizeof(T));
             for (std::size_t i = 0; i < size_; ++i) {
                 new (new_data + i) T(std::move(data_[i]));
                 data_[i].~T();

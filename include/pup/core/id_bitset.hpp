@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "pup/core/region.hpp"
+#include "pup/mem/region.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -40,7 +40,7 @@ private:
     // exact ceiling and growth can never exhaust it.
     static constexpr auto WORDS_CEILING = (std::size_t { 1 } << 32) / 8;
 
-    Region region_ { WORDS_CEILING };
+    mem::Region region_ { WORDS_CEILING };
 
     [[nodiscard]]
     auto words() const -> std::uint64_t*;

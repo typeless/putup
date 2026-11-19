@@ -55,19 +55,23 @@ There is no threading (`std::thread`, `std::mutex`, `std::atomic`, `std::future`
 pup/
 ├── include/pup/
 │   ├── core/       # Fundamental types: Result, Hash, NodeId
+│   ├── mem/        # Allocators: bump heap, Region
 │   ├── parser/     # Lexer, AST, Parser, Evaluator, Glob
 │   ├── graph/      # DAG, Builder, Topological sort
 │   ├── index/      # Binary format, Reader, Writer
 │   ├── exec/       # Scheduler, CommandRunner
-│   ├── platform/   # OS abstraction: env, file_io, process, vm (POSIX + Win32 backends), sys (POSIX)
+│   ├── platform/   # OS abstraction: env, file_io, process, stream, vm (POSIX + Win32 backends), sys (POSIX)
 │   └── cli/        # Command-line interface, options, output, subcommands
 ├── src/            # Implementation files (incl. *-posix.cpp / *-win32.cpp backends)
 └── third_party/    # sha256, expected-lite, Catch2
 ```
 
-Dependencies flow `cli → exec → graph → parser → core`, except that the evaluator reads
-`graph::VarDepTracker`. `platform` is the OS-abstraction layer; it and `core` use each other
-(`core/region` calls `platform/vm`, the platform backends use the core string and buffer types). The `platform/` module isolates OS specifics behind a
+Dependencies flow `cli → exec → graph → parser → core → mem`, except that the evaluator reads
+`graph::VarDepTracker`. `mem` (namespace `pup::mem`) includes only its own headers and the
+platform headers `vm`, `env` and `stream`, which include no other putup header; only `mem` and
+the vm backends include `platform/vm.hpp`.
+`platform` is the OS-abstraction layer; its file and process backends use the core string and
+buffer types. The `platform/` module isolates OS specifics behind a
 uniform API: POSIX backends (`*-posix.cpp`) use `fork`/`waitpid`/`poll`; Win32 backends
 (`*-win32.cpp`) use `CreateProcessW`. The Windows binary is cross-compiled from Linux with
 clang-cl + lld-link against an xwin-splatted MSVC CRT, and its tests run natively on a Windows CI runner.
@@ -247,8 +251,8 @@ Each layer obtains memory only from the layer below it:
 |-------|-------|------|
 | Handles | application code | plain values (4-byte `StringId` and `NodeId`; `ArenaSlice` is two `uint32_t`) — no owning pointers |
 | Owners | `StringPool`, `Arena32`, `StableVec`, `IdArray32`/`IdBitSet`, `RobinHoodIndex`, `Buf` | one container per entity kind; each owns its Region(s) |
-| `operator new` | `core/bump_alloc`; operators in `core/throw_stubs` (POSIX), `core/new_delete` (Windows) | process-wide bump region for everything else; all `delete`s are no-ops |
-| `Region` | `core/region` | reserve big (default 1 GiB), commit incrementally, base never moves |
+| `operator new` | `mem/bump_alloc`; operators in `core/throw_stubs` (POSIX), `core/new_delete` (Windows) | process-wide bump region for everything else; all `delete`s are no-ops |
+| `Region` | `mem/region` | reserve big (default 1 GiB), commit incrementally, base never moves |
 | vm primitive | `platform/vm-posix.cpp`, `vm-win32.cpp` | reserve / commit / decommit / release; no `mremap` (macOS/Windows lack it) |
 
 ### Region

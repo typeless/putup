@@ -4,7 +4,7 @@
 #pragma once
 
 #include "pup/core/id_bitset.hpp"
-#include "pup/core/region.hpp"
+#include "pup/mem/region.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -43,7 +43,7 @@ public:
     auto for_each(void (*fn)(std::uint32_t id, std::uint32_t value, void* ctx), void* ctx) const -> void;
 
 private:
-    Region region_;
+    mem::Region region_;
     IdBitSet present_;
 
     [[nodiscard]]
