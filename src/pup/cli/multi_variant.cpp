@@ -18,6 +18,7 @@
 #include "pup/platform/file_io.hpp"
 
 #include "pup/platform/process.hpp"
+#include "pup/platform/stream.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -207,7 +208,7 @@ auto for_each_variant(
     return EXIT_SUCCESS;
 }
 
-auto write_variant_lines(Stream stream, std::string_view variant_name, std::string_view text) -> void
+auto write_variant_lines(platform::Stream stream, std::string_view variant_name, std::string_view text) -> void
 {
     auto block = Buf {};
     while (!text.empty()) {
@@ -220,7 +221,7 @@ auto write_variant_lines(Stream stream, std::string_view variant_name, std::stri
         block += '\n';
         text.remove_prefix(end == std::string_view::npos ? text.size() : end + 1);
     }
-    write_to(stream, block.view());
+    platform::write_to(stream, block.view());
 }
 
 } // namespace pup::cli

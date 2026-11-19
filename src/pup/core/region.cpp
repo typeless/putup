@@ -2,7 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/core/region.hpp"
-#include "pup/core/print.hpp"
+#include "pup/platform/stream.hpp"
 #include "pup/platform/vm.hpp"
 
 #include <charconv>
@@ -25,7 +25,7 @@ auto write_uint(std::size_t n) -> void
 {
     char buf[20];
     auto [end, ec] = std::to_chars(buf, buf + sizeof(buf), n);
-    write_to(Stream::Err, { buf, static_cast<std::size_t>(end - buf) });
+    platform::write_to(platform::Stream::Err, { buf, static_cast<std::size_t>(end - buf) });
 }
 
 } // namespace
@@ -73,19 +73,19 @@ auto Region::ensure(std::size_t bytes) -> void
         reserved_ = round_up_to_page(reserve_bytes_);
         base_ = vm::reserve(reserved_);
         if (!base_) {
-            write_to(Stream::Err, "fatal: region reserve of ");
+            platform::write_to(platform::Stream::Err, "fatal: region reserve of ");
             write_uint(reserved_);
-            write_to(Stream::Err, " bytes failed\n");
+            platform::write_to(platform::Stream::Err, " bytes failed\n");
             std::abort();
         }
     }
     auto const new_committed = round_up_to_page(bytes);
     if (new_committed > reserved_) {
-        write_to(Stream::Err, "fatal: region reservation exhausted (");
+        platform::write_to(platform::Stream::Err, "fatal: region reservation exhausted (");
         write_uint(new_committed);
-        write_to(Stream::Err, " > ");
+        platform::write_to(platform::Stream::Err, " > ");
         write_uint(reserved_);
-        write_to(Stream::Err, " bytes)\n");
+        platform::write_to(platform::Stream::Err, " bytes)\n");
         std::abort();
     }
     vm::commit(static_cast<char*>(base_) + committed_, new_committed - committed_);

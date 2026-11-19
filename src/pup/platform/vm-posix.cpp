@@ -3,7 +3,7 @@
 
 #include "pup/platform/vm.hpp"
 
-#include "pup/core/print.hpp"
+#include "pup/platform/stream.hpp"
 #include "pup/platform/sys.hpp"
 
 #include <charconv>

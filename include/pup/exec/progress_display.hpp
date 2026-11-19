@@ -8,6 +8,7 @@
 #include "pup/core/string_id.hpp"
 #include "pup/core/types.hpp"
 #include "pup/core/vec.hpp"
+#include "pup/platform/stream.hpp"
 
 #include <chrono>
 #include <string_view>
@@ -68,12 +69,12 @@ auto format_duration(std::chrono::milliseconds ms) -> StringId;
 // ============================================================================
 
 /// Clear N lines above cursor and return to line start
-auto clear_lines(std::size_t count, Stream stream = Stream::Out) -> void;
+auto clear_lines(std::size_t count, platform::Stream stream = platform::Stream::Out) -> void;
 
 /// Print progress output, clearing previous if needed
-auto display_progress(ProgressOutput const& output, std::size_t& prev_lines, Stream stream = Stream::Out) -> void;
+auto display_progress(ProgressOutput const& output, std::size_t& prev_lines, platform::Stream stream = platform::Stream::Out) -> void;
 
 /// Clear the progress display and print final newline
-auto finalize_progress(std::size_t& prev_lines, Stream stream = Stream::Out) -> void;
+auto finalize_progress(std::size_t& prev_lines, platform::Stream stream = platform::Stream::Out) -> void;
 
 } // namespace pup::exec

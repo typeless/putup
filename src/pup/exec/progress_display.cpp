@@ -9,6 +9,7 @@
 #include "pup/core/string_pool.hpp"
 #include "pup/core/terminal.hpp"
 #include "pup/core/types.hpp"
+#include "pup/platform/stream.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -147,31 +148,31 @@ auto format_duration(std::chrono::milliseconds ms) -> StringId
     return out.intern(global_pool());
 }
 
-auto clear_lines(std::size_t count, Stream stream) -> void
+auto clear_lines(std::size_t count, platform::Stream stream) -> void
 {
     if (count == 0) {
         return;
     }
 
-    write_to(stream, pup::ansi::carriage_return);
-    write_to(stream, pup::ansi::clear_line);
+    platform::write_to(stream, pup::ansi::carriage_return);
+    platform::write_to(stream, pup::ansi::clear_line);
 
     for (std::size_t i = 1; i < count; ++i) {
-        write_to(stream, pup::ansi::move_up);
-        write_to(stream, pup::ansi::clear_line);
+        platform::write_to(stream, pup::ansi::move_up);
+        platform::write_to(stream, pup::ansi::clear_line);
     }
-    flush(stream);
+    platform::flush(stream);
 }
 
-auto display_progress(ProgressOutput const& output, std::size_t& prev_lines, Stream stream) -> void
+auto display_progress(ProgressOutput const& output, std::size_t& prev_lines, platform::Stream stream) -> void
 {
     clear_lines(prev_lines, stream);
-    write_to(stream, global_pool().get(output.text));
-    flush(stream);
+    platform::write_to(stream, global_pool().get(output.text));
+    platform::flush(stream);
     prev_lines = output.line_count;
 }
 
-auto finalize_progress(std::size_t& prev_lines, Stream stream) -> void
+auto finalize_progress(std::size_t& prev_lines, platform::Stream stream) -> void
 {
     clear_lines(prev_lines, stream);
     prev_lines = 0;

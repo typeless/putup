@@ -21,6 +21,7 @@
 #include "pup/exec/scheduler.hpp"
 #include "pup/graph/dag.hpp"
 #include "pup/platform/file_io.hpp"
+#include "pup/platform/stream.hpp"
 
 #include <cassert>
 #include <cstdio>
@@ -209,13 +210,13 @@ auto configure_single_variant(
             report.append(use_tty_progress ? text : pool.get(pup::exec::render_result(progress.completed + progress.failed, progress.total, text)));
             report += '\n';
             report.append(pool.get(job_result.output));
-            write_variant_lines(Stream::Out, variant_name, report.view());
+            write_variant_lines(platform::Stream::Out, variant_name, report.view());
         }
         if (!job_result.success) {
             auto report = Buf {};
             report.fmt("FAILED: {}\n", pool.get(job.command));
             report.append(pool.get(job_result.output));
-            write_variant_lines(Stream::Err, variant_name, report.view());
+            write_variant_lines(platform::Stream::Err, variant_name, report.view());
         }
     });
 
@@ -223,7 +224,7 @@ auto configure_single_variant(
         progress.total = total;
         if (use_tty_progress) {
             print("\r[{}] [{}/{}] ", variant_name, done, total);
-            flush(Stream::Out);
+            platform::flush(platform::Stream::Out);
             prev_lines = 1;
         }
     });

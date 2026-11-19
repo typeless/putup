@@ -33,6 +33,7 @@
 #include "pup/index/writer.hpp"
 #include "pup/parser/ignore.hpp"
 #include "pup/platform/file_io.hpp"
+#include "pup/platform/stream.hpp"
 
 #include <algorithm>
 #include <cassert>
@@ -2352,7 +2353,7 @@ auto build_single_variant(
             report.append(use_tty_progress ? text : pool.get(pup::exec::render_result(progress.completed + progress.failed, progress.total, text)));
             report += '\n';
             report.append(pool.get(job_result.output));
-            write_variant_lines(Stream::Out, variant_name, report.view());
+            write_variant_lines(platform::Stream::Out, variant_name, report.view());
         }
         if (!job_result.success) {
             must_rerun_cmds.set(job.id, 1);
@@ -2364,7 +2365,7 @@ auto build_single_variant(
                 report.fmt("  dependency scan for: {}\n", pool.get(pup::graph::expand_instruction(bs.graph, *parent, bs.path_cache, source_root_str, config_root_str)));
             }
             report.append(pool.get(job_result.output));
-            write_variant_lines(Stream::Err, variant_name, report.view());
+            write_variant_lines(platform::Stream::Err, variant_name, report.view());
         }
 
         auto target_id = job_result.deps_for_command.value_or(job.id);
