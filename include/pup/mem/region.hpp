@@ -3,10 +3,9 @@
 
 #pragma once
 
-#include "tiled/stack.hpp"
+#include "tiled/stack_slot.hpp"
 
 #include <cstddef>
-#include <optional>
 
 namespace pup::mem {
 
@@ -23,8 +22,8 @@ public:
     Region(Region const&) = delete;
     auto operator=(Region const&) -> Region& = delete;
 
-    Region(Region&&) noexcept;
-    auto operator=(Region&&) noexcept -> Region&;
+    Region(Region&&) noexcept = default;
+    auto operator=(Region&&) noexcept -> Region& = default;
 
     auto ensure(std::size_t bytes) -> void;
     auto shrink(std::size_t keep_bytes) -> void;
@@ -48,7 +47,7 @@ public:
     }
 
 private:
-    std::optional<tiled::Stack> stack_;
+    tiled::StackSlot stack_;
     std::size_t reserve_bytes_ = DEFAULT_RESERVE;
 };
 

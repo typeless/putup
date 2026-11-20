@@ -5,13 +5,11 @@
 #include "pup/mem/bump_alloc.hpp"
 #include "pup/mem/memory_layout.hpp"
 #include "pup/platform/stream.hpp"
-#include "tiled/tile.hpp"
 
 #include <bit>
 #include <charconv>
 #include <cstdint>
 #include <cstdlib>
-#include <utility>
 
 namespace pup::mem {
 
@@ -37,35 +35,13 @@ Region::Region(std::size_t reserve_bytes)
 {
 }
 
-Region::Region(Region&& other) noexcept
-    : reserve_bytes_(other.reserve_bytes_)
-{
-    if (other.stack_) {
-        stack_.emplace(std::move(*other.stack_));
-        other.stack_.reset();
-    }
-}
-
-auto Region::operator=(Region&& other) noexcept -> Region&
-{
-    if (this != &other) {
-        stack_.reset();
-        if (other.stack_) {
-            stack_.emplace(std::move(*other.stack_));
-            other.stack_.reset();
-        }
-        reserve_bytes_ = other.reserve_bytes_;
-    }
-    return *this;
-}
-
 auto Region::ensure(std::size_t bytes) -> void
 {
     if (bytes <= committed()) {
         return;
     }
     if (!stack_) {
-        stack_.emplace(tiled::Tile::acquire(process_pool(), tile_log2_for(reserve_bytes_)));
+        stack_.emplace(process_pool(), tile_log2_for(reserve_bytes_));
     }
     if (bytes > stack_->reserved()) {
         platform::write_to(platform::Stream::Err, "fatal: region reservation exhausted (");

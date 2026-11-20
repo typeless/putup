@@ -6,13 +6,17 @@
 #include "tiled/platform.hpp"
 #include "tiled/space_storage.hpp"
 #include "tiled/stack.hpp"
+#include "tiled/stack_slot.hpp"
 #include "tiled/tile.hpp"
 
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <type_traits>
+#include <utility>
 
 using tiled::Stack;
+using tiled::StackSlot;
 using tiled::Tile;
 
 namespace {
@@ -35,6 +39,11 @@ auto fresh_stack() -> Stack
 {
     return Stack { Tile::acquire(stack_space.pool(), TILE_LOG2) };
 }
+
+static_assert(!std::is_copy_constructible_v<StackSlot>);
+static_assert(!std::is_copy_assignable_v<StackSlot>);
+static_assert(std::is_nothrow_move_constructible_v<StackSlot>);
+static_assert(std::is_nothrow_move_assignable_v<StackSlot>);
 
 auto round_up_to_page(std::size_t n) -> std::size_t
 {
@@ -132,4 +141,106 @@ TEST_CASE("Stack returns its tile when destroyed", "[tiled][stack]")
     }
     auto const again = fresh_stack();
     REQUIRE(again.base() == base);
+}
+
+TEST_CASE("StackSlot is empty until a stack is emplaced", "[tiled][stack]")
+{
+    auto slot = StackSlot {};
+    REQUIRE_FALSE(slot);
+    auto const& stack = slot.emplace(stack_space.pool(), TILE_LOG2);
+    REQUIRE(slot);
+    REQUIRE(slot->base() == stack.base());
+    REQUIRE(slot->reserved() == TILE_BYTES);
+    slot.reset();
+    REQUIRE_FALSE(slot);
+}
+
+TEST_CASE("StackSlot returns its tile exactly once", "[tiled][stack]")
+{
+    void* base = nullptr;
+
+    SECTION("when it is reset")
+    {
+        auto slot = StackSlot {};
+        base = slot.emplace(stack_space.pool(), TILE_LOG2).base();
+        slot.reset();
+        slot.reset();
+    }
+    SECTION("when it is destroyed")
+    {
+        auto slot = StackSlot {};
+        base = slot.emplace(stack_space.pool(), TILE_LOG2).base();
+    }
+    SECTION("when it is emplaced a second time")
+    {
+        auto slot = StackSlot {};
+        base = slot.emplace(stack_space.pool(), TILE_LOG2).base();
+        REQUIRE(slot.emplace(stack_space.pool(), TILE_LOG2).base() == base);
+    }
+    SECTION("when its stack moved to another slot and both are destroyed")
+    {
+        auto source = StackSlot {};
+        base = source.emplace(stack_space.pool(), TILE_LOG2).base();
+        auto const target = StackSlot { std::move(source) };
+        REQUIRE(target);
+    }
+
+    auto const again = fresh_stack();
+    REQUIRE(again.base() == base);
+}
+
+TEST_CASE("StackSlot move construction transfers the stack and empties the source", "[tiled][stack]")
+{
+    auto source = StackSlot {};
+    auto* const block = static_cast<std::byte*>(source.emplace(stack_space.pool(), TILE_LOG2).push(100, 1));
+    block[99] = std::byte { 0x5A };
+    auto const committed = source->committed();
+
+    auto target = StackSlot { std::move(source) };
+
+    REQUIRE_FALSE(source); // NOLINT(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
+    REQUIRE(target);
+    REQUIRE(target->base() == block);
+    REQUIRE(target->top() == 100);
+    REQUIRE(target->committed() == committed);
+    REQUIRE(block[99] == std::byte { 0x5A });
+    REQUIRE(target->extend_top(block, 100, 200));
+}
+
+TEST_CASE("StackSlot move assignment", "[tiled][stack]")
+{
+    auto source = StackSlot {};
+    auto target = StackSlot {};
+    auto* const source_base = source.emplace(stack_space.pool(), TILE_LOG2).base();
+
+    SECTION("into an empty slot transfers the stack")
+    {
+        target = std::move(source);
+        REQUIRE_FALSE(source); // NOLINT(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
+        REQUIRE(target->base() == source_base);
+    }
+    SECTION("over a held stack returns that stack's tile first")
+    {
+        auto* const target_base = target.emplace(stack_space.pool(), TILE_LOG2).base();
+        REQUIRE(target_base != source_base);
+        target = std::move(source);
+        REQUIRE_FALSE(source); // NOLINT(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
+        REQUIRE(target->base() == source_base);
+        auto const again = fresh_stack();
+        REQUIRE(again.base() == target_base);
+    }
+    SECTION("from an empty slot returns the held tile")
+    {
+        source = std::move(target);
+        REQUIRE_FALSE(source);
+        auto const again = fresh_stack();
+        REQUIRE(again.base() == source_base);
+    }
+    SECTION("to itself keeps the stack")
+    {
+        auto& alias = source;
+        source = std::move(alias);
+        REQUIRE(source);
+        REQUIRE(source->base() == source_base);
+    }
 }
