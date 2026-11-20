@@ -7,7 +7,6 @@
 #include <charconv>
 #include <cstdint>
 #include <cstring>
-#include <utility>
 
 namespace tiled {
 
@@ -33,18 +32,8 @@ Tile::Tile(Pool* pool, std::uint64_t offset, std::uint8_t size_log2)
 {
 }
 
-Tile::Tile(Tile&& other) noexcept
-    : pool_(std::exchange(other.pool_, nullptr))
-    , base_(other.base_)
-    , size_log2_(other.size_log2_)
-{
-}
-
 Tile::~Tile()
 {
-    if (pool_ == nullptr) {
-        return;
-    }
     decommit(base_, std::size_t { 1 } << size_log2_);
     if (!pool_->release(reinterpret_cast<std::uintptr_t>(base_) - pool_->base_, size_log2_)) {
         fail("tiled: the pool refused the release of a tile of 2^", size_log2_);

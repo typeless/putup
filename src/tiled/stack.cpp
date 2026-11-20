@@ -6,7 +6,6 @@
 
 #include <cstdint>
 #include <string_view>
-#include <utility>
 
 namespace tiled {
 
@@ -29,8 +28,8 @@ auto cursor_for(Tile const& tile) -> StackCursor
 
 } // namespace
 
-Stack::Stack(Tile tile)
-    : tile_(std::move(tile))
+Stack::Stack(Pool& pool, std::uint8_t size_log2)
+    : tile_(Tile::acquire(pool, size_log2))
     , cursor_(cursor_for(tile_))
 {
 }

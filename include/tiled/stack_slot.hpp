@@ -5,12 +5,10 @@
 
 #include "tiled/pool.hpp"
 #include "tiled/stack.hpp"
-#include "tiled/tile.hpp"
 
 #include <cstddef>
 #include <cstdint>
 #include <new>
-#include <utility>
 
 namespace tiled {
 
@@ -43,7 +41,7 @@ public:
     auto emplace(Pool& pool, std::uint8_t size_log2) -> Stack&
     {
         reset();
-        auto* const stack = new (storage_) Stack { Tile::acquire(pool, size_log2) };
+        auto* const stack = new (storage_) Stack { pool, size_log2 };
         engaged_ = true;
         return *stack;
     }
@@ -60,6 +58,12 @@ public:
     explicit operator bool() const
     {
         return engaged_;
+    }
+
+    [[nodiscard]]
+    auto operator*() -> Stack&
+    {
+        return *held();
     }
 
     [[nodiscard]]
@@ -86,8 +90,8 @@ private:
         if (!other.engaged_) {
             return;
         }
-        new (storage_) Stack { std::move(*other.held()) };
-        other.reset();
+        new (storage_) Stack { *other.held() };
+        other.engaged_ = false;
         engaged_ = true;
     }
 

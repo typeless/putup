@@ -6,7 +6,7 @@
 #include "tiled/platform.hpp"
 #include "tiled/pool.hpp"
 #include "tiled/stack.hpp"
-#include "tiled/tile.hpp"
+#include "tiled/stack_slot.hpp"
 
 #include <array>
 #include <bit>
@@ -292,24 +292,21 @@ public:
     };
 
     PackedStore(Pool& pool, std::uint8_t bytes_log2)
-        : stack_([&]() -> Tile {
-            if (bytes_log2 > 32) {
-                fatal(TOO_LARGE.data(), TOO_LARGE.size());
-            }
-            return Tile::acquire(pool, bytes_log2);
-        }())
-        , base_(static_cast<std::byte*>(stack_.base()))
     {
+        if (bytes_log2 > 32) {
+            fatal(TOO_LARGE.data(), TOO_LARGE.size());
+        }
+        base_ = static_cast<std::byte*>(stack_.emplace(pool, bytes_log2).base());
     }
 
     [[nodiscard]]
     auto open(Head const& head) -> Builder<0>
     {
-        auto* const at = static_cast<std::byte*>(stack_.push(sizeof(Head) + sizeof(Count), 1));
+        auto* const at = static_cast<std::byte*>(stack_->push(sizeof(Head) + sizeof(Count), 1));
         std::memcpy(at, &head, sizeof(Head));
         auto const record = static_cast<std::uint64_t>(at - base_);
         auto const slot = record + sizeof(Head);
-        return Builder<0> { stack_, base_, record, slot, slot + sizeof(Count), slot + sizeof(Count) };
+        return Builder<0> { *stack_, base_, record, slot, slot + sizeof(Count), slot + sizeof(Count) };
     }
 
     [[nodiscard]]
@@ -319,7 +316,7 @@ public:
     }
 
 private:
-    Stack stack_;
+    StackSlot stack_;
     std::byte* base_;
 };
 

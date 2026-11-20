@@ -8,7 +8,6 @@
 #include "tiled/platform.hpp"
 #include "tiled/space_storage.hpp"
 #include "tiled/stack.hpp"
-#include "tiled/tile.hpp"
 
 #include <bit>
 #include <charconv>
@@ -38,7 +37,7 @@ static_assert(std::is_trivially_destructible_v<tiled::SpaceStorage<memory_layout
 [[gnu::noinline]]
 auto place_heap() -> tiled::Stack&
 {
-    heap_stack = new (heap_storage) tiled::Stack { tiled::Tile::acquire(space.pool(), memory_layout.heap_log2) };
+    heap_stack = new (heap_storage) tiled::Stack { space.pool(), memory_layout.heap_log2 };
     return *heap_stack;
 }
 

@@ -37,9 +37,13 @@ constexpr auto TILE_BYTES = std::size_t { 1 } << TILE_LOG2;
 
 auto fresh_stack() -> Stack
 {
-    return Stack { Tile::acquire(stack_space.pool(), TILE_LOG2) };
+    return Stack { stack_space.pool(), TILE_LOG2 };
 }
 
+static_assert(!std::is_copy_constructible_v<Tile>);
+static_assert(!std::is_move_constructible_v<Tile>);
+static_assert(!std::is_copy_constructible_v<Stack>);
+static_assert(!std::is_move_constructible_v<Stack>);
 static_assert(!std::is_copy_constructible_v<StackSlot>);
 static_assert(!std::is_copy_assignable_v<StackSlot>);
 static_assert(std::is_nothrow_move_constructible_v<StackSlot>);

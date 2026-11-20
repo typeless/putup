@@ -15,9 +15,8 @@ public:
     [[nodiscard]]
     static auto acquire(Pool& pool, std::uint8_t size_log2) -> Tile;
 
-    Tile(Tile const&) = delete;
+    Tile(Tile&&) = delete;
     auto operator=(Tile const&) -> Tile& = delete;
-    Tile(Tile&& other) noexcept;
     auto operator=(Tile&&) -> Tile& = delete;
     ~Tile();
 
@@ -34,7 +33,10 @@ public:
     }
 
 private:
+    friend class Stack;
+
     Tile(Pool* pool, std::uint64_t offset, std::uint8_t size_log2);
+    Tile(Tile const&) = default;
 
     Pool* pool_;
     std::byte* base_;

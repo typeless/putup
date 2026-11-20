@@ -108,15 +108,6 @@ TEST_CASE("Tile returns its block to the pool exactly once", "[tiled][space]")
         }
         REQUIRE(pool_is_empty(pool));
     }
-    SECTION("when a moved tile and its source are both destroyed")
-    {
-        {
-            auto first = Tile::acquire(pool, 25);
-            auto const second = std::move(first);
-            REQUIRE(second.base() == address_of(0));
-        }
-        REQUIRE(pool_is_empty(pool));
-    }
     SECTION("two live tiles do not overlap")
     {
         auto const a = Tile::acquire(pool, 25);
